@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Snapshot } from '../shared/types';
 import { C, Dot, href, useSnap } from './lib';
-import { ModeSwitch } from './mode';
+import { ModeBanner, ModeSwitch } from './mode';
 
 // The sidebar: every screen in one place, with a count of what waits on each. Collapses to an icon
 // rail on desktop; on phones it is a drawer opened from the top bar.
@@ -148,7 +148,7 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
           </button>
         </div>
       </aside>
-      <div className="app-main">{children}</div>
+      <div className="app-main"><ModeBanner />{children}</div>
     </div>
   );
 }

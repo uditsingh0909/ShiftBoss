@@ -141,3 +141,25 @@ function DelegateSwitch() {
     </div>
   );
 }
+
+/** A thin line on every page while ShiftBoss is not on Autopilot, so nobody wonders why nothing happened. */
+export function ModeBanner() {
+  const snap = useSnap();
+  if (!snap) return null;
+  const mode = (snap.settings.mode ?? 'auto') as Mode;
+  if (mode === 'auto') return null;
+  const dry = snap.actions.filter((a) => a.state === 'dry').length;
+  const waiting = snap.actions.filter((a) => a.state === 'waiting').length;
+  const text = mode === 'dry'
+    ? `Dry run: ShiftBoss only records what it would do.${dry ? ` ${dry} recorded so far.` : ''}`
+    : mode === 'ask' ? `Ask first: every action waits for your approval.${waiting ? ` ${waiting} waiting.` : ''}`
+    : `Safe auto: risky actions wait for your approval.${waiting ? ` ${waiting} waiting.` : ''}`;
+  return (
+    <div className="mode-banner row" role="status">
+      <span style={{ width: 8, height: 8, borderRadius: 999, background: mode === 'dry' ? C.faint : C.green, flex: 'none' }} aria-hidden="true" />
+      <span style={{ flex: '1 1 auto', minWidth: 0 }}>{text}</span>
+      {(dry > 0 || waiting > 0) && <a href="#/needs" className="pill xs">{mode === 'dry' ? 'See them' : 'Review'}</a>}
+      <a href="#/settings/mode" className="pill xs">Change</a>
+    </div>
+  );
+}
