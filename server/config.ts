@@ -23,7 +23,8 @@ export interface Config {
 const defaults: Config = {
   ownerName: 'The owner',
   port: 4400,
-  dataDir: join(import.meta.dir, '..', 'data'),
+  // The desktop app sets SHIFTBOSS_DATA_DIR to its own app-data folder; a source checkout uses ./data.
+  dataDir: process.env.SHIFTBOSS_DATA_DIR ?? join(import.meta.dir, '..', 'data'),
   transcriptsDir: join(homedir(), '.claude', 'projects'),
   herdrBin: 'herdr',
   herdrWorkspace: '',
@@ -37,10 +38,12 @@ const defaults: Config = {
 };
 
 export function loadConfig(): Config {
-  const path = process.env.SHIFTBOSS_CONFIG ?? join(import.meta.dir, '..', 'shiftboss.config.json');
-  if (!existsSync(path)) return defaults;
-  const user = JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>;
-  return { ...defaults, ...user, contextWindows: { ...defaults.contextWindows, ...(user.contextWindows ?? {}) } };
+  const path = process.env.SHIFTBOSS_CONFIG
+    ?? (process.env.SHIFTBOSS_DATA_DIR ? join(process.env.SHIFTBOSS_DATA_DIR, 'shiftboss.config.json') : join(import.meta.dir, '..', 'shiftboss.config.json'));
+  const user = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>) : {};
+  const cfg = { ...defaults, ...user, contextWindows: { ...defaults.contextWindows, ...(user.contextWindows ?? {}) } };
+  if (process.env.SHIFTBOSS_PORT) cfg.port = Number(process.env.SHIFTBOSS_PORT);
+  return cfg;
 }
 
 export function contextWindowFor(cfg: Config, model: string | null): number {

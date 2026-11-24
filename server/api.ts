@@ -150,8 +150,11 @@ export function makeApi(engine: Engine) {
       r = m(/^\/api\/promises\/(\d+)$/);
       if (r && req.method === 'PATCH') {
         const b = await body<any>(req);
-        if (!['open', 'ready', 'waiting', 'due', 'kept'].includes(b.state)) throw new Error('state must be open|ready|waiting|due|kept');
-        store.setPromiseState(Number(r[1]), b.state as PromiseItem['state']);
+        if (b.taskId !== undefined) store.linkPromise(Number(r[1]), str(b.taskId, 'taskId', 20));
+        if (b.state !== undefined) {
+          if (!['open', 'ready', 'waiting', 'due', 'kept'].includes(b.state)) throw new Error('state must be open|ready|waiting|due|kept');
+          store.setPromiseState(Number(r[1]), b.state as PromiseItem['state']);
+        }
         return done(json({ ok: true }));
       }
 

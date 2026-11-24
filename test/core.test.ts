@@ -35,6 +35,23 @@ describe('store', () => {
     expect(s.getTask(a.id)!.stage).toBe(5);
     expect(s.events(a.id)[0].text).toContain('Live');
   });
+  test('a promise without a task gets one, and telling the requester keeps it', () => {
+    const s = mem();
+    const p = s.addPromise({ to: 'Sam', said: "I'll update here when it's live", where: '#platform' });
+    expect(p.taskId).toBe('T-1');
+    expect(s.getTask('T-1')!.title).toContain('Sam');
+    const linked = s.addPromise({ to: 'Sam', said: 'Second one', taskId: 'T-1' });
+    expect(linked.taskId).toBe('T-1');
+    s.updateTask('T-1', { stage: 6 });
+    expect(s.listPromises().every((x) => x.state === 'kept')).toBe(true);
+  });
+  test('promises made before the rule get a task on startup', () => {
+    const s = mem();
+    s.db.query("INSERT INTO promises (to_person, said, created_at) VALUES ('Ann', 'Will check', '2026-11-24T10:00:00Z')").run();
+    expect(s.linkOrphanPromises()).toBe(1);
+    expect(s.listPromises()[0].taskId).toBe('T-1');
+    expect(s.linkOrphanPromises()).toBe(0);
+  });
   test('stage outside 0-6 is refused', () => {
     const s = mem();
     s.addTask({ title: 'x' });

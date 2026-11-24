@@ -1,0 +1,15 @@
+{
+  "name": "shiftboss-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ShiftBoss desktop app (Tauri): the ShiftBoss server plus a native window, tray icon and notifications.",
+  "scripts": {
+    "server": "bun scripts/build-server.ts",
+    "dev": "bun scripts/build-server.ts && tauri dev",
+    "build": "bun scripts/build-server.ts && tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.9.5"
+  }
+}

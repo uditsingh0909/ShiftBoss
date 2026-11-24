@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The window only shows the local loading page and the local ShiftBoss server; it needs no extra powers.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

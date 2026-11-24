@@ -122,6 +122,11 @@ export class Store {
     if (patch.session !== undefined && patch.session !== cur.session) notes.push('Assigned to ' + (patch.session ?? 'nobody'));
     if (patch.held !== undefined && patch.held !== cur.held) notes.push(patch.held ? 'Put on hold' : 'Resumed');
     if (notes.length) this.addEvent(id, 'ShiftBoss', who, notes.join(' · '));
+    // Telling the requester keeps every open promise tied to this task.
+    if (patch.stage === 6 && cur.stage !== 6) {
+      const kept = this.db.query("UPDATE promises SET state = 'kept', kept_at = ? WHERE task_id = ? AND state != 'kept'").run(now(), id).changes;
+      if (kept) this.addEvent(id, 'ShiftBoss', who, `${kept} promise${kept === 1 ? '' : 's'} marked kept`);
+    }
     return this.getTask(id)!;
   }
   addEvent(taskId: string, src: TaskEvent['src'], who: string, text: string) {
@@ -155,13 +160,39 @@ export class Store {
   // ---------- promises ----------
   private rowPromise = (r: any): PromiseItem => ({ id: r.id, to: r.to_person, where: r.where_text, said: r.said, keptWhen: r.kept_when, taskId: r.task_id, state: r.state, dueAt: r.due_at, createdAt: r.created_at, keptAt: r.kept_at });
   listPromises(): PromiseItem[] { return this.db.query('SELECT * FROM promises ORDER BY id DESC').all().map(this.rowPromise); }
+  /** Every promise belongs to a task. Without a (known) task id, one is filed in the Inbox for it. */
   addPromise(p: { to: string; where?: string; said: string; keptWhen?: string; taskId?: string | null; dueAt?: string | null }): PromiseItem {
+    const taskId = p.taskId && this.getTask(p.taskId) ? p.taskId : this.taskForPromise(p.to, p.said, p.where ?? '', p.keptWhen ?? '').id;
     const r = this.db.query('INSERT INTO promises (to_person, where_text, said, kept_when, task_id, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(p.to, p.where ?? '', p.said, p.keptWhen ?? '', p.taskId ?? null, p.dueAt ?? null, now());
+      .run(p.to, p.where ?? '', p.said, p.keptWhen ?? '', taskId, p.dueAt ?? null, now());
+    this.addEvent(taskId, 'Slack', p.to, `Promised to ${p.to}${p.where ? ' in ' + p.where : ''}: "${p.said}"`);
     return this.rowPromise(this.db.query('SELECT * FROM promises WHERE id = ?').get(r.lastInsertRowid));
+  }
+  private taskForPromise(to: string, said: string, where: string, keptWhen: string): Task {
+    const short = said.length > 90 ? said.slice(0, 87).trimEnd() + '…' : said;
+    return this.addTask({ title: `${to}: ${short}`, ask: said + (keptWhen ? `\n\nKept when: ${keptWhen}` : ''), requester: to, source: where || 'promise' });
+  }
+  /** Gives each promise that has no task (made before promises required one) a task of its own. */
+  linkOrphanPromises(): number {
+    const rows = this.db.query("SELECT * FROM promises WHERE task_id IS NULL OR task_id = '' OR task_id NOT IN (SELECT id FROM tasks)").all().map(this.rowPromise);
+    for (const p of rows) {
+      const t = this.taskForPromise(p.to, p.said, p.where, p.keptWhen);
+      this.db.query('UPDATE promises SET task_id = ? WHERE id = ?').run(t.id, p.id);
+      if (p.state === 'kept') this.updateTask(t.id, { stage: 6 }, 'shiftboss');
+    }
+    return rows.length;
+  }
+  linkPromise(id: number, taskId: string) {
+    if (!this.getTask(taskId)) throw new Error('No task ' + taskId);
+    const p = this.listPromises().find((x) => x.id === id);
+    if (!p) throw new Error('No promise ' + id);
+    this.db.query('UPDATE promises SET task_id = ? WHERE id = ?').run(taskId, id);
+    this.addEvent(taskId, 'ShiftBoss', 'you', `Linked the promise to ${p.to}: "${p.said}"`);
   }
   setPromiseState(id: number, state: PromiseItem['state']) {
     this.db.query('UPDATE promises SET state = ?, kept_at = ? WHERE id = ?').run(state, state === 'kept' ? now() : null, id);
+    const p = this.listPromises().find((x) => x.id === id);
+    if (p?.taskId && state === 'kept') this.addEvent(p.taskId, 'ShiftBoss', 'you', `Promise to ${p.to} kept`);
   }
 
   // ---------- needs ----------

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AuditEntry, Need, PromiseItem } from '../../shared/types';
+import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
 import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSnap } from '../lib';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
@@ -190,7 +190,25 @@ export function Promises() {
               <blockquote style={{ margin: 0, fontSize: 18, lineHeight: 1.45 }}>“{p.said}”</blockquote>
               {p.keptWhen && <span className="dim" style={{ fontSize: 13 }}>Kept when: {p.keptWhen}</span>}
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                {p.taskId && <a className="pill sm" href={href('task', p.taskId)}>Task {p.taskId}</a>}
+                {(() => {
+                  const t = snap.tasks.find((x) => x.id === p.taskId);
+                  return t ? (
+                    <a className="row" href={href('task', t.id)} style={{ gap: 10, padding: '6px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', minWidth: 0, maxWidth: '100%' }}>
+                      <span className="mono faint" style={{ fontSize: 11 }}>{t.id}</span>
+                      <span className="ellipsis" style={{ fontSize: 13, maxWidth: 360 }}>{t.title}</span>
+                      <span className="mono dim" style={{ fontSize: 11 }}>{STAGES[t.stage]}</span>
+                    </a>
+                  ) : <span className="mono amber" style={{ fontSize: 12 }}>no task</span>;
+                })()}
+                <label className="row" style={{ gap: 6 }}>
+                  <span className="faint" style={{ fontSize: 11 }}>Move to</span>
+                  <select className="field" style={{ height: 32, width: 120, padding: '0 8px', fontSize: 12 }} value={p.taskId ?? ''}
+                    aria-label={`Link the promise to ${p.to} to another task`}
+                    onChange={(e) => e.target.value && act(() => api('PATCH', `/api/promises/${p.id}`, { taskId: e.target.value }), 'Linked to ' + e.target.value)}>
+                    {!p.taskId && <option value="">pick a task</option>}
+                    {snap.tasks.map((t) => <option key={t.id} value={t.id}>{t.id}</option>)}
+                  </select>
+                </label>
                 <span style={{ flex: 1 }} />
                 {p.state === 'open' && <button type="button" className="pill sm" onClick={() => setState(p, 'due', 'Marked overdue')}>Mark overdue</button>}
                 {p.state !== 'kept' && <button type="button" className="pill sm w" onClick={() => setState(p, 'kept', 'Marked kept')}>Mark kept</button>}

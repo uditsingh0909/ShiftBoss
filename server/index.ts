@@ -13,6 +13,8 @@ const cfg = loadConfig();
 const store = new Store(cfg.dataDir);
 const engine = new Engine(cfg, store, new Herdr(cfg.herdrBin));
 const api = makeApi(engine);
+const linked = store.linkOrphanPromises(); // older promises predate the one-task-per-promise rule
+if (linked) console.log(`Filed ${linked} task(s) for promises that had none`);
 engine.start();
 
 const server = Bun.serve({
