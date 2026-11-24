@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type {
+import type { Onboarding,
   AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
 
@@ -274,6 +274,26 @@ export class Store {
     if (!r) return DEFAULT_SETTINGS;
     const s = JSON.parse(r.value);
     return { ...DEFAULT_SETTINGS, ...s, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...s.thresholds }, switches: { ...DEFAULT_SETTINGS.switches, ...s.switches }, budgets: { ...DEFAULT_SETTINGS.budgets, ...s.budgets } };
+  }
+  // ---------- first-run onboarding ----------
+  onboarding(): Onboarding {
+    const r: any = this.db.query("SELECT value FROM settings WHERE key = 'onboarding'").get();
+    const empty: Onboarding = { doneAt: null, asked: {}, backfillFrom: null };
+    return r ? { ...empty, ...JSON.parse(r.value) } : empty;
+  }
+  saveOnboarding(patch: Partial<Onboarding>): Onboarding {
+    const next = { ...this.onboarding(), ...patch };
+    this.db.query("INSERT INTO settings (key, value) VALUES ('onboarding', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
+    return next;
+  }
+  /** Send the intake back to `from`: its next run reads everything since then, oldest first. Unpauses it. */
+  backfillIntake(from: string): IntakeState {
+    const t = Date.parse(from);
+    if (!Number.isFinite(t) || t > Date.now()) throw new Error('Backfill must start in the past');
+    if (Date.now() - t > 31 * 864e5) throw new Error('Backfill at most 31 days');
+    const iso = new Date(t).toISOString();
+    this.saveOnboarding({ backfillFrom: iso });
+    return this.saveIntake({ ...this.intakeState(), paused: false, pausedAt: null, resumeAt: null, since: iso, catchUpFrom: iso });
   }
   // ---------- intake pause / resume / catch-up ----------
   intakeState(): IntakeState {

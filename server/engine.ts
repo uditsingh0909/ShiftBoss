@@ -315,6 +315,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       releases: this.releases,
       settings,
       intakeState: this.store.intakeState(),
+      onboarding: this.store.onboarding(),
       owner: this.cfg.ownerName,
       feed: this.feed.slice(0, 40),
     };

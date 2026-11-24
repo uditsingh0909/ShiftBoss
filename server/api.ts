@@ -5,6 +5,7 @@ import type { Engine } from './engine';
 import { existsSync, statSync } from 'node:fs';
 import { buildReport, type Audience } from './report';
 import { setupInfo } from './setup';
+import { onboardingPrompt } from './onboarding';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
@@ -250,6 +251,41 @@ export function makeApi(engine: Engine) {
         })();
         return done(json({ ok: true, name }, 202));
       }
+      // ----- first-run onboarding -----
+      if (p === '/api/onboarding/ask' && write) {
+        // Ask running sessions to put their current work on the board. Never touches their work.
+        const b = await body<any>(req);
+        const names: string[] = Array.isArray(b.sessions) ? b.sessions.filter((x: any) => typeof x === 'string').slice(0, 50) : [];
+        if (!names.length) return json({ error: 'Pick at least one session.' }, 400);
+        const repo = setupInfo(engine.cfg.port).repoPath;
+        const asked = { ...store.onboarding().asked };
+        const failed: string[] = [];
+        for (const name of names) {
+          const s = engine.snapshot().sessions.find((x) => x.name === name);
+          if (!s) { failed.push(name); continue; }
+          try {
+            await engine.herdr.prompt(s.paneId, onboardingPrompt(engine.cfg.ownerName, name, repo));
+            asked[name] = new Date().toISOString();
+          } catch { failed.push(name); }
+        }
+        store.saveOnboarding({ asked });
+        engine.pushFeed('you', `asked ${names.length - failed.length} session(s) to register their tasks`);
+        return done(json({ asked: names.length - failed.length, failed }));
+      }
+      if (p === '/api/onboarding/backfill' && write) {
+        const b = await body<any>(req);
+        const days = Number(b.days);
+        if (![1, 2, 3, 7, 14].includes(days)) return json({ error: 'days must be 1, 2, 3, 7 or 14' }, 400);
+        const st = store.backfillIntake(new Date(Date.now() - days * 864e5).toISOString());
+        const s = engine.snapshot().sessions.find((x) => /intake/i.test(x.name));
+        if (s) await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} is setting up ShiftBoss and sent you back ${days} day(s). Run one pass now: intake_begin returns readFrom ${st.since}. Read the whole gap oldest first (Slack and Gmail, as docs/INTAKE.md says), paging until you reach now, file what is open, then intake_checkpoint.`);
+        engine.pushFeed('you', `sent the intake back ${days} day(s)`);
+        return done(json({ ...st, prompted: !!s }));
+      }
+      if (p === '/api/onboarding/done' && write) {
+        const b = await body<any>(req);
+        return done(json(store.saveOnboarding({ doneAt: b.done === false ? null : new Date().toISOString() })));
+      }
       if (p === '/api/intake/run' && write) {
         // "Check now": ask the intake session for one pass right away instead of waiting for its loop.
         if (store.intakeState().paused) return json({ error: 'Intake is paused. Resume it first.' }, 409);
@@ -311,3 +347,4 @@ export function makeApi(engine: Engine) {
     }
   };
 }
+

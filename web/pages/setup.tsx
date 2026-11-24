@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api, C, Card, Dot, Empty, Hero, href, toast, useSnap } from '../lib';
 import { IntakeControl } from '../intake-control';
 
-interface SetupInfo {
+export interface SetupInfo {
   repoPath: string;
   port: number;
   mcp: { registered: boolean; command: string | null; pointsHere: boolean };
@@ -29,7 +29,7 @@ function Copy({ text, label = 'Copy' }: { text: string; label?: string }) {
   return <button type="button" className="pill sm" onClick={run}>{done ? 'Copied' : label}</button>;
 }
 
-function Cmd({ text }: { text: string }) {
+export function Cmd({ text }: { text: string }) {
   return (
     <div className="row well" style={{ gap: 10, padding: '10px 12px', alignItems: 'flex-start' }}>
       <pre className="mono" style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</pre>
@@ -38,7 +38,7 @@ function Cmd({ text }: { text: string }) {
   );
 }
 
-function Step({ n, title, state, children }: { n: number; title: string; state: 'ok' | 'todo' | 'optional'; children: ReactNode }) {
+export function Step({ n, title, state, children }: { n: number; title: string; state: 'ok' | 'todo' | 'optional'; children: ReactNode }) {
   const tone = state === 'ok' ? C.green : state === 'todo' ? C.amber : C.faint;
   const word = state === 'ok' ? 'Done' : state === 'todo' ? 'To do' : 'Optional';
   return (

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { healthOf, loopKeys, overlapsOf } from '../server/analysis';
 import { Store } from '../server/db';
 import { nameOf, parseAgentList } from '../server/herdr';
+import { onboardingPrompt } from '../server/onboarding';
 import { buildReport } from '../server/report';
 import { parseFooter } from '../server/statusline';
 import { applyLine, type TranscriptState } from '../server/transcripts';
@@ -91,6 +92,26 @@ describe('store', () => {
     expect(s.openAutoNeeds().map((x) => x.id)).toEqual([n.id]);
     s.answerNeed(n.id, 'Session closed');
     expect(s.openAutoNeeds()).toEqual([]);
+  });
+  test('onboarding backfill sends the intake back and unpauses it', () => {
+    const s = mem();
+    s.pauseIntake(null);
+    const from = new Date(Date.now() - 3 * 864e5).toISOString();
+    const st = s.backfillIntake(from);
+    expect(st.paused).toBe(false);
+    expect(st.since).toBe(from);
+    expect(st.catchUpFrom).toBe(from);
+    expect(s.onboarding().backfillFrom).toBe(from);
+    expect(() => s.backfillIntake(new Date(Date.now() + 864e5).toISOString())).toThrow();
+    expect(() => s.backfillIntake(new Date(Date.now() - 40 * 864e5).toISOString())).toThrow();
+    s.saveOnboarding({ asked: { a: from } });
+    expect(s.onboarding()).toMatchObject({ asked: { a: from }, backfillFrom: from, doneAt: null });
+  });
+  test('the onboarding prompt names the session and changes nothing else', () => {
+    const t = onboardingPrompt('Sam', 'billing-fix', 'C:/x/shiftboss');
+    expect(t).toContain('session "billing-fix"');
+    expect(t).toContain('Do not change');
+    expect(t).toContain('C:/x/shiftboss/cli/shiftboss.ts');
   });
   test('settings merge over defaults', () => {
     const s = mem();

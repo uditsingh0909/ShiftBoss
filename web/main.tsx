@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { C, Dot, href, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap } from './lib';
 import { Audit, NeedsYou, Promises } from './pages/decide';
 import { Report, SettingsPage } from './pages/ops';
+import { Welcome } from './pages/welcome';
 import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
@@ -18,7 +19,7 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
     promises: snap?.promises.filter((p) => p.state !== 'kept').length ?? 0,
   };
   const top = route[0] ?? '';
-  const section = ['session', 'roster', 'health', 'overlap', 'report', 'audit', 'setup'].includes(top) ? '' : top === 'task' ? 'tasks' : top;
+  const section = ['session', 'roster', 'health', 'overlap', 'report', 'audit', 'setup', 'welcome'].includes(top) ? '' : top === 'task' ? 'tasks' : top;
   return (
     <div className="navwrap">
       <nav aria-label="Main" className="nav row">
@@ -46,7 +47,7 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
   );
 }
 
-const SHORTCUTS = [['roster', 'All sessions'], ['health', 'Health'], ['overlap', 'Overlaps'], ['report', 'Daily report'], ['audit', 'Sent as you'], ['setup', 'Connect'], ['settings', 'Settings']] as const;
+const SHORTCUTS = [['welcome', 'Get started'], ['roster', 'All sessions'], ['health', 'Health'], ['overlap', 'Overlaps'], ['report', 'Daily report'], ['audit', 'Sent as you'], ['setup', 'Connect'], ['settings', 'Settings']] as const;
 
 function Shortcuts({ top }: { top: string }) {
   return (
@@ -77,6 +78,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       { group: 'Go to', label: 'Sent as you', meta: 'audit log', to: href('audit') },
       { group: 'Go to', label: 'Settings', meta: 'lanes, slots, thresholds', to: href('settings') },
       { group: 'Go to', label: 'Connect', meta: 'MCP tools, status line, intake setup', to: href('setup') },
+      { group: 'Do', label: 'Get started', meta: 'set up, bring in current work', to: href('welcome') },
       { group: 'Do', label: 'New task', meta: 'into the inbox', to: href('tasks', 'new') },
       { group: 'Do', label: 'New session', meta: 'Claude Code in a new herdr tab', to: href('sessions') },
     ];
@@ -144,7 +146,10 @@ function App() {
   else if (top === 'audit') page = <Audit />;
   else if (top === 'report') page = <Report />;
   else if (top === 'settings') page = <SettingsPage />;
+  else if (top === 'welcome') page = <Welcome />;
   else if (top === 'setup') page = <SetupPage />;
+  // A fresh install (nothing on the board, setup never finished) opens on Get started.
+  else if (!snap.onboarding.doneAt && !snap.tasks.length && !top) page = <Welcome />;
   else page = <CommandCenter />;
   return (
     <SnapshotCtx.Provider value={snap}>
