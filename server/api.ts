@@ -9,6 +9,7 @@ import { safeUrl } from './guard';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
 import { PaneBlockedError } from './herdr';
+import { SnapshotHub } from './stream';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
@@ -28,6 +29,8 @@ const STAGE_WORDS: Record<string, Stage> = { inbox: 0, queued: 1, progress: 2, p
 export function makeApi(engine: Engine) {
   const store = engine.store;
   const done = (r: Response) => { engine.emit(); return r; };
+  const hub = new SnapshotHub(() => engine.snapshot(), () => store.writeCount());
+  engine.onChange(() => hub.changed());
   const session = (name: string) => {
     const s = engine.sessions.find((x) => x.name === name);
     if (!s) throw new Error(name + ' is not running in herdr');
@@ -44,16 +47,11 @@ export function makeApi(engine: Engine) {
       if (p === '/api/snapshot' && req.method === 'GET') return json(engine.snapshot());
 
       if (p === '/api/stream' && req.method === 'GET') {
+        // All tabs share one hub: one snapshot build and one serialized frame per change, none when unchanged.
         let off: (() => void) | null = null;
-        let pending: ReturnType<typeof setTimeout> | null = null;
         const stream = new ReadableStream({
-          start(ctrl) {
-            const enc = new TextEncoder();
-            const send = () => { try { ctrl.enqueue(enc.encode('data: ' + JSON.stringify(engine.snapshot()) + '\n\n')); } catch { off?.(); } };
-            send();
-            off = engine.onChange(() => { if (!pending) pending = setTimeout(() => { pending = null; send(); }, 250); });
-          },
-          cancel() { off?.(); if (pending) clearTimeout(pending); },
+          start(ctrl) { off = hub.add((frame) => { try { ctrl.enqueue(frame); } catch { off?.(); } }); },
+          cancel() { off?.(); },
         });
         return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' } });
       }

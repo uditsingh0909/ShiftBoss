@@ -3,6 +3,7 @@ import { healthOf, loopKeys, overlapsOf } from '../server/analysis';
 import { Store } from '../server/db';
 import { Engine, herdrBackoffMs } from '../server/engine';
 import { makeApi } from '../server/api';
+import { SnapshotFrames, SnapshotHub } from '../server/stream';
 import { loadConfig } from '../server/config';
 import { nameOf, parseAgentList } from '../server/herdr';
 import { onboardingPrompt } from '../server/onboarding';
@@ -324,6 +325,46 @@ describe('audit fixes', () => {
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).toBeNull();
     s.approveSlack(id);
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).not.toBeNull();
+  });
+  test('live stream: one frame per change, same JSON shape, keepalive and write version', () => {
+    const e = new Engine(loadConfig(), mem(), {} as any);
+    const snap = e.snapshot();
+    const f = new SnapshotFrames(30_000);
+    const first = f.next(snap, 1000, 1)!;
+    expect(first.startsWith('data: ') && first.endsWith('\n\n')).toBe(true);
+    expect(JSON.parse(first.slice(6))).toEqual(JSON.parse(JSON.stringify(snap))); // same content and shape
+    expect(Object.keys(JSON.parse(first.slice(6)))).toEqual(Object.keys(snap)); // same key order
+    expect(f.next({ ...snap, now: new Date(5000).toISOString() }, 2000, 1)).toBeNull(); // only `now` moved
+    expect(f.next(snap, 3000, 2)).not.toBeNull(); // a write the snapshot does not show
+    expect(f.next({ ...snap, owner: 'Sam' }, 4000, 2)).not.toBeNull(); // content changed
+    expect(f.next({ ...snap, owner: 'Sam' }, 4000 + 30_000, 2)).not.toBeNull(); // keepalive
+  });
+  test('live stream hub: builds once for every tab and skips unchanged ticks', () => {
+    let builds = 0;
+    const e = new Engine(loadConfig(), mem(), {} as any);
+    const hub = new SnapshotHub(() => { builds++; return e.snapshot(); }, () => 0, 250, 30_000);
+    const got: Uint8Array[][] = [[], []];
+    const offA = hub.add((b) => got[0].push(b));
+    const offB = hub.add((b) => got[1].push(b));
+    expect(got[0].length).toBe(1);
+    expect(got[1][0]).toBe(got[0][0]); // the same encoded frame, not a copy per tab
+    const before = builds;
+    hub.flush();
+    expect(builds).toBe(before + 1);
+    expect(got[0].length).toBe(1); // unchanged: nothing sent
+    offA(); offB();
+    expect(hub.size).toBe(0);
+  });
+  test('a tick with nothing new writes nothing, so the stream stays quiet', async () => {
+    const store = mem();
+    const e = new Engine(loadConfig(), store, { list: async () => [] } as any);
+    await e.tick();
+    const n = store.writeCount();
+    e.snapshot();
+    await e.tick();
+    expect(store.writeCount()).toBe(n);
+    store.addTask({ title: 'One' });
+    expect(store.writeCount()).toBeGreaterThan(n);
   });
   test('herdr down: back off up to 30 s and log the outage once', async () => {
     expect([0, 1, 2, 3, 4, 5, 9].map((f) => herdrBackoffMs(f, 2000))).toEqual([0, 2000, 4000, 8000, 16000, 30000, 30000]);

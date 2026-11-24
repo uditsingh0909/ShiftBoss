@@ -296,6 +296,13 @@ export class Store {
     this.db.query('INSERT INTO session_meta (name, lane, slots, handoff_path) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET lane=excluded.lane, slots=excluded.slots, handoff_path=excluded.handoff_path')
       .run(name, n.lane, n.slots, n.handoffPath);
   }
+  /**
+   * Rows written through this connection so far. Moves on every write, including ones the snapshot does
+   * not show (task events, Slack text), so the live stream still pushes and pages that fetch them refresh.
+   */
+  writeCount(): number {
+    return (this.db.query('SELECT total_changes() AS n').get() as { n: number }).n;
+  }
   settings(): Settings {
     const r: any = this.db.query("SELECT value FROM settings WHERE key = 'settings'").get();
     if (!r) return DEFAULT_SETTINGS;
