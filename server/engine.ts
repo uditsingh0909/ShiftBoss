@@ -7,7 +7,7 @@ import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
-import { parseFooter, readTap, type StatusInfo } from './statusline';
+import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
 
@@ -99,7 +99,7 @@ export class Engine {
     const model = st?.model ?? null;
     const window = contextWindowFor(this.cfg, model);
     const ctxTokens = st?.contextTokens ?? 0;
-    const contextPct = info?.ctxPct ?? (window ? Math.min(100, (ctxTokens / window) * 100) : 0);
+    const contextPct = contextPercent(info?.ctxPct, ctxTokens, window);
     const meta = this.store.meta(name) ?? { lane: this.cfg.lanes[name]?.lane ?? '', slots: this.cfg.lanes[name]?.slots ?? 2, handoffPath: null };
     const settings = this.store.settings();
     const handoffsDir = settings.handoffsDir || this.cfg.handoffsDir;

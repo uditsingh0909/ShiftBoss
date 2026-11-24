@@ -4,7 +4,9 @@ import { Store } from '../server/db';
 import { nameOf, parseAgentList } from '../server/herdr';
 import { onboardingPrompt } from '../server/onboarding';
 import { buildReport } from '../server/report';
-import { parseFooter } from '../server/statusline';
+import { contextPercent, parseFooter } from '../server/statusline';
+import { mergeSettings } from '../server/settings';
+import { checkRequest, safeUrl } from '../server/guard';
 import { applyLine, type TranscriptState } from '../server/transcripts';
 import type { Session } from '../shared/types';
 
@@ -112,6 +114,16 @@ describe('store', () => {
     expect(t).toContain('session "billing-fix"');
     expect(t).toContain('Do not change');
     expect(t).toContain('C:/x/shiftboss/cli/shiftboss.ts');
+  });
+  test('lane and slots save for a session with no row yet, and an empty lane clears it', () => {
+    const s = mem();
+    s.setMeta('zz', { lane: '', slots: 3 });
+    expect(s.meta('zz')).toMatchObject({ lane: '', slots: 3 });
+    s.setMeta('zz', { lane: 'billing' });
+    expect(s.meta('zz')).toMatchObject({ lane: 'billing', slots: 3 });
+    s.setMeta('zz', { slots: 1 });
+    expect(s.meta('zz')).toMatchObject({ lane: 'billing', slots: 1 });
+    expect(() => s.setMeta('zz', { slots: NaN })).toThrow();
   });
   test('settings merge over defaults', () => {
     const s = mem();
@@ -240,5 +252,36 @@ describe('github auto-advance', () => {
     expect(targetStage({ state: 'MERGED' }, true, false)).toBe(4);
     expect(targetStage({ state: 'MERGED' }, true, true)).toBe(5);
     expect(targetStage({ state: 'CLOSED' }, false, false)).toBeNull();
+  });
+});
+
+describe('audit fixes', () => {
+  test('context % is the larger of the status line and the transcript; a reported 0 does not hide a full session', () => {
+    expect(contextPercent(null, 800_000, 1_000_000)).toBe(80);
+    expect(contextPercent(0, 800_000, 1_000_000)).toBe(80);
+    expect(contextPercent(62, 100_000, 1_000_000)).toBe(62);
+  });
+  test('settings are validated', () => {
+    const cur = mem().settings();
+    expect(() => mergeSettings(cur, { thresholds: { warn: 'lots' } })).toThrow();
+    expect(() => mergeSettings(cur, { leadSession: 123 })).toThrow();
+    expect(() => mergeSettings(cur, { watchedChannels: 'nope' })).toThrow();
+    expect(() => mergeSettings(cur, null)).toThrow();
+    expect(() => mergeSettings(cur, { thresholds: { warn: 88, replace: 80 } })).toThrow();
+    expect(mergeSettings(cur, { leadSession: ' lead ', thresholds: { warn: 60 } })).toMatchObject({ leadSession: 'lead', thresholds: { warn: 60, replace: 85 } });
+  });
+  test('only http(s) links are stored', () => {
+    expect(safeUrl('https://example.slack.com/archives/C1/p1')).toBe('https://example.slack.com/archives/C1/p1');
+    expect(safeUrl('')).toBeNull();
+    expect(() => safeUrl('javascript:alert(1)')).toThrow();
+    expect(() => safeUrl('data:text/html,x')).toThrow();
+  });
+  test('requests must name this machine (DNS rebinding)', () => {
+    const r = (host: string, extra: Record<string, string> = {}, method = 'GET') => new Request('http://127.0.0.1:4400/api/snapshot', { method, headers: { host, ...extra } });
+    expect(checkRequest(r('127.0.0.1:4400'), 4400)).toBeNull();
+    expect(checkRequest(r('localhost:4400'), 4400)).toBeNull();
+    expect(checkRequest(r('evil.example:4400'), 4400)).not.toBeNull();
+    expect(checkRequest(r('127.0.0.1:4400', { origin: 'http://evil.example:4400' }, 'POST'), 4400)).not.toBeNull();
+    expect(checkRequest(r('127.0.0.1:4400', { origin: 'http://127.0.0.1:4400' }, 'POST'), 4400)).toBeNull();
   });
 });

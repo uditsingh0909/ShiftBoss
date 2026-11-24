@@ -23,7 +23,8 @@ export function readTap(dataDir: string, sessionId: string): StatusInfo | null {
     const j = JSON.parse(readFileSync(p, 'utf8'));
     const rl = j.rate_limits ?? {};
     return {
-      ctxPct: j.context_window?.used_percentage ?? null,
+      // Right after a resume or compact Claude Code reports 0 input tokens and 0 %; that 0 is "unknown", not empty.
+      ctxPct: j.context_window && j.context_window.total_input_tokens === 0 ? null : j.context_window?.used_percentage ?? null,
       fiveHourPct: rl.five_hour?.used_percentage ?? null,
       fiveHourResetsAt: rl.five_hour?.resets_at ?? null,
       weeklyPct: rl.seven_day?.used_percentage ?? null,
@@ -43,4 +44,10 @@ export function parseFooter(text: string): StatusInfo | null {
   if (ctx === null && five === null && week === null) return null;
   const model = text.match(/\|\s*((?:Opus|Sonnet|Haiku|Fable)[^|]*?)\s*\|/)?.[1]?.trim() ?? null;
   return { ctxPct: ctx, fiveHourPct: five, fiveHourResetsAt: null, weeklyPct: week, weeklyResetsAt: null, model, source: 'footer', at: Date.now() };
+}
+
+/** Context use: the larger of what the status line says and what the transcript implies (either can lag). */
+export function contextPercent(reported: number | null | undefined, tokens: number, window: number): number {
+  const fromTranscript = window ? Math.min(100, (tokens / window) * 100) : 0;
+  return Math.max(reported ?? 0, fromTranscript);
 }

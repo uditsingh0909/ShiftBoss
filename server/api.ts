@@ -339,7 +339,7 @@ export function makeApi(engine: Engine) {
         if (r[2] === 'prompt') { const b = await body<any>(req); await engine.herdr.prompt(session(name).paneId, str(b.text, 'text', 8000)); engine.pushFeed('you', '→ ' + name); }
         if (r[2] === 'focus') await engine.herdr.focus(session(name).paneId);
         if (r[2] === 'interrupt') { await engine.herdr.interrupt(session(name).paneId); engine.pushFeed('you', 'interrupted ' + name); }
-        if (r[2] === 'meta') { const b = await body<any>(req); store.setMeta(name, { lane: optStr(b.lane, 300), slots: b.slots === undefined ? undefined : Number(b.slots), handoffPath: b.handoffPath === undefined ? undefined : optStr(b.handoffPath, 500) ?? null }); }
+        if (r[2] === 'meta') { const b = await body<any>(req); store.setMeta(name, { lane: typeof b.lane === 'string' ? b.lane.trim().slice(0, 300) : undefined, slots: b.slots === undefined ? undefined : Number(b.slots), handoffPath: b.handoffPath === undefined ? undefined : optStr(b.handoffPath, 500) ?? null }); }
         return done(json({ ok: true }));
       }
 

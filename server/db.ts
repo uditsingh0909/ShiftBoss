@@ -264,8 +264,10 @@ export class Store {
   }
   setMeta(name: string, m: { lane?: string; slots?: number; handoffPath?: string | null }) {
     const cur = this.meta(name) ?? { lane: '', slots: 2, handoffPath: null };
-    const n = { ...cur, ...m };
-    if (n.slots < 0 || n.slots > 6) throw new Error('Slots must be 0-6');
+    // Only the fields given change: an undefined key must not overwrite the stored value with NULL.
+    const given = Object.fromEntries(Object.entries(m).filter(([, v]) => v !== undefined));
+    const n = { ...cur, ...given, lane: (given.lane as string | undefined) ?? cur.lane ?? '' };
+    if (!Number.isInteger(n.slots) || n.slots < 0 || n.slots > 6) throw new Error('Slots must be a whole number from 0 to 6');
     this.db.query('INSERT INTO session_meta (name, lane, slots, handoff_path) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET lane=excluded.lane, slots=excluded.slots, handoff_path=excluded.handoff_path')
       .run(name, n.lane, n.slots, n.handoffPath);
   }
