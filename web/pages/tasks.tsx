@@ -282,13 +282,15 @@ export function Intake() {
       <section className="grid12">
         <Card span={8} pad={12}>
           {intakePage.shown.map((m) => (
-            <div key={m.id} className="trow row" style={{ gap: 18 }}>
+            <div key={m.id} className="trow row" style={{ gap: '10px 18px', flexWrap: 'wrap' }}>
               <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(m.at)}</span>
-              <span className="mono dim ellipsis" style={{ width: 180, fontSize: 12, flex: 'none' }}>{m.src}</span>
-              <span className="col" style={{ flex: 1, minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
-              <DirectionChip d={m.direction} />
-              {m.url ? <SourceButton url={m.url} what={m.text} /> : <NoSourceLink />}
-              {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber, minWidth: 80, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, minWidth: 80, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
+              <span className="mono dim ellipsis" style={{ flex: '0 1 180px', minWidth: 0, fontSize: 12 }}>{m.src}</span>
+              <span className="col" style={{ flex: '1 1 260px', minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
+              <span className="row" style={{ gap: 10, marginLeft: 'auto', flex: '0 1 auto', minWidth: 0, maxWidth: '100%' }}>
+                <DirectionChip d={m.direction} />
+                {m.url ? <SourceButton url={m.url} what={m.text} /> : <NoSourceLink />}
+                {m.taskId ? <a href={href('task', m.taskId)} className="mono ellipsis" style={{ fontSize: 12, color: C.amber, minWidth: 0, maxWidth: 240, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono ellipsis" style={{ fontSize: 12, minWidth: 0, maxWidth: 240, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
+              </span>
             </div>
           ))}
           <div className="row" style={{ justifyContent: 'center' }}><More page={intakePage} /></div>
