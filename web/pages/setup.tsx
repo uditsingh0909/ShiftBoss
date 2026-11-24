@@ -92,7 +92,7 @@ export function SetupPage() {
           </Step>
 
           <Step n={4} title="Intake session (reads Slack and meeting notes)" state={snap.sessions.some((s) => /intake/i.test(s.name)) ? 'ok' : 'optional'}>
-            <span className="dim" style={{ fontSize: 14 }}>Start Claude Code with <code className="mono">--model sonnet</code> in a herdr tab, name it with <code className="mono">/rename intake</code>, then give it this loop:</span>
+            <span className="dim" style={{ fontSize: 14 }}>In a herdr tab opened in the folder you usually work in (Claude already trusts it, so there is no "trust this folder?" stop; the intake needs nothing from the ShiftBoss folder), start Claude Code with <code className="mono">--model sonnet</code>, name it with <code className="mono">/rename intake</code>, then give it this loop:</span>
             <Cmd text={info.commands.intakeLoop} />
             <IntakeControl compact />
           </Step>

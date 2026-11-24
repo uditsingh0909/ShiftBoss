@@ -10,6 +10,8 @@
 //   --status-line   put the usage tap in front of the status line (~/.claude/settings.json, backed up first)
 //   --startup       start ShiftBoss at login (Windows Startup folder)
 //   --intake        start the intake session in a new herdr tab
+//   --intake-cwd D  the folder to start it in: the folder the setting-up Claude session runs in (already trusted).
+//                   Without it: the lead session's folder, and only then the ShiftBoss folder (which asks "trust this folder?")
 // Other flags: --owner NAME  --workspace W  --lead SESSION  --port N  --json
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -141,9 +143,17 @@ if (running) {
   log('lead session', !!o.settings.leadSession && o.sessions.some((s: any) => s.name === o.settings.leadSession || s.name.startsWith(o.settings.leadSession + '-v')),
     o.settings.leadSession ? `${o.settings.leadSession}${o.sessions.some((s: any) => s.name.startsWith(o.settings.leadSession)) ? '' : ' (not running yet)'}` : 'not set (use --lead)');
   if (!o.intake.running && flag('intake')) {
+    // The intake needs nothing from the ShiftBoss folder (it reads INTAKE.md by its full path and uses the MCP
+    // tools), so start it where Claude already works: no "trust this folder?" stop.
+    const lead = o.sessions.find((s: any) => o.settings.leadSession && (s.name === o.settings.leadSession || s.name.startsWith(o.settings.leadSession + '-v')));
+    const given = opt('intake-cwd');
+    const cwd = given && existsSync(given) ? given : lead?.cwd && existsSync(lead.cwd) ? lead.cwd : REPO;
+    const where = cwd === given ? 'your Claude session\'s folder' : cwd === lead?.cwd ? `the lead session's folder (${lead.name})` : 'the ShiftBoss folder';
     try {
-      await api('POST', '/api/sessions/spawn', { name: 'intake', cwd: REPO, model: 'sonnet', prompt: o.setup.commands.intakeLoop });
-      log('intake session', true, 'starting in a new herdr tab; if herdr asks "trust this folder?", answer it there');
+      await api('POST', '/api/sessions/spawn', { name: 'intake', cwd, model: 'sonnet', prompt: o.setup.commands.intakeLoop });
+      log('intake session', true, `starting in a new herdr tab, in ${where}: ${cwd}` + (cwd === REPO
+        ? '. Claude has not opened this folder before, so the tab asks "trust this folder?": answer it in herdr (pass --intake-cwd <your project folder> to avoid it)'
+        : ''));
     } catch (e) { log('intake session', false, (e as Error).message); }
   } else log('intake session', !!o.intake.running, o.intake.running ? `${o.intake.running} running` : 'not running (optional: add --intake; it needs the Slack connector, and Gmail for meeting notes)');
   o = await api('GET', '/api/onboarding');

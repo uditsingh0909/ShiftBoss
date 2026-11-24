@@ -81,6 +81,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       { group: 'Go to', label: 'Settings', meta: 'lanes, slots, thresholds', to: href('settings') },
       { group: 'Go to', label: 'Connect', meta: 'MCP tools, status line, intake setup', to: href('setup') },
       { group: 'Do', label: 'Get started', meta: 'set up, bring in current work', to: href('welcome') },
+      { group: 'Do', label: 'Bring sessions into herdr', meta: 'from the CLI, TUI or desktop app', to: href('welcome') },
       { group: 'Do', label: 'New task', meta: 'into the inbox', to: href('tasks', 'new') },
       { group: 'Do', label: 'New session', meta: 'Claude Code in a new herdr tab', to: href('sessions') },
     ];

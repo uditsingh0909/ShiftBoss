@@ -10,6 +10,61 @@ const IMPORT_SHAPE = `[
 ]
 stage: 0 Inbox · 1 Queued · 2 In progress · 3 PR open · 4 On dev · 5 Live · 6 Told`;
 
+type Outside = { sessionId: string; cwd: string; cwdExists: boolean; title: string | null; firstAsk: string | null; lastAt: string; sizeKB: number; recent: boolean; suggestedName: string };
+
+/** Sessions from plain Claude Code (CLI, TUI, the desktop app) that are not in herdr: reopen them there with their history. */
+export function BringIn() {
+  const snap = useSnap()!;
+  const [days, setDays] = useState<'1' | '3' | '7' | '14'>('3');
+  const [rows, setRows] = useState<Outside[] | null>(null);
+  const [picked, setPicked] = useState<Record<string, string>>({}); // sessionId -> name
+  useEffect(() => { api<Outside[]>('GET', '/api/outside-sessions?days=' + days).then(setRows).catch(() => setRows([])); }, [days, snap.sessions.length]);
+  const n = Object.keys(picked).length;
+  const toggle = (o: Outside) => setPicked((p) => { const c = { ...p }; if (c[o.sessionId] !== undefined) delete c[o.sessionId]; else c[o.sessionId] = o.suggestedName; return c; });
+  const bring = () => act(async () => {
+    await api('POST', '/api/sessions/bring-in', { sessions: Object.entries(picked).map(([sessionId, name]) => ({ sessionId, name })) });
+    setPicked({});
+  }, `Opening ${n} session${n === 1 ? '' : 's'} in herdr · each appears on Sessions when ready`);
+  return (
+    <>
+      <span className="dim" style={{ fontSize: 14 }}>
+        Using Claude Code without herdr (the CLI, the TUI or the desktop app)? Every session keeps its history, so it can carry on inside herdr with nothing lost.
+        Pick the ones to bring in: each opens in its own herdr tab with <code className="mono">claude --resume</code>. Close the old window first, so two copies don't write the same history.
+      </span>
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <span className="faint" style={{ fontSize: 12 }}>Active in the last</span>
+        <Seg label="Days" value={days} options={['1', '3', '7', '14'] as const} onChange={setDays} />
+        <span className="faint" style={{ fontSize: 12 }}>days</span>
+      </div>
+      <div className="col divide scrollbox" style={{ maxHeight: 420 }}>
+        {rows === null && <span className="faint" style={{ padding: '10px 0' }}>Looking for sessions…</span>}
+        {rows?.map((o) => {
+          const on = picked[o.sessionId] !== undefined;
+          return (
+            <div key={o.sessionId} className="row" style={{ gap: 12, padding: '10px 0', flexWrap: 'wrap', opacity: o.cwdExists ? 1 : 0.5 }}>
+              <input type="checkbox" aria-label={'Bring in ' + o.suggestedName} checked={on} disabled={!o.cwdExists} onChange={() => toggle(o)} style={{ width: 16, height: 16, accentColor: '#F4F4F5' }} />
+              <div className="col" style={{ gap: 3, flex: '1 1 260px', minWidth: 0 }}>
+                <span className="ellipsis" style={{ fontSize: 14 }}>{o.title ?? o.firstAsk ?? 'Untitled session'}</span>
+                <span className="mono faint ellipsis" style={{ fontSize: 11 }}>{o.cwd} · {o.sizeKB > 1024 ? (o.sizeKB / 1024).toFixed(1) + ' MB' : o.sizeKB + ' KB'} · {ago(o.lastAt)} ago</span>
+                {o.recent && <span style={{ fontSize: 12, color: C.amber }}>Active a moment ago: probably still open somewhere. Exit it there before bringing it in.</span>}
+                {!o.cwdExists && <span style={{ fontSize: 12, color: C.faint }}>Its folder no longer exists.</span>}
+              </div>
+              {on
+                ? <input className="field mono" aria-label="Name in herdr" style={{ width: 220, height: 36, fontSize: 12 }} value={picked[o.sessionId]} onChange={(e) => setPicked({ ...picked, [o.sessionId]: e.target.value })} />
+                : <span className="mono faint" style={{ fontSize: 12, width: 220, textAlign: 'right' }}>{o.suggestedName}</span>}
+            </div>
+          );
+        })}
+        {rows?.length === 0 && <Empty text="No Claude sessions outside herdr in that time. Everything is already here." />}
+      </div>
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <button type="button" className="pill sm w" disabled={!n} onClick={() => void bring()}>Open {n || ''} in herdr</button>
+        <span className="faint" style={{ fontSize: 12 }}>A folder Claude has not opened in herdr before may ask "trust this folder?" in the new tab. Answer it there.</span>
+      </div>
+    </>
+  );
+}
+
 /** First run: connect the tools, set the basics, and fill the board from the sessions and messages that already exist. */
 export function Welcome() {
   const snap = useSnap()!;
@@ -83,7 +138,11 @@ export function Welcome() {
           </form>
         </Step>
 
-        <Step n={3} title="Bring in the work your sessions are already doing" state={askedCount ? 'ok' : workers.length ? 'todo' : 'optional'}>
+        <Step n={3} title="Not on herdr yet? Bring your sessions in" state="optional">
+          <BringIn />
+        </Step>
+
+        <Step n={4} title="Bring in the work your sessions are already doing" state={askedCount ? 'ok' : workers.length ? 'todo' : 'optional'}>
           <span className="dim" style={{ fontSize: 14 }}>
             Each picked session gets one prompt asking it to put its current tasks, their stage and any promises on the board. It does not change their work. Sessions with tasks on the board already are left unticked.
           </span>
@@ -110,7 +169,7 @@ export function Welcome() {
           </div>
         </Step>
 
-        <Step n={4} title="Read back Slack and Gmail" state={ob.backfillFrom ? 'ok' : intake ? 'todo' : 'optional'}>
+        <Step n={5} title="Read back Slack and Gmail" state={ob.backfillFrom ? 'ok' : intake ? 'todo' : 'optional'}>
           <span className="dim" style={{ fontSize: 14 }}>
             {intake
               ? <>Send the intake session back in time: it reads mentions, DMs, threads you are in, watched channels and meeting notes from then until now, and files what is still open.{ob.backfillFrom && <> Last sent back to {new Date(ob.backfillFrom).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</>}</>
@@ -123,7 +182,7 @@ export function Welcome() {
           </div>
         </Step>
 
-        <Step n={5} title="Import tasks from elsewhere" state="optional">
+        <Step n={6} title="Import tasks from elsewhere" state="optional">
           <span className="dim" style={{ fontSize: 14 }}>Tasks from Jira or a spreadsheet can come in as a JSON file. Running it again updates the same tasks (matched by <code className="mono">extId</code>) instead of adding copies.</span>
           {info && <Cmd text={`bun ${info.repoPath}/cli/shiftboss.ts import tasks.json`} />}
           <Cmd text={IMPORT_SHAPE} />

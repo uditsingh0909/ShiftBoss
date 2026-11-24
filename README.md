@@ -106,6 +106,19 @@ and starts ShiftBoss, then brings in the work your sessions are already doing. O
 <http://127.0.0.1:4400/#/welcome> to watch each step tick off, or take over there at any point. The same
 steps are in the CLI (`shiftboss setup …`) and the MCP tools (`setup_status`, `onboarding_ask`, …).
 
+### Not using herdr yet?
+
+ShiftBoss watches sessions through herdr. If you run Claude Code on its own (the CLI, the TUI or the desktop app),
+your sessions can move into herdr with nothing lost, because Claude keeps each session's history:
+
+- **Get started → "Not on herdr yet? Bring your sessions in"** lists recent sessions that are not in herdr. Tick
+  them, close their old windows, and press Open: each reopens in its own herdr tab with `claude --resume`.
+- Or the CLI: `shiftboss session outside`, then `shiftboss session bring-in <session-id>`.
+- Or by hand: in a herdr tab, `cd` to the project and run `claude --resume`, then `/rename <name>`.
+
+Plain chats in the Claude desktop app are not Claude Code sessions, so there is nothing to watch; adding the
+shiftboss MCP server to the desktop app still gives you the task board, Needs you and promises.
+
 ### By hand
 
 About 15 minutes from a fresh clone to a full board. Each step says how to check it worked.
@@ -379,7 +392,8 @@ What it reads, from where it last stopped:
 
 To start it:
 
-1. Open a new herdr tab and start Claude Code there: `claude --model sonnet`.
+1. Open a new herdr tab **in the folder you usually work in** and start Claude Code there: `claude --model sonnet`.
+   Claude already trusts that folder, so it starts straight away; the intake needs nothing from the ShiftBoss folder.
 2. Name it and start its loop (the Connect screen shows this command with your path filled in):
 
    ```

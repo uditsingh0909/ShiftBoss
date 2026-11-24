@@ -11,6 +11,7 @@ import { NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
 import { checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
+import { isSessionId, listOutside } from './outside';
 import { PaneBlockedError } from './herdr';
 import { SnapshotHub } from './stream';
 
@@ -39,6 +40,9 @@ export function makeApi(engine: Engine) {
     if (!s) throw new Error(name + ' is not running in herdr');
     return s;
   };
+
+  const outsideNow = (days: number) => listOutside(engine.cfg.transcriptsDir,
+    new Set(engine.sessions.map((x) => x.sessionId).filter((x): x is string => !!x)), new Set(engine.takenNames()), days);
 
   return async function handle(req: Request, url: URL): Promise<Response | null> {
     const p = url.pathname;
@@ -274,6 +278,29 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/replacements\/(\d+)\/cancel$/);
       if (r && write) { engine.cancelReplacement(Number(r[1])); return done(json({ ok: true })); }
+      // ----- sessions that run outside herdr -----
+      if (p === '/api/outside-sessions' && req.method === 'GET') {
+        const days = Math.min(60, Math.max(1, Number(url.searchParams.get('days')) || 14));
+        return json(outsideNow(days));
+      }
+      if (p === '/api/sessions/bring-in' && write) {
+        // Reopen sessions from plain Claude Code (CLI, TUI, desktop app) inside herdr with `claude --resume`.
+        const b = await body<any>(req);
+        const rows: any[] = Array.isArray(b.sessions) ? b.sessions : [];
+        if (!rows.length) throw new Error('Pick at least one session.');
+        if (rows.length > SPAWN_MANY_CAP) throw new Error(`At most ${SPAWN_MANY_CAP} at once.`);
+        const known = new Map(outsideNow(60).map((o) => [o.sessionId, o]));
+        const specs = checkSpawnMany(rows.map((r) => {
+          if (!isSessionId(r?.sessionId)) throw new Error('Each row needs a Claude session id.');
+          const o = known.get(r.sessionId);
+          if (!o) throw new Error(`No history found for ${r.sessionId}, or it is already running in herdr.`);
+          if (!o.cwdExists) throw new Error(`${o.suggestedName}: its folder ${o.cwd} no longer exists.`);
+          return { name: typeof r.name === 'string' && r.name.trim() ? r.name : o.suggestedName, cwd: o.cwd, model: null, prompt: null };
+        }), engine.takenNames()).map((spec, i) => ({ ...spec, resume: rows[i].sessionId }));
+        engine.pushFeed('you', `bringing ${specs.length} session${specs.length === 1 ? '' : 's'} into herdr: ${specs.map((x) => x.name).join(', ')}`);
+        specs.forEach((spec, i) => void engine.spawnOne(spec, `${i + 1}/${specs.length} `));
+        return done(json({ ok: true, starting: specs.map((x) => x.name) }, 202));
+      }
       // ----- first-run onboarding -----
       if (p === '/api/onboarding' && req.method === 'GET') {
         // Everything a setup run (Claude, the CLI or the Get started screen) needs to decide the next step.

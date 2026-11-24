@@ -172,6 +172,18 @@ server.registerTool('onboarding_done', {
   inputSchema: {},
 }, wrap(async () => { await call('POST', '/api/onboarding/done', { done: true }); return 'setup finished'; }));
 
+server.registerTool('outside_sessions', {
+  title: 'Claude sessions outside herdr',
+  description: 'Claude Code sessions with recent history that are not running in herdr (started from the plain CLI, TUI or the desktop app), with their folder, name and last activity. Use with session_bring_in during setup.',
+  inputSchema: { days: z.number().int().min(1).max(60).optional() },
+}, wrap(async ({ days }) => JSON.stringify(await call('GET', '/api/outside-sessions?days=' + (days ?? 14)), null, 2)));
+
+server.registerTool('session_bring_in', {
+  title: 'Bring sessions into herdr',
+  description: 'Reopens Claude sessions from outside herdr inside herdr, each in its own tab with claude --resume, so they keep their full history. Confirm the list with the owner first, and ask them to close each old window so two copies do not write the same history.',
+  inputSchema: { sessions: z.array(z.object({ sessionId: z.string(), name: z.string().max(40).optional() })).min(1).max(20) },
+}, wrap(async ({ sessions }) => { const r = await call('POST', '/api/sessions/bring-in', { sessions }); return `opening in herdr: ${r.starting.join(', ')}`; }));
+
 server.registerTool('session_spawn', {
   title: 'Start a Claude Code session',
   description: 'Opens a new herdr tab in the folder and starts Claude Code, with an optional model and first prompt. A folder Claude has not opened before asks "trust this folder?" in herdr first; only the owner answers that.',

@@ -359,9 +359,9 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   spawnOne(spec: SpawnSpec, tag = ''): Promise<void> {
     return this.queueSpawn(async () => {
       try {
-        const pane = await this.herdr.spawnClaude({ name: spec.name, cwd: spec.cwd, model: spec.model || undefined, workspace: this.store.settings().herdrWorkspace || undefined });
+        const pane = await this.herdr.spawnClaude({ name: spec.name, cwd: spec.cwd, model: spec.model || undefined, resume: spec.resume || undefined, workspace: this.store.settings().herdrWorkspace || undefined });
         if (spec.prompt) await this.herdr.prompt(pane, spec.prompt);
-        this.pushFeed('shiftboss', `${tag}session ${spec.name} is ready${spec.prompt ? ' and has its first prompt' : ''}`);
+        this.pushFeed('shiftboss', `${tag}session ${spec.name} is ${spec.resume ? 'back, running in herdr with its full history' : 'ready'}${spec.prompt ? ' and has its first prompt' : ''}`);
       } catch (e) {
         const msg = (e as Error).message;
         if (isStartupQuestion(msg)) this.pushFeed('shiftboss', `${tag}session ${spec.name} started but is waiting for you in herdr (a startup question, such as trusting the folder)${spec.prompt ? '. Send the first prompt once it is ready' : ''}`);
@@ -418,7 +418,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   }
 
   /** Names that are running or reserved by a replacement under way. */
-  private takenNames(): string[] {
+  takenNames(): string[] {
     return [...this.sessions.map((x) => x.name), ...this.store.listReplacements().filter((x) => x.state !== 'cancelled' && x.state !== 'failed').map((x) => x.newName)];
   }
 

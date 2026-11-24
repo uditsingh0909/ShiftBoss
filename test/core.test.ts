@@ -14,6 +14,7 @@ import { checkRequest, safeUrl } from '../server/guard';
 import { applyLine, splitLines, Transcripts, type TranscriptState } from '../server/transcripts';
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { listOutside, readOutside, suggestName } from '../server/outside';
 import { join } from 'node:path';
 import type { Session } from '../shared/types';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
@@ -561,3 +562,33 @@ describe('fleet: replace', () => {
     expect(s.listReplacements()).toEqual([]);
   });
 });
+
+describe('sessions outside herdr', () => {
+  test('names come from /rename, else the folder and the id; always unique and herdr-safe', () => {
+    const taken = new Set(['billing-fix']);
+    expect(suggestName('Billing Fix!', 'C:/work/api', 'abcd1234-0000-0000-0000-000000000000', taken)).toBe('billing-fix-2');
+    expect(suggestName(null, 'C:/work/My API/', 'abcd1234-0000-0000-0000-000000000000', new Set())).toBe('my-api-abcd');
+    expect(suggestName('__', '/', 'abcd1234-0000-0000-0000-000000000000', new Set())).toMatch(/^[a-z0-9][a-z0-9_-]+$/);
+  });
+  test('a history file gives its folder, last name and first ask; running sessions are left out', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sb-outside-'));
+    try {
+      const id = '11111111-2222-3333-4444-555555555555', other = '66666666-7777-8888-9999-000000000000';
+      mkdirSync(join(root, 'proj'));
+      writeFileSync(join(root, 'proj', id + '.jsonl'), [
+        JSON.stringify({ type: 'user', isMeta: true, message: { content: '<command-name>/x</command-name>' } }),
+        JSON.stringify({ type: 'user', cwd: root, message: { content: 'Fix the export, please' } }),
+        JSON.stringify({ type: 'custom-title', customTitle: 'first' }),
+        JSON.stringify({ type: 'custom-title', customTitle: 'export-fix' }),
+      ].join('\n') + '\n');
+      writeFileSync(join(root, 'proj', other + '.jsonl'), JSON.stringify({ type: 'user', cwd: root, message: { content: 'hi' } }) + '\n');
+      writeFileSync(join(root, 'proj', 'not-a-session.jsonl'), '{}\n');
+      const one = readOutside(join(root, 'proj', id + '.jsonl'))!;
+      expect(one).toMatchObject({ sessionId: id, cwd: root, cwdExists: true, title: 'export-fix', firstAsk: 'Fix the export, please', recent: true });
+      const list = listOutside(root, new Set([other]), new Set(), 14);
+      expect(list.map((o) => o.sessionId)).toEqual([id]);
+      expect(list[0].suggestedName).toBe('export-fix');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+

@@ -28,6 +28,8 @@ Setup and onboarding (the same steps as the Get started screen, which updates li
   shiftboss setup backfill <1|2|3|7|14>           send the intake back that many days
   shiftboss setup done                            mark setup finished
   shiftboss session spawn <name> --cwd DIR [--model sonnet|opus|haiku] [--prompt TEXT]
+  shiftboss session outside [--days N]             Claude sessions not in herdr (CLI, TUI, desktop app)
+  shiftboss session bring-in <session-id> [--name N]   reopen one in herdr with its history (claude --resume)
   shiftboss session spawn-many <file.json>       start up to 20, one after another:
                                                  [{ "name", "cwd", "model"?, "prompt"? }, …] (or { "sessions": [...] })
   shiftboss session replace <name...>            handoff, then a fresh <name>-vN takes over its tasks
@@ -142,6 +144,16 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
       break;
     }
     case 'session': {
+      if (sub === 'outside') {
+        const rows = await call('GET', '/api/outside-sessions?days=' + (Number(flags.days) || 14));
+        if (!rows.length) return console.log('No Claude sessions outside herdr in that time.');
+        for (const o of rows) console.log(`${o.sessionId}  ${o.suggestedName.padEnd(30)} ${o.lastAt.slice(0, 16)}  ${o.recent ? 'ACTIVE NOW  ' : ''}${(o.title ?? o.firstAsk ?? '').slice(0, 60)}\n${' '.repeat(38)}${o.cwd}`);
+        return console.log('\nBring one in: shiftboss session bring-in <session-id> [--name N]   (close its old window first)');
+      }
+      if (sub === 'bring-in') {
+        const r = await call('POST', '/api/sessions/bring-in', { sessions: pos.slice(2).map((id) => ({ sessionId: id, name: pos.length === 3 ? flags.name : undefined })) });
+        return console.log(`opening in herdr: ${r.starting.join(', ')} (a new folder may ask "trust this folder?" there first)`);
+      }
       if (sub === 'spawn') {
         await call('POST', '/api/sessions/spawn', { name: a1, cwd: flags.cwd, model: flags.model || null, prompt: flags.prompt || null });
         return console.log(`starting ${a1}; it appears in herdr within a few seconds (a new folder asks "trust this folder?" there first)`);

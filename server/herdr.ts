@@ -71,14 +71,15 @@ export class Herdr {
     await raiseHerdrWindow();
   }
   /** New tab with a Claude Code session in it. Returns the pane id. Waits until Claude is ready for input. */
-  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string }): Promise<string> {
+  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string; resume?: string }): Promise<string> {
     const tabArgs = ['tab', 'create', '--cwd', opts.cwd, '--label', opts.name, '--no-focus'];
     if (opts.workspace) tabArgs.push('--workspace', opts.workspace);
     const out = JSON.parse(await run(this.bin, tabArgs));
     const pane: string | undefined = out?.result?.root_pane?.pane_id;
     if (!pane) throw new Error('herdr did not return a pane for the new tab');
     const startArgs = ['agent', 'start', opts.name, '--kind', 'claude', '--pane', pane, '--timeout', '60000'];
-    if (opts.model) startArgs.push('--', '--model', opts.model);
+    const claudeArgs = [...(opts.model ? ['--model', opts.model] : []), ...(opts.resume ? ['--resume', opts.resume] : [])];
+    if (claudeArgs.length) startArgs.push('--', ...claudeArgs);
     await run(this.bin, startArgs);
     return pane;
   }

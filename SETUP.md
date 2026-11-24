@@ -55,13 +55,15 @@ Read `checks`. Fix or report anything not ok before going on:
 ## 4. Run setup with their answers
 
 ```bash
-bun scripts/setup.ts --owner "<name>" --lead <session> --start [--workspace <id>] [--mcp] [--status-line] [--startup] [--intake]
+bun scripts/setup.ts --owner "<name>" --lead <session> --start [--workspace <id>] [--mcp] [--status-line] [--startup] [--intake --intake-cwd "<folder you were started in>"]
 ```
 
 Include only the extras they picked. It prints what it did and what is left. Then tell them to open
 `http://127.0.0.1:4400/#/welcome` (or the port it printed).
 
-If you started the intake, its tab may stop at "trust this folder?". Ask them to answer it in herdr.
+Start the intake in **the folder this Claude session was started in** (`--intake-cwd`), not the ShiftBoss folder: Claude already
+trusts that folder, so the new tab starts straight away. The intake needs nothing from the ShiftBoss folder. Only if setup
+says it fell back to the ShiftBoss folder will the tab stop at "trust this folder?"; then tell them to answer it in herdr.
 
 ## 5. Bring in what is already running
 
@@ -72,7 +74,22 @@ sessions started from now on. `shiftboss` below means `bun <shiftboss folder>/cl
 shiftboss setup status                # sessions, their task counts, and who was asked
 ```
 
-1. Show them the sessions that `setup ask --all` would pick: not the intake, not asked yet, no tasks on
+1. **Sessions outside herdr.** If they also use Claude Code without herdr (the plain CLI, the TUI or the desktop
+   app), those sessions can move into herdr with their full history:
+
+   ```bash
+   shiftboss session outside --days 7   # recent Claude sessions not running in herdr
+   ```
+
+   Show them the list and ask which to bring in. Ask them to **close each one's old window first**, so two copies
+   don't write the same history (a row marked ACTIVE NOW is probably still open). Then:
+
+   ```bash
+   shiftboss session bring-in <session-id> <session-id> …   # each reopens in its own herdr tab, claude --resume
+   ```
+
+   The Get started screen has the same list with checkboxes. Skip this if they only use herdr.
+2. Show them the sessions that `setup ask --all` would pick: not the intake, not asked yet, no tasks on
    the board. Once they agree:
 
    ```bash
@@ -81,16 +98,15 @@ shiftboss setup status                # sessions, their task counts, and who was
 
    Each session gets one prompt to register its tasks, stages and promises, and is told not to change
    its work. Busy sessions answer after their current step; blocked ones answer once unblocked.
-2. If the intake is running, ask how far back to read (1, 2, 3, 7 or 14 days; 3 is a good default).
-   A just-started intake usually sits at "trust this folder?" first: ask them to accept it in herdr, then run
-   this. Run before that, the time is still saved, and the intake reads from it once it starts; the command
-   says so:
+3. If the intake is running, ask how far back to read (1, 2, 3, 7 or 14 days; 3 is a good default).
+   If the intake tab is waiting on a prompt in herdr, the time is still saved and the intake reads from it once
+   it runs; the command says so:
 
    ```bash
    shiftboss setup backfill 3
    ```
 
-3. Optional: tasks from Jira or a spreadsheet can be imported as JSON (`shiftboss import tasks.json`,
+4. Optional: tasks from Jira or a spreadsheet can be imported as JSON (`shiftboss import tasks.json`,
    format in the README).
 
 ## 6. Finish
