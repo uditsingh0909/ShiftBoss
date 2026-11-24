@@ -365,7 +365,7 @@ export function makeApi(engine: Engine) {
         // saves waiting for the loop; if the tab is at a startup or permission prompt, it waits for the owner.
         let prompted = false, waiting: string | null = null;
         if (s) {
-          try { await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} is setting up ShiftBoss and sent you back ${days} day(s). Run one pass now: intake_begin returns readFrom ${st.since}. Read the whole gap oldest first (Slack and Gmail, as docs/INTAKE.md says), paging until you reach now, file what is open, then intake_checkpoint.`); prompted = true; }
+          try { await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} is setting up ShiftBoss and sent you back ${days} day(s). Run one pass now: intake_begin returns readFrom ${st.since}. Read the whole gap oldest first (Slack and Gmail, as docs/INTAKE.md says), paging until you reach now, file what is open (every item with its permalink and direction), then intake_checkpoint.`); prompted = true; }
           catch (e) { waiting = /blocked|interactive|not ready/i.test((e as Error).message) ? 'waiting on a prompt in herdr' : (e as Error).message.slice(0, 200); }
         }
         engine.pushFeed('you', `sent the intake back ${days} day(s)`);
