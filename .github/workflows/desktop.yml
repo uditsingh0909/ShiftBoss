@@ -1,0 +1,83 @@
+name: Desktop app
+
+# Builds ShiftBoss installers for Windows, macOS (Apple silicon and Intel) and Linux.
+# Run it by hand, or push a tag like v0.1.0 to attach the installers to a draft GitHub release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system libraries for Tauri
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.23
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - name: Install
+        run: |
+          bun install
+          cd desktop && bun install
+
+      - name: Test the server
+        run: bun test
+
+      - name: Build the server sidecar
+        working-directory: desktop
+        env:
+          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.target }}
+        run: bun scripts/build-server.ts
+
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          tauriScript: bunx tauri
+          args: --target ${{ matrix.target }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ShiftBoss ${{ github.ref_name }}
+          releaseDraft: true
+
+      - name: Keep the installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiftboss-${{ matrix.target }}
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+          if-no-files-found: warn
