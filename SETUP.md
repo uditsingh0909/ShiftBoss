@@ -81,7 +81,10 @@ shiftboss setup status                # sessions, their task counts, and who was
 
    Each session gets one prompt to register its tasks, stages and promises, and is told not to change
    its work. Busy sessions answer after their current step; blocked ones answer once unblocked.
-2. If the intake is running, ask how far back to read (1, 2, 3, 7 or 14 days; 3 is a good default):
+2. If the intake is running, ask how far back to read (1, 2, 3, 7 or 14 days; 3 is a good default).
+   A just-started intake usually sits at "trust this folder?" first: ask them to accept it in herdr, then run
+   this. Run before that, the time is still saved, and the intake reads from it once it starts; the command
+   says so:
 
    ```bash
    shiftboss setup backfill 3

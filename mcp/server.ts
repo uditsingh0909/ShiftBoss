@@ -164,7 +164,7 @@ server.registerTool('onboarding_backfill', {
   title: 'Send the intake back in time',
   description: 'The intake session reads Slack and Gmail from this many days ago up to now and files what is still open.',
   inputSchema: { days: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(7), z.literal(14)]) },
-}, wrap(async ({ days }) => { const r = await call('POST', '/api/onboarding/backfill', { days }); return `intake reads from ${r.since}${r.prompted ? '' : ' (no intake session running yet; it starts from there when one does)'}`; }));
+}, wrap(async ({ days }) => { const r = await call('POST', '/api/onboarding/backfill', { days }); return `intake reads from ${r.since}` + (r.prompted ? ' (asked it to start now)' : r.waiting ? ` (${r.intake} is ${r.waiting}: answer it there, and it reads from this time on its next run)` : ' (no intake session running yet; it starts from this time when one does)'); }));
 
 server.registerTool('onboarding_done', {
   title: 'Finish setup',

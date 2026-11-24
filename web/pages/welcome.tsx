@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveLead } from '../../shared/types';
-import { act, ago, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, useSnap } from '../lib';
+import { act, ago, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
 import { Cmd, Step, type SetupInfo } from './setup';
 
 const IMPORT_SHAPE = `[
@@ -40,7 +40,13 @@ export function Welcome() {
   // ----- step 4: intake backfill
   const intake = snap.sessions.find((s) => /intake/i.test(s.name));
   const [days, setDays] = useState<'1' | '2' | '3' | '7' | '14'>('3');
-  const backfill = () => act(() => api('POST', '/api/onboarding/backfill', { days: Number(days) }), `Intake sent back ${days} day${days === '1' ? '' : 's'} · it reads the gap now`);
+  const backfill = async () => {
+    const n = `${days} day${days === '1' ? '' : 's'}`;
+    try {
+      const r = await api<{ prompted: boolean; waiting: string | null; intake: string | null }>('POST', '/api/onboarding/backfill', { days: Number(days) });
+      toast(r.prompted ? `Intake sent back ${n} · it reads the gap now` : r.waiting ? `Saved. ${r.intake} is ${r.waiting}: answer it there, then it reads back ${n}` : `Saved. The intake reads back ${n} once it runs`);
+    } catch (e) { toast((e as Error).message); }
+  };
 
   const finish = () => act(async () => { await api('POST', '/api/onboarding/done', { done: true }); location.hash = '#/'; }, 'Setup done');
   const connected = !!info && info.mcp.registered && info.mcp.pointsHere;

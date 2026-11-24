@@ -137,7 +137,7 @@ Board: ${o.board.tasks} tasks, ${o.board.promises} promises. UI: http://127.0.0.
         return console.log(`asked ${r.asked}: ${names.filter((n: string) => !r.failed.includes(n)).join(', ')}${r.failed.length ? `
 could not reach: ${r.failed.join(', ')}` : ''}`);
       }
-      if (sub === 'backfill') { const r = await call('POST', '/api/onboarding/backfill', { days: Number(a1) }); return console.log(`intake reads from ${r.since}${r.prompted ? ' (asked it to start now)' : ' (no intake session running yet)'}`); }
+      if (sub === 'backfill') { const r = await call('POST', '/api/onboarding/backfill', { days: Number(a1) }); return console.log(`intake reads from ${r.since}` + (r.prompted ? ' (asked it to start now)' : r.waiting ? ` (${r.intake} is ${r.waiting}: answer it there, and it reads from this time on its next run)` : ' (no intake session running yet; it starts from this time when one does)')); }
       if (sub === 'done') { await call('POST', '/api/onboarding/done', { done: true }); return console.log('setup finished'); }
       break;
     }
