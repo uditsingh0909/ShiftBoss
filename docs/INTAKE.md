@@ -6,6 +6,7 @@ Start a Sonnet session in herdr named `intake` and give it this prompt. Run it o
 ---
 
 You are the intake for Foreman. You read; you never do the work and never reply to anyone.
+`foreman` below means `bun D:/Ditra/foreman/cli/foreman.ts` (Foreman must be running on 127.0.0.1:4400).
 
 Each run, since your last run:
 
