@@ -91,15 +91,96 @@ account.
 Tested on Windows 11 (Git Bash) with Bun 1.4. It should run on macOS and Linux; the login-startup
 launcher below is Windows-only.
 
-## Install
+## Setup guide
+
+About 15 minutes from a fresh clone to a full board. Each step says how to check it worked.
+
+### Before you start
+
+- [ ] Bun, herdr and Claude Code are installed (see [Requirements](#requirements)).
+- [ ] herdr is running and `herdr agent list` prints your sessions.
+- [ ] Optional: `gh auth status` works (automatic PR open / On dev / Live moves).
+- [ ] Optional, for the intake session: Claude Code has the Slack connector, and Gmail if you want
+      meeting notes read.
+
+### 1. Install
 
 ```bash
 git clone https://github.com/uditsingh0909/ShiftBoss.git shiftboss
 cd shiftboss
 bun install
-cp shiftboss.config.example.json shiftboss.config.json   # then edit it, see below
-bun test                                              # every test should pass
+bun test                     # every test should pass
 ```
+
+### 2. Configure
+
+```bash
+cp shiftboss.config.example.json shiftboss.config.json
+```
+
+The one field worth setting now is `ownerName` (your name; it appears in prompts ShiftBoss sends). Add
+`herdrWorkspace` if you only want one herdr workspace shown. Everything else has a working default; the
+full list is under [Configuration](#configuration).
+
+```json
+{ "ownerName": "Sam", "herdrWorkspace": "w1" }
+```
+
+### 3. Start it
+
+```bash
+bash scripts/run.sh          # keeps it running; logs to data/server.log
+```
+
+Open <http://127.0.0.1:4400>. **Check:** your sessions appear within a few seconds. To start it with
+Windows, see [Start at login](#start-at-login-windows).
+
+### 4. Follow Get started
+
+With an empty board, ShiftBoss opens on **Get started** (also under *Get started* at the top right, or
+`Ctrl+K`). It checks each step as you go:
+
+| Step | What you do | What it gives you |
+|---|---|---|
+| 1. Connect the tools | Run the `claude mcp add …` command it shows (details in [step 5](#5-give-sessions-the-tools)) | Sessions can report their tasks |
+| 2. Lead session | Name the session that coordinates the others | It always gets the big card on Sessions; `name-v2` takes over automatically |
+| 3. Bring in current work | Tick sessions and press **Ask** | Each gets one prompt to put its tasks, stages and promises on the board. Their work is not changed |
+| 4. Read back Slack and Gmail | Pick 1–14 days, press **Read back** | The intake reads everything since then and files what is still open (needs [step 7](#7-start-the-intake-session)) |
+| 5. Import | Optional: `shiftboss import tasks.json` | Tasks from Jira or a spreadsheet ([format](#importing-tasks-from-another-tracker)) |
+
+Press **Finish setup** when done. Every step can be run again later.
+
+### 5. Give sessions the tools
+
+```bash
+claude mcp add --scope user shiftboss -- bun /full/path/to/shiftboss/mcp/server.ts
+claude mcp get shiftboss     # should say: Connected
+```
+
+Restart the sessions that were already running so they load the tools. Then paste the
+[CLAUDE.md snippet](#what-to-tell-your-sessions) into the `CLAUDE.md` your sessions read, so they report
+without being asked. **Check:** the Connect screen (`#/setup`) marks a session "reports with tools" once
+it has used one.
+
+### 6. Exact usage numbers (optional)
+
+Put the [status line tap](#exact-usage-numbers) in front of your status line command. **Check:** on
+Connect, sessions started afterwards show "exact usage".
+
+### 7. Start the intake session
+
+The intake reads Slack and Gmail for you and files asks as tasks. See
+[The intake session](#the-intake-session). **Check:** the Intake card on Sessions says "Reading · checked
+in … ago", and **Check now** runs a pass on demand.
+
+### 8. Check it all works
+
+- [ ] Sessions shows every session, the lead in the big card, and either *All clear* or a *Needs
+      attention* strip.
+- [ ] Tasks has the work your sessions reported (step 4.3) and the intake filed (step 4.4).
+- [ ] Pressing **Open in herdr** on an item focuses that pane and (on Windows) brings the herdr window to
+      the front.
+- [ ] `bun /full/path/to/shiftboss/cli/shiftboss.ts status` prints the same counts.
 
 ## Configuration
 
@@ -264,20 +345,40 @@ after `.cjs`.
 
 ## The intake session
 
-An optional Sonnet session that reads Slack, DMs and meeting notes every few minutes, logs each message
-it reads, files new asks as tasks, and records promises. It only reads and files; it never posts, reacts
-or replies.
+An optional Sonnet session that reads Slack and Gmail every couple of minutes, logs each message it reads,
+files new asks as tasks, and records promises. It only reads and files; it never posts, reacts or replies.
+
+What it reads, from where it last stopped:
+
+- **Slack:** messages that mention you, DMs, and new top-level messages in the watched channels
+  (Settings → Intake). **Threads only where you are involved:** threads you are @-mentioned in, threads
+  you started or replied in during the last 7 days, and the thread behind each open task. New replies in
+  old threads count.
+- **Gmail:** meeting notes (for example Gemini's "Notes by Gemini"; action items for you become tasks,
+  things you said you would do become promises) and emails that ask you for something. Newsletters,
+  notifications and receipts are skipped.
+
+To start it:
 
 1. Open a new herdr tab and start Claude Code there: `claude --model sonnet`.
-2. Name it and start its loop:
+2. Name it and start its loop (the Connect screen shows this command with your path filled in):
 
    ```
    /rename intake
-   /loop 2m You are ShiftBoss's intake session. Each run, read /full/path/to/shiftboss/docs/INTAKE.md and follow it exactly: read Slack and meeting notes since your last run, log every message with the shiftboss tools, file new asks as tasks, record promises. Never post, react, DM or do the work yourself.
+   /loop 2m You are ShiftBoss's intake session. Each run, read /full/path/to/shiftboss/docs/INTAKE.md and follow it exactly: start with intake_begin, read Slack (mentions, DMs, watched channels, and new replies in threads the owner is in), then Gmail (meeting notes and emails with asks) from readFrom, log every message with the shiftboss tools, file new asks as tasks, record promises, end with intake_checkpoint. Never post, react, DM or do the work yourself.
    ```
 
-It needs the Slack connector, plus Gmail if you want meeting notes read. The rules it follows are in
-[`docs/INTAKE.md`](docs/INTAKE.md); edit them to fit your team.
+Controlling it, from the Intake card on Sessions or the Intake screen:
+
+| Button | What happens |
+|---|---|
+| **Check now** | Asks the intake for one pass right away instead of waiting for its loop |
+| **Pause** / **Pause until…** | Each run checks in and does nothing until you resume (or until the time you picked) |
+| **Resume and catch up** | Reads everything that came in while paused, oldest first |
+| **Resume from now** | Skips what came in while paused |
+
+It needs the Slack connector, plus Gmail for meeting notes. The rules it follows are in
+[`docs/INTAKE.md`](docs/INTAKE.md); it re-reads them every run, so edits apply on the next pass.
 
 ## How tasks move
 
@@ -314,7 +415,8 @@ The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens s
 
 | Screen | Use it to |
 |---|---|
-| **Sessions** | See every session at a glance: who needs you, context pressure, usage limits, live output, the event stream. |
+| **Get started** | First-run setup: connect the tools, pick the lead, ask running sessions to register their work, send the intake back in time, import. |
+| **Sessions** | Every session at a glance: the lead in the big card, a *Needs attention* strip (decisions, unhealthy sessions, overlaps, due promises, a silent intake), context pressure, usage limits, the intake card, live output. **New task** and **New session** start work from here. |
 | **Session page** | Read one session's output, send it a prompt, interrupt it, see its raw terminal, or ask it to write its handoff before replacing it. |
 | **Roster** | Every session in a sortable table: lane, current task, context, tokens, handoff age. |
 | **Tasks** | Board (drag a card, or press →) or list, with filters for Inbox, P1, unassigned and shipping. |
@@ -326,7 +428,8 @@ The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens s
 | **Sent as you** | Every message logged as sent in your name, who wrote it and how it was approved, and which ones needed a correction. |
 | **Health** | A 60-minute activity strip per session, and cards for sessions that are looping, stuck, heavy or waiting, with a one-click nudge. |
 | **Overlaps** | Same file, same migration number or same task across two sessions, with who should go first. |
-| **Settings** | Thresholds, switches, budgets, and each session's lane and slots. |
+| **Connect** | Checks MCP, the status line tap and the intake, with the exact commands for this install. |
+| **Settings** | General, warnings, automation, intake, usage budgets, and each session's lane and slots. |
 
 The pages work at phone width too.
 
@@ -374,6 +477,13 @@ Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET 
 | `POST /api/intake`, `POST /api/audit`, `POST /api/decisions` | | Log intake, audit, decisions |
 | `POST /api/import` | `{tasks: [...]}` | Import tasks, matched on `extId` |
 | `POST /api/sessions/:name/prompt\|focus\|interrupt\|meta` | | Act on a session in herdr |
+| `POST /api/sessions/spawn` | `{name, cwd, model?, prompt?}` | Start Claude Code in a new herdr tab |
+| `POST /api/intake/run` | | Ask the intake for one pass now |
+| `POST /api/intake/pause\|resume` | `{until?}` / `{catchUp}` | Pause or resume the intake |
+| `POST /api/onboarding/ask` | `{sessions: [...]}` | Ask running sessions to register their tasks |
+| `POST /api/onboarding/backfill` | `{days}` | Send the intake back 1, 2, 3, 7 or 14 days |
+| `POST /api/onboarding/done` | `{done}` | Mark setup finished |
+| `GET /api/setup` | | What is connected, and the commands for this install |
 | `PUT /api/settings` | | Save settings |
 
 ## Importing tasks from another tracker
@@ -448,6 +558,19 @@ change report it.
 **A task doesn't move after its PR opens.** Check that the PR names the task, that the PR appears in a
 session's transcript (opened by a session ShiftBoss watches), and that `gh auth status` works. ShiftBoss
 checks every 2 minutes.
+
+**A new session from New session sits in Needs you.** Claude asks "trust this folder?" the first time it
+opens a folder. ShiftBoss never answers that for you: press Open in herdr and answer it there.
+
+**Open in herdr doesn't bring the window forward.** Windows lets only the app you are using hand focus
+away; ShiftBoss works around it, but a full-screen app or a locked screen can still win. The pane is
+focused inside herdr either way.
+
+**Check now says the intake is paused.** Resume it first (Resume and catch up keeps what came in
+meanwhile).
+
+**Get started keeps opening.** It opens while the board is empty and setup is unfinished. Press Finish
+setup, or add a task.
 
 **"database is locked" in the log.** Something else had `data/shiftboss.db` open. ShiftBoss waits up to 5
 seconds and retries on the next pass. Avoid opening the database with other tools while it runs.
