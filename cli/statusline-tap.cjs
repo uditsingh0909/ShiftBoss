@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Opt-in status line tap for Foreman.
+// Opt-in status line tap for Shiftboss.
 // Claude Code pipes its status line JSON (context %, 5-hour and weekly usage) to this
-// script. It saves a copy to foreman/data/status/<session_id>.json, then hands the same
+// script. It saves a copy to shiftboss/data/status/<session_id>.json, then hands the same
 // input to your existing status line command so nothing on screen changes.
 //
 // settings.json:
 //   "statusLine": { "type": "command",
-//     "command": "node <path-to-foreman>/cli/statusline-tap.cjs node C:/Users/you/.claude/statusline-command.js" }
+//     "command": "node <path-to-shiftboss>/cli/statusline-tap.cjs node C:/Users/you/.claude/statusline-command.js" }
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');

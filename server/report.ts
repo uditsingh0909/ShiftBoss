@@ -1,4 +1,4 @@
-// Builds the daily report from the store. Foreman never posts it; the user copies it.
+// Builds the daily report from the store. Shiftboss never posts it; the user copies it.
 import type { Need, Task } from '../shared/types';
 
 export type Audience = 'plain' | 'team' | 'me';

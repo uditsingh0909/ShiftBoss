@@ -1,4 +1,4 @@
-// HTTP API. Every write needs the X-Foreman header, so a web page on another origin
+// HTTP API. Every write needs the X-Shiftboss header, so a web page on another origin
 // cannot trigger one (the custom header forces a CORS preflight that we never allow).
 import type { Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent } from '../shared/types';
 import type { Engine } from './engine';
@@ -32,7 +32,8 @@ export function makeApi(engine: Engine) {
     const p = url.pathname;
     if (!p.startsWith('/api/')) return null;
     const write = req.method !== 'GET';
-    if (write && req.headers.get('x-foreman') !== '1') return fail('Missing X-Foreman header', 403);
+    // X-Foreman is the header from before the rename; sessions started earlier still send it.
+    if (write && req.headers.get('x-shiftboss') !== '1' && req.headers.get('x-foreman') !== '1') return fail('Missing X-Shiftboss header', 403);
     const m = (re: RegExp) => p.match(re);
     try {
       if (p === '/api/snapshot' && req.method === 'GET') return json(engine.snapshot());
@@ -57,7 +58,7 @@ export function makeApi(engine: Engine) {
         const b = await body<any>(req);
         const t = store.addTask({ title: str(b.title, 'title', 300), ask: optStr(b.ask), requester: optStr(b.requester, 100), source: optStr(b.source, 200),
           sourceUrl: optStr(b.sourceUrl, 500) ?? null, session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2' });
-        engine.pushFeed('foreman', `filed ${t.id}: ${t.title}`);
+        engine.pushFeed('shiftboss', `filed ${t.id}: ${t.title}`);
         return done(json(t, 201));
       }
       let r = m(/^\/api\/tasks\/(T-\d+)$/);
@@ -89,7 +90,7 @@ export function makeApi(engine: Engine) {
       r = m(/^\/api\/tasks\/(T-\d+)\/events$/);
       if (r && write) {
         const b = await body<any>(req);
-        const src = (['Slack', 'GitHub', 'Session', 'Foreman'].includes(b.src) ? b.src : 'Session') as TaskEvent['src'];
+        const src = (['Slack', 'GitHub', 'Session', 'Shiftboss'].includes(b.src) ? b.src : 'Session') as TaskEvent['src'];
         store.addEvent(r[1], src, str(b.who, 'who', 100), str(b.text, 'text', 1000));
         return done(json({ ok: true }, 201));
       }
@@ -108,7 +109,7 @@ export function makeApi(engine: Engine) {
         const t = store.getTask(msg.task_id);
         const s = t?.session ? engine.sessions.find((x) => x.name === t.session) : null;
         if (!s) return fail('The session that owns this draft is not running, so nobody can post it', 409);
-        await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} approved your draft for ${t!.id}. Post it exactly as written, then run: foreman slack sent ${id}\n\n${msg.text}`);
+        await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} approved your draft for ${t!.id}. Post it exactly as written, then run: shiftboss slack sent ${id}\n\n${msg.text}`);
         store.addEvent(t!.id, 'Slack', 'you', 'Approved the draft; ' + s.name + ' will post it');
         return done(json({ ok: true }));
       }
@@ -162,7 +163,7 @@ export function makeApi(engine: Engine) {
         if (!answers.length) throw new Error('answers must list 1-4 choices');
         const n = store.addNeed({ kind: b.kind ?? 'Decision', source: optStr(b.source, 200), title: str(b.title, 'title', 300), body: optStr(b.body, 2000),
           code: optStr(b.code, 2000), answers, session: optStr(b.session, 100) ?? null, taskId: optStr(b.taskId, 20) ?? null });
-        engine.pushFeed(n.session ?? 'foreman', 'asked you: ' + n.title);
+        engine.pushFeed(n.session ?? 'shiftboss', 'asked you: ' + n.title);
         return done(json(n, 201));
       }
       r = m(/^\/api\/needs\/(\d+)\/answer$/);
@@ -174,13 +175,13 @@ export function makeApi(engine: Engine) {
         const answer = str(b.answer, 'answer', 60);
         if (!n.answers.includes(answer)) throw new Error('Pick one of: ' + n.answers.join(', '));
         if (n.auto) {
-          // Permission prompts are answered by the user in herdr. Foreman only brings the pane forward.
+          // Permission prompts are answered by the user in herdr. Shiftboss only brings the pane forward.
           await engine.herdr.focus(session(n.session!).paneId);
           return json({ ok: true, focused: true });
         }
         // Held for UNDO_MS so it can be taken back; the engine sends it to the session after that.
         const saved: Need = store.answerNeed(n.id, answer);
-        if (n.taskId) store.addEvent(n.taskId, 'Foreman', 'you', `Answered "${n.title}": ${answer}`);
+        if (n.taskId) store.addEvent(n.taskId, 'Shiftboss', 'you', `Answered "${n.title}": ${answer}`);
         engine.pushFeed('you', `answered ${n.title}: ${answer}`);
         return done(json({ ...saved, undoMs: UNDO_MS }));
       }
@@ -191,7 +192,7 @@ export function makeApi(engine: Engine) {
           const s = was.session ? engine.sessions.find((x) => x.name === was.session) : null;
           if (s) await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} took back the answer "${was.answer}" to "${was.title}". Do not act on it; wait for a new answer.`);
         }
-        if (was.taskId) store.addEvent(was.taskId, 'Foreman', 'you', `Took back the answer "${was.answer}"`);
+        if (was.taskId) store.addEvent(was.taskId, 'Shiftboss', 'you', `Took back the answer "${was.answer}"`);
         engine.pushFeed('you', `took back: ${was.title}`);
         return done(json({ ok: true, wasSent: !!was.sentAt }));
       }

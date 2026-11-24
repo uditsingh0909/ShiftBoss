@@ -27,4 +27,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Foreman on http://127.0.0.1:${server.port}`);
+console.log(`Shiftboss on http://127.0.0.1:${server.port}`);

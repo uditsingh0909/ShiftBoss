@@ -50,7 +50,7 @@ export interface Task {
   updatedAt: string;
 }
 
-export interface TaskEvent { id: number; taskId: string; at: string; src: 'Slack' | 'GitHub' | 'Session' | 'Foreman'; who: string; text: string }
+export interface TaskEvent { id: number; taskId: string; at: string; src: 'Slack' | 'GitHub' | 'Session' | 'Shiftboss'; who: string; text: string }
 export interface SlackMsg { id: number; taskId: string; at: string; who: string; text: string; kind: 'ask' | 'promise' | 'sent' | 'draft' }
 
 export interface PromiseItem {

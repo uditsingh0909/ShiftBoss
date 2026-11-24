@@ -1,11 +1,11 @@
 {
-  "name": "foreman",
+  "name": "shiftboss",
   "version": "0.1.0",
   "private": true,
   "description": "A local control room for Claude Code sessions: live session state, tasks, decisions and promises.",
   "type": "module",
   "bin": {
-    "foreman": "./cli/foreman.ts"
+    "shiftboss": "./cli/shiftboss.ts"
   },
   "scripts": {
     "dev": "bun --hot server/index.ts",

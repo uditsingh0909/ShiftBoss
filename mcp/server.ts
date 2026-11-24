@@ -1,19 +1,19 @@
 #!/usr/bin/env bun
-// Foreman as MCP tools. A thin layer over the same local HTTP API the CLI uses, so a
+// Shiftboss as MCP tools. A thin layer over the same local HTTP API the CLI uses, so a
 // session can report progress without remembering commands.
-// Register once (user scope):  claude mcp add --scope user foreman -- bun <path-to-foreman>/mcp/server.ts
+// Register once (user scope):  claude mcp add --scope user shiftboss -- bun <path-to-shiftboss>/mcp/server.ts
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const BASE = `http://127.0.0.1:${process.env.FOREMAN_PORT ?? '4400'}`;
+const BASE = `http://127.0.0.1:${process.env.SHIFTBOSS_PORT ?? '4400'}`;
 
 async function call(method: string, path: string, body?: unknown): Promise<any> {
   let res: Response;
   try {
-    res = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-foreman': '1' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1' }, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch {
-    throw new Error(`Foreman is not running on ${BASE}. Nothing was recorded.`);
+    throw new Error(`Shiftboss is not running on ${BASE}. Nothing was recorded.`);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -22,16 +22,16 @@ async function call(method: string, path: string, body?: unknown): Promise<any> 
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 const wrap = <A,>(fn: (a: A) => Promise<string>) => async (a: A) => {
-  try { return ok(await fn(a)); } catch (e) { return { ...ok('Foreman: ' + (e as Error).message), isError: true }; }
+  try { return ok(await fn(a)); } catch (e) { return { ...ok('Shiftboss: ' + (e as Error).message), isError: true }; }
 };
-const TASK = z.string().regex(/^T-\d+$/).describe('Foreman task id, e.g. T-12 (it is in your brief)');
+const TASK = z.string().regex(/^T-\d+$/).describe('Shiftboss task id, e.g. T-12 (it is in your brief)');
 const ME = z.string().max(100).optional().describe('Your session name, e.g. general-tasks');
 
-const server = new McpServer({ name: 'foreman', version: '0.1.0' });
+const server = new McpServer({ name: 'shiftboss', version: '0.1.0' });
 
 server.registerTool('task_stage', {
   title: 'Move a task',
-  description: 'Report that your Foreman task moved. Stages: progress (started), pr (PR open), dev (live on dev and checked), live (live on prod), told (requester told). Run it at each step.',
+  description: 'Report that your Shiftboss task moved. Stages: progress (started), pr (PR open), dev (live on dev and checked), live (live on prod), told (requester told). Run it at each step.',
   inputSchema: { task: TASK, stage: z.enum(['queued', 'progress', 'pr', 'dev', 'live', 'told']), who: ME },
 }, wrap(async ({ task, stage, who }) => { await call('PATCH', `/api/tasks/${task}`, { stage, who: who ?? 'session' }); return `${task} → ${stage}`; }));
 
@@ -43,7 +43,7 @@ server.registerTool('task_note', {
 
 server.registerTool('task_add', {
   title: 'File a new task',
-  description: 'File a new task in Foreman. Use the asker\'s own words for `ask`. Leave `session` empty to put it in the inbox for triage.',
+  description: 'File a new task in Shiftboss. Use the asker\'s own words for `ask`. Leave `session` empty to put it in the inbox for triage.',
   inputSchema: {
     title: z.string().min(1).max(300), ask: z.string().max(4000).optional(), from: z.string().max(100).optional(),
     source: z.string().max(200).optional().describe('Channel or meeting'), url: z.string().url().optional().describe('Slack permalink or other link'),
@@ -59,13 +59,13 @@ server.registerTool('task_assign', {
 
 server.registerTool('task_get', {
   title: 'Read a task',
-  description: 'Read a Foreman task: the ask, stage, owner, log and Slack thread.',
+  description: 'Read a Shiftboss task: the ask, stage, owner, log and Slack thread.',
   inputSchema: { task: TASK },
 }, wrap(async ({ task }) => JSON.stringify(await call('GET', `/api/tasks/${task}`), null, 1).slice(0, 8000)));
 
 server.registerTool('slack_draft', {
   title: 'Draft a Slack reply for approval',
-  description: 'Save a reply you want to post in the task\'s Slack thread. The owner approves it in Foreman; you are then asked to post it. Use kind "sent" only to record something already posted.',
+  description: 'Save a reply you want to post in the task\'s Slack thread. The owner approves it in Shiftboss; you are then asked to post it. Use kind "sent" only to record something already posted.',
   inputSchema: { task: TASK, text: z.string().min(1).max(4000), kind: z.enum(['draft', 'sent', 'ask', 'promise']).optional(), who: ME },
 }, wrap(async ({ task, text, kind, who }) => { await call('POST', `/api/tasks/${task}/slack`, { who: who ?? 'session', text, kind: kind ?? 'draft' }); return (kind ?? 'draft') + ' saved on ' + task; }));
 
@@ -83,7 +83,7 @@ server.registerTool('promise_add', {
 
 server.registerTool('ask_owner', {
   title: 'Ask the owner for a decision',
-  description: 'Put a real decision in front of the person who runs Foreman (production writes, money, live customers, access). They answer with one of `answers`, and the answer comes back to you as your next prompt. Do not use for things you can decide yourself.',
+  description: 'Put a real decision in front of the person who runs Shiftboss (production writes, money, live customers, access). They answer with one of `answers`, and the answer comes back to you as your next prompt. Do not use for things you can decide yourself.',
   inputSchema: {
     question: z.string().min(1).max(300), answers: z.array(z.string().min(1).max(60)).min(1).max(4),
     kind: z.enum(['Decision', 'Production write', 'Live customers', 'Money', 'Access']).optional(),
@@ -105,7 +105,7 @@ server.registerTool('decide', {
 
 server.registerTool('my_tasks', {
   title: 'List my tasks',
-  description: 'List open Foreman tasks for a session (or all open tasks if no session is given).',
+  description: 'List open Shiftboss tasks for a session (or all open tasks if no session is given).',
   inputSchema: { session: z.string().max(100).optional() },
 }, wrap(async ({ session }) => {
   const s = await call('GET', '/api/snapshot');

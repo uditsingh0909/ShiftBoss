@@ -1,11 +1,11 @@
-// Browser check against a running Foreman: opens every screen, fails on any page error or
+// Browser check against a running Shiftboss: opens every screen, fails on any page error or
 // console error, and saves a screenshot of each. Run with: bun test/e2e.ts [outDir]
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 
-const BASE = process.env.FOREMAN_URL ?? 'http://127.0.0.1:4400';
+const BASE = process.env.SHIFTBOSS_URL ?? 'http://127.0.0.1:4400';
 const OUT = process.argv[2] ?? join(import.meta.dir, '..', 'data', 'e2e');
 mkdirSync(OUT, { recursive: true });
 

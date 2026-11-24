@@ -103,7 +103,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
               <span className="mono faint" style={{ fontSize: 12, textAlign: 'right' }}>{ago(t.updatedAt)}</span>
             </a>
           ))}
-          {!list.length && <Empty text="No tasks yet. Add one, or let the intake session file them with: foreman task add" />}
+          {!list.length && <Empty text="No tasks yet. Add one, or let the intake session file them with: shiftboss task add" />}
         </div></section>
       )}
     </div>
@@ -114,7 +114,7 @@ export function TaskPage({ id }: { id: string }) {
   const snap = useSnap()!;
   const [d, setD] = useState<{ task: Task; events: TaskEvent[]; slack: SlackMsg[]; promises: PromiseItem[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [src, setSrc] = useState<'All' | 'Slack' | 'GitHub' | 'Session' | 'Foreman'>('All');
+  const [src, setSrc] = useState<'All' | 'Slack' | 'GitHub' | 'Session' | 'Shiftboss'>('All');
   const [note, setNote] = useState('');
   useEffect(() => { api('GET', `/api/tasks/${id}`).then(setD).catch((e) => setErr(e.message)); }, [id, snap.now]);
   if (err) return <div className="page"><Hero eyebrow="Task" title={id} sub={err} /></div>;
@@ -182,7 +182,7 @@ export function TaskPage({ id }: { id: string }) {
 
         <Card span={7}>
           <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}><span className="label">Activity</span><span className="mono faint" style={{ fontSize: 12 }}>{d.events.length} events</span>
-            <span style={{ marginLeft: 'auto' }}><Seg label="Source" value={src} options={['All', 'Slack', 'GitHub', 'Session', 'Foreman'] as const} onChange={setSrc} /></span></div>
+            <span style={{ marginLeft: 'auto' }}><Seg label="Source" value={src} options={['All', 'Slack', 'GitHub', 'Session', 'Shiftboss'] as const} onChange={setSrc} /></span></div>
           <div className="col divide">
             {events.map((e) => (
               <div key={e.id} className="row" style={{ gap: 16, padding: '10px 0' }}>
@@ -194,7 +194,7 @@ export function TaskPage({ id }: { id: string }) {
             ))}
             {!events.length && <Empty text="Nothing yet." />}
           </div>
-          <form className="row" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); if (note.trim()) void act(async () => { await api('POST', `/api/tasks/${t.id}/events`, { src: 'Foreman', who: 'you', text: note }); setNote(''); }, 'Noted'); }}>
+          <form className="row" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); if (note.trim()) void act(async () => { await api('POST', `/api/tasks/${t.id}/events`, { src: 'Shiftboss', who: 'you', text: note }); setNote(''); }, 'Noted'); }}>
             <label htmlFor="tnote" className="faint" style={{ fontSize: 12 }}>Note</label>
             <input id="tnote" className="field" style={{ height: 38 }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log" />
             <button type="submit" className="pill sm" disabled={!note.trim()}>Add</button>
@@ -217,7 +217,7 @@ export function TaskPage({ id }: { id: string }) {
               </div>
             );
           })}
-          {!d.slack.length && <Empty text="No Slack messages recorded for this task. Sessions add them with: foreman slack T-n …" />}
+          {!d.slack.length && <Empty text="No Slack messages recorded for this task. Sessions add them with: shiftboss slack T-n …" />}
         </Card>
       </section>
     </div>
@@ -254,7 +254,7 @@ export function Intake() {
               {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber, minWidth: 80, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, minWidth: 80, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
             </div>
           ))}
-          {!snap.intake.length && <Empty text="Nothing logged yet. The intake session reports each message it reads with: foreman intake --src … --text … --verdict …" />}
+          {!snap.intake.length && <Empty text="Nothing logged yet. The intake session reports each message it reads with: shiftboss intake --src … --text … --verdict …" />}
         </Card>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4}>

@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 
-const BASE = process.env.FOREMAN_URL ?? 'http://127.0.0.1:4400';
+const BASE = process.env.SHIFTBOSS_URL ?? 'http://127.0.0.1:4400';
 const OUT = process.argv[2] ?? join(import.meta.dir, '..', 'data', 'shots');
 mkdirSync(OUT, { recursive: true });
 const chrome = ['chromium-1255', 'chromium-1148'].map((r) => join(homedir(), 'AppData', 'Local', 'ms-playwright', r, 'chrome-win64', 'chrome.exe')).find(existsSync) ?? process.env.CHROME_PATH;

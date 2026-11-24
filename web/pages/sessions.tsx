@@ -4,7 +4,7 @@ import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero,
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
 const lineColor = (k: string) => (k === 'tool' ? C.fg : k === 'out' ? C.faint : k === 'you' ? C.amber : k === 'sys' ? C.red : C.dim);
-/** The session's own last sentence, used when Foreman has not given it a task. */
+/** The session's own last sentence, used when Shiftboss has not given it a task. */
 const lastSay = (s: Session) => { const t = s.lines.filter((l) => l.kind === 'say').at(-1)?.text; return t ? t.split(/(?<=[.!?])\s/)[0].slice(0, 120) : null; };
 const prefix = (k: string) => (k === 'tool' ? '⏺ ' : k === 'out' ? '  ⎿ ' : k === 'you' ? 'you › ' : '· ');
 
@@ -69,7 +69,7 @@ export function CommandCenter() {
                 <span className="mono" style={{ fontSize: 13, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{need.code || need.title}</span>
                 <div className="row" style={{ gap: 10 }}>
                   <button type="button" className="pill w sm" onClick={() => act(() => api('POST', `/api/sessions/${encodeURIComponent(hero.name)}/focus`), 'Opened in herdr')}>Answer in herdr</button>
-                  <span className="faint" style={{ fontSize: 12 }}>waiting {ago(need.createdAt)} · Foreman never approves for you</span>
+                  <span className="faint" style={{ fontSize: 12 }}>waiting {ago(need.createdAt)} · Shiftboss never approves for you</span>
                 </div>
               </div>
             )}
@@ -108,7 +108,7 @@ export function CommandCenter() {
           <article key={s.name} className="shell rise" style={{ gridColumn: 'span 3', animationDelay: 200 + i * 50 + 'ms' }}>
             <div className="core col" style={{ gap: 14, padding: 20 }}>
               <div className="row" style={{ gap: 10 }}><Dot color={statusColor(s.status)} blink={s.status === 'working'} /><span className="mono ellipsis" style={{ fontSize: 13 }}>{s.name}</span><span className="mono faint" style={{ fontSize: 11, marginLeft: 'auto' }}>{s.status}</span></div>
-              <span className="ellipsis" style={{ fontSize: 14 }}>{snap.tasks.find((t) => t.session === s.name && t.stage >= 2 && t.stage <= 4)?.title ?? lastSay(s) ?? (s.lane || 'No task from Foreman')}</span>
+              <span className="ellipsis" style={{ fontSize: 14 }}>{snap.tasks.find((t) => t.session === s.name && t.stage >= 2 && t.stage <= 4)?.title ?? lastSay(s) ?? (s.lane || 'No task from Shiftboss')}</span>
               <Lines s={s} n={4} height={84} />
               <div className="col" style={{ gap: 6 }}>
                 <span className="row mono" style={{ justifyContent: 'space-between', fontSize: 11 }}><span className="faint">context</span><span style={{ color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span></span>
@@ -214,7 +214,7 @@ export function SessionPage({ name }: { name: string }) {
         </Card>
         <Card span={4} delay={60}>
           <span className="label">Working on</span>
-          {current ? <a href={href('task', current.id)} style={{ fontSize: 18, fontWeight: 500, lineHeight: 1.35 }}>{current.id} · {current.title}</a> : <span className="dim">Nothing from Foreman right now.</span>}
+          {current ? <a href={href('task', current.id)} style={{ fontSize: 18, fontWeight: 500, lineHeight: 1.35 }}>{current.id} · {current.title}</a> : <span className="dim">Nothing from Shiftboss right now.</span>}
           {tasks.filter((t) => t !== current).slice(0, 3).map((t) => <a key={t.id} href={href('task', t.id)} className="row dim ellipsis" style={{ gap: 12, fontSize: 13 }}><span className="mono faint">{t.id}</span>{t.title}</a>)}
         </Card>
       </section>
@@ -301,7 +301,7 @@ export function Health() {
             {h.loop.length > 0 && <pre className="mono" style={{ margin: 0, padding: '12px 14px', borderRadius: 12, border: '1px dashed rgba(245,165,36,0.35)', fontSize: 12, color: C.dim, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{h.loop.join('\n')}</pre>}
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <span className="faint" style={{ fontSize: 12, marginRight: 'auto' }}>Suggested: {h.suggest}</span>
-              {h.verdict !== 'healthy' && h.verdict !== 'waiting' && <button type="button" className="pill sm w" onClick={() => act(() => api('POST', `/api/sessions/${encodeURIComponent(h.session)}/prompt`, { text: h.verdict === 'looping' ? 'You have run the same command several times with the same result. Stop, explain what you think is wrong, and try a different approach.' : h.verdict === 'stuck' ? 'Foreman: you have queued work waiting. Pick up the next task now, or say what is blocking you.' : 'Foreman check-in: please give a one-line status.' }), 'Nudge sent')}>Send nudge</button>}
+              {h.verdict !== 'healthy' && h.verdict !== 'waiting' && <button type="button" className="pill sm w" onClick={() => act(() => api('POST', `/api/sessions/${encodeURIComponent(h.session)}/prompt`, { text: h.verdict === 'looping' ? 'You have run the same command several times with the same result. Stop, explain what you think is wrong, and try a different approach.' : h.verdict === 'stuck' ? 'Shiftboss: you have queued work waiting. Pick up the next task now, or say what is blocking you.' : 'Shiftboss check-in: please give a one-line status.' }), 'Nudge sent')}>Send nudge</button>}
               {h.verdict === 'looping' && <button type="button" className="pill sm" onClick={() => act(() => api('POST', `/api/sessions/${encodeURIComponent(h.session)}/interrupt`, {}), 'Interrupted')}>Interrupt</button>}
               {h.verdict === 'waiting' && <a className="pill sm w" href={href('needs')}>Go to Needs you</a>}
               <a className="pill sm" href={href('session', h.session)}>Open</a>
@@ -332,7 +332,7 @@ export function Overlap() {
               </div>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <span className="dim" style={{ fontSize: 13, marginRight: 'auto' }}>{o.fix}</span>
-                <button type="button" className="pill sm w" onClick={() => act(() => api('POST', `/api/sessions/${encodeURIComponent(o.b.session)}/prompt`, { text: `Foreman overlap check: ${o.title} ${o.fix} Coordinate before you push.` }), 'Told ' + o.b.session)}>Tell {o.b.session}</button>
+                <button type="button" className="pill sm w" onClick={() => act(() => api('POST', `/api/sessions/${encodeURIComponent(o.b.session)}/prompt`, { text: `Shiftboss overlap check: ${o.title} ${o.fix} Coordinate before you push.` }), 'Told ' + o.b.session)}>Tell {o.b.session}</button>
                 <button type="button" className="pill sm" onClick={() => setDismissed({ ...dismissed, [o.id]: true })}>Dismiss</button>
               </div>
             </Card>

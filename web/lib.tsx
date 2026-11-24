@@ -18,7 +18,7 @@ export function useLiveSnapshot(): { snap: Snapshot | null; connected: boolean }
 }
 
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, { method, headers: { 'content-type': 'application/json', 'x-foreman': '1' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await fetch(path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   return data as T;

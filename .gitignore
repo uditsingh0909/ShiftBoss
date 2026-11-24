@@ -1,4 +1,4 @@
 node_modules/
 data/
-foreman.config.json
+shiftboss.config.json
 *.log

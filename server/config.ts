@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-// Everything specific to one team lives in foreman.config.json (gitignored).
+// Everything specific to one team lives in shiftboss.config.json (gitignored).
 // The defaults below are safe for anyone.
 export interface Config {
   ownerName: string; // who answers Needs-you items; used in prompts sent to sessions
@@ -37,7 +37,7 @@ const defaults: Config = {
 };
 
 export function loadConfig(): Config {
-  const path = process.env.FOREMAN_CONFIG ?? join(import.meta.dir, '..', 'foreman.config.json');
+  const path = process.env.SHIFTBOSS_CONFIG ?? join(import.meta.dir, '..', 'shiftboss.config.json');
   if (!existsSync(path)) return defaults;
   const user = JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>;
   return { ...defaults, ...user, contextWindows: { ...defaults.contextWindows, ...(user.contextWindows ?? {}) } };

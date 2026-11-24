@@ -77,7 +77,7 @@ export class Engine {
       this.dispatch(settings.switches.autoDispatch);
       this.emit();
     } catch (e) {
-      this.pushFeed('foreman', 'poll failed: ' + (e as Error).message); // next tick retries
+      this.pushFeed('shiftboss', 'poll failed: ' + (e as Error).message); // next tick retries
     } finally {
       this.busy = false;
     }
@@ -129,7 +129,7 @@ export class Engine {
       if (s.status === 'blocked' && !open) {
         const last = s.lines.filter((l) => l.kind === 'tool').at(-1);
         this.store.addNeed({ kind: 'Permission', source: s.name + ' · herdr ' + s.paneId, title: `${s.name} is waiting for your permission.`,
-          body: 'Approve or deny it in herdr. Foreman never answers a permission prompt for you.', code: last ? '⏺ ' + last.text : '',
+          body: 'Approve or deny it in herdr. Shiftboss never answers a permission prompt for you.', code: last ? '⏺ ' + last.text : '',
           answers: ['Open in herdr'], session: s.name, auto: true });
         this.pushFeed(s.name, 'needs your permission');
       } else if (s.status !== 'blocked' && open) {
@@ -145,9 +145,9 @@ export class Engine {
       try {
         if (s) await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
         this.store.markSent(n.id);
-        if (n.taskId) this.store.addEvent(n.taskId, 'Foreman', 'foreman', s ? `Sent the answer to ${s.name}` : 'Answer recorded; no running session to send it to');
+        if (n.taskId) this.store.addEvent(n.taskId, 'Shiftboss', 'shiftboss', s ? `Sent the answer to ${s.name}` : 'Answer recorded; no running session to send it to');
       } catch (e) {
-        this.pushFeed('foreman', `could not send answer to ${n.session}: ${(e as Error).message}`);
+        this.pushFeed('shiftboss', `could not send answer to ${n.session}: ${(e as Error).message}`);
       }
     }
   }
@@ -155,9 +155,9 @@ export class Engine {
   briefFor(taskId: string): string {
     const t = this.store.getTask(taskId);
     if (!t) throw new Error('No task ' + taskId);
-    return [`Foreman task ${t.id} (${t.prio}): ${t.title}`, t.ask ? 'Ask: ' + t.ask : '', t.requester || t.source ? `From: ${t.requester} ${t.source} ${t.sourceUrl ?? ''}`.trim() : '',
-      `Put "Foreman: ${t.id}" in your PR description: Foreman then moves this task to PR open, On dev and Live by itself.`,
-      `Done means merged, live on dev and checked, and the requester told. When you have told them, use the foreman task_stage tool with stage "told" (or run: foreman task stage ${t.id} told).`].filter(Boolean).join('\n');
+    return [`Shiftboss task ${t.id} (${t.prio}): ${t.title}`, t.ask ? 'Ask: ' + t.ask : '', t.requester || t.source ? `From: ${t.requester} ${t.source} ${t.sourceUrl ?? ''}`.trim() : '',
+      `Put "Shiftboss: ${t.id}" in your PR description: Shiftboss then moves this task to PR open, On dev and Live by itself.`,
+      `Done means merged, live on dev and checked, and the requester told. When you have told them, use the shiftboss task_stage tool with stage "told" (or run: shiftboss task stage ${t.id} told).`].filter(Boolean).join('\n');
   }
 
   /** Send a queued task to its session now. */
@@ -168,7 +168,7 @@ export class Engine {
     if (!s) throw new Error(t.session + ' is not running in herdr');
     await this.herdr.prompt(s.paneId, this.briefFor(taskId));
     this.store.updateTask(taskId, { stage: 2 }, who);
-    this.store.addEvent(taskId, 'Foreman', 'dispatcher', 'Sent the brief to ' + s.name);
+    this.store.addEvent(taskId, 'Shiftboss', 'dispatcher', 'Sent the brief to ' + s.name);
     this.pushFeed('dispatcher', `${taskId} → ${s.name}`);
   }
 
@@ -270,7 +270,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
             this.pushFeed('github', `${id} → ${['', '', '', 'PR open', 'On dev', 'Live'][target]} (${label})`);
           }
         }
-        // Finished with this PR once it is closed, live on prod, or merged in a repo Foreman cannot see deploys for.
+        // Finished with this PR once it is closed, live on prod, or merged in a repo Shiftboss cannot see deploys for.
         const done = pr.state === 'CLOSED' || onProd || (pr.state === 'MERGED' && !shipsHere);
         this.store.savePrLink({ url, taskIds: ids, state: pr.state, mergeSha: pr.mergeSha, repo: pr.repo, number: pr.number, done });
         } catch (e) {
