@@ -168,7 +168,7 @@ Windows, see [Start at login](#start-at-login-windows).
 
 #### 4. Follow Get started
 
-With an empty board, ShiftBoss opens on **Get started** (also under *Get started* at the top right, or
+With an empty board, ShiftBoss opens on **Get started** (also under *Get started* in the sidebar, or
 `Ctrl+K`). It checks each step as you go:
 
 | Step | What you do | What it gives you |
@@ -512,7 +512,7 @@ unmerged PR moves nothing.
 
 ## The screens
 
-The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens search.
+The sidebar on the left links them, grouped into Work, Watch and Setup, with a count of what waits on each (red needs you now). It collapses to icons; on a phone it opens from the menu button. Ctrl+K (⌘K on a Mac) opens search.
 
 | Screen | Use it to |
 |---|---|

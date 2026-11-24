@@ -104,8 +104,8 @@ function Alerts() {
               {out.slice(0, 12).map((x, k) => <span key={x.key} style={{ width: k === i ? 14 : 5, height: 5, borderRadius: 999, background: k === i ? C.fg : x.tone === 'red' ? 'rgba(255,90,79,.5)' : C.ghost, transition: 'width .5s var(--ease)' }} />)}
             </span>
             <span className="mono faint" style={{ fontSize: 11 }}>{i + 1}/{n}</span>
-            <button type="button" className="pill sm" style={{ width: 32, padding: 0, justifyContent: 'center' }} aria-label="Previous alert" onClick={() => go(-1)}>‹</button>
-            <button type="button" className="pill sm" style={{ width: 32, padding: 0, justifyContent: 'center' }} aria-label="Next alert" onClick={() => go(1)}>›</button>
+            <button type="button" className="pill sm icon" aria-label="Previous alert" onClick={() => go(-1)}>‹</button>
+            <button type="button" className="pill sm icon" aria-label="Next alert" onClick={() => go(1)}>›</button>
           </>}
         </span>
       </div>
@@ -328,6 +328,7 @@ export function CommandCenter() {
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
           <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <a className="pill sm" href={href('roster')}>All sessions</a>
             <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
             <button type="button" className={'pill sm' + (near.length ? ' r' : '')} aria-expanded={replacing} onClick={() => { setReplacing(!replacing); setSpawning(false); }}>Replace…</button>
             <button type="button" className="pill sm w" aria-expanded={spawning} onClick={() => { setSpawning(!spawning); setReplacing(false); }}>+ New session</button>

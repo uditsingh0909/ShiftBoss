@@ -86,7 +86,7 @@ export function NeedsYou() {
           ) : view === 'Focus' && cur ? (
             <>
               <div className="row" style={{ gap: 10 }}>
-                <button type="button" className="pill sm" aria-label="Previous item" onClick={prev} style={{ width: 32, padding: 0, justifyContent: 'center' }}>‹</button>
+                <button type="button" className="pill sm icon" aria-label="Previous item" onClick={prev}>‹</button>
                 <nav aria-label="Open items" style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${Math.min(steps.length, 3)}, minmax(0,1fr))`, gap: 6 }}>
                   {steps.map((n, i) => {
                     const done = !!n.answer;
@@ -100,7 +100,7 @@ export function NeedsYou() {
                     );
                   })}
                 </nav>
-                <button type="button" className="pill sm" aria-label="Next item" onClick={next} style={{ width: 32, padding: 0, justifyContent: 'center' }}>›</button>
+                <button type="button" className="pill sm icon" aria-label="Next item" onClick={next}>›</button>
               </div>
               <article key={cur.id + ':' + slide} className="shell slide-in">
                 <div className="core col" style={{ gap: 18, padding: 32 }}>
@@ -128,7 +128,7 @@ export function NeedsYou() {
                 <span className="ellipsis" style={{ fontSize: 13 }}>{n.title}</span>
                 <span className="row mono" style={{ fontSize: 12, gap: 8 }}>
                   <span style={{ color: C.green }}>{n.answer}</span><span className="faint">· {hhmm(n.answeredAt)} · {n.auto ? 'in herdr' : n.sentAt ? (n.session ? 'sent' : 'recorded') : n.session && !snap.sessions.some((x) => x.name === n.session) ? `waiting for ${n.session}` : 'sending…'}</span>
-                  {!n.auto && <button type="button" className="pill sm" style={{ height: 26, marginLeft: 'auto', fontSize: 11 }} onClick={() => void undoNeed(n.id)}
+                  {!n.auto && <button type="button" className="pill xs" style={{ marginLeft: 'auto' }} onClick={() => void undoNeed(n.id)}
                     title={n.sentAt ? 'Opens it again and tells the session to ignore your answer' : 'Not sent yet: takes it back quietly'}>{n.sentAt ? 'Reopen' : 'Undo'}</button>}
                 </span>
               </div>

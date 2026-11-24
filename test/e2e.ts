@@ -84,6 +84,38 @@ for (const width of [1920, 390]) {
   }
   await page.close();
 }
+// The sidebar: collapses to a rail and remembers it; on a phone it is a drawer from the menu button.
+{
+  const seen = () => localStorage.setItem('shiftboss-tour-seen', JSON.stringify(['home', 'tasks', 'task', 'needs', 'promises', 'intake', 'session', 'settings', 'welcome']));
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.addInitScript(seen);
+  await page.goto(BASE + '/#/tasks');
+  try {
+    await page.getByRole('link', { name: /^Overlaps/ }).waitFor({ timeout: 6000 });
+    await page.getByRole('button', { name: 'Collapse the sidebar' }).click();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: join(OUT, 'rail-1920.png') });
+    await page.reload();
+    await page.getByRole('button', { name: 'Expand the sidebar' }).waitFor({ timeout: 6000 });
+    await page.getByRole('button', { name: 'Expand the sidebar' }).click();
+  } catch { failures.push('sidebar: collapse did not work or was not remembered'); }
+  await page.close();
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await phone.addInitScript(seen);
+  await phone.goto(BASE + '/#/tasks');
+  try {
+    await phone.getByRole('button', { name: /^Open menu/ }).click();
+    const tasks = phone.getByRole('link', { name: /^Tasks/ });
+    await tasks.waitFor({ timeout: 3000 });
+    await phone.waitForTimeout(700);
+    await phone.screenshot({ path: join(OUT, 'drawer-390.png') });
+    if (await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) failures.push('390px drawer: page scrolls sideways');
+    await phone.getByRole('link', { name: /^Settings/ }).click();
+    await phone.waitForTimeout(700);
+    if (await phone.locator('.side.open').count()) failures.push('390px drawer: did not close after choosing a screen');
+  } catch { failures.push('390px drawer: menu did not open'); }
+  await phone.close();
+}
 // The tour shows on a first visit and goes away with Skip.
 {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
