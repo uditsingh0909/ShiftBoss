@@ -1,9 +1,10 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Onboarding, Replacement, ReplacementState,
+import type { Direction, Onboarding, Replacement, ReplacementState,
   AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
+import { DEFAULT_NOTIFY } from '../shared/types';
 
 export const DEFAULT_SETTINGS: Settings = {
   thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3 },
@@ -14,9 +15,17 @@ export const DEFAULT_SETTINGS: Settings = {
   leadSession: '',
   watchedChannels: [],
   autoUpdate: true,
+  notify: { ...DEFAULT_NOTIFY },
 };
 
 const now = () => new Date().toISOString();
+/** 'inbound' | 'outbound' | null (unknown). undefined passes through as "not given". Anything else is an error. */
+export function checkDirection(v: unknown): Direction | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  if (v === 'inbound' || v === 'outbound') return v;
+  throw new Error('direction must be inbound or outbound');
+}
 /** Thrown for an id that does not exist; the API answers 404. */
 export class NotFound extends Error {}
 
@@ -73,6 +82,16 @@ export class Store {
     if (!cols.some((c) => c.name === 'ext_id')) {
       this.db.exec('ALTER TABLE tasks ADD COLUMN ext_id TEXT; CREATE UNIQUE INDEX IF NOT EXISTS tasks_ext_id ON tasks(ext_id);');
     }
+    // Where an item came from and which way it went: url (promises only; tasks and intake already have one)
+    // and direction ('inbound' | 'outbound' | NULL when unknown). Old rows stay NULL; nothing is guessed.
+    const addCol = (table: string, col: string, type: string) => {
+      const have = this.db.query(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (!have.some((c) => c.name === col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+    };
+    addCol('promises', 'url', 'TEXT');
+    addCol('promises', 'direction', 'TEXT');
+    addCol('tasks', 'direction', 'TEXT');
+    addCol('intake', 'direction', 'TEXT');
     this.db.exec(`CREATE TABLE IF NOT EXISTS replacements (id INTEGER PRIMARY KEY AUTOINCREMENT, old_name TEXT NOT NULL, new_name TEXT NOT NULL,
       cwd TEXT NOT NULL, model TEXT, handoff_path TEXT NOT NULL, session_id TEXT, transcript_path TEXT, state TEXT NOT NULL,
       started_at TEXT NOT NULL, updated_at TEXT NOT NULL, requested_at TEXT, prompted_at TEXT, error TEXT, missing TEXT NOT NULL DEFAULT '[]')`);
@@ -103,6 +122,7 @@ export class Store {
   private rowTask = (r: any): Task => ({
     id: r.id, title: r.title, ask: r.ask, requester: r.requester, source: r.source, sourceUrl: r.source_url,
     session: r.session, stage: r.stage as Stage, prio: r.prio, held: !!r.held, vetted: !!r.vetted, createdAt: r.created_at, updatedAt: r.updated_at,
+    direction: r.direction ?? null,
   });
 
   vetTask(id: string) { this.db.query('UPDATE tasks SET vetted = 1 WHERE id = ?').run(id); }
@@ -114,13 +134,14 @@ export class Store {
     const r = this.db.query('SELECT * FROM tasks WHERE id = ?').get(id);
     return r ? this.rowTask(r) : null;
   }
-  addTask(t: { title: string; ask?: string; requester?: string; source?: string; sourceUrl?: string | null; session?: string | null; prio?: Task['prio']; stage?: Stage }): Task {
+  addTask(t: { title: string; ask?: string; requester?: string; source?: string; sourceUrl?: string | null; session?: string | null; prio?: Task['prio']; stage?: Stage; direction?: Direction }): Task {
     const at = now();
+    const direction = checkDirection(t.direction) ?? null;
     const tx = this.db.transaction(() => {
-      const res = this.db.query(`INSERT INTO tasks (id, title, ask, requester, source, source_url, session, stage, prio, created_at, updated_at)
-        VALUES ('pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      const res = this.db.query(`INSERT INTO tasks (id, title, ask, requester, source, source_url, session, stage, prio, created_at, updated_at, direction)
+        VALUES ('pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         t.title, t.ask ?? '', t.requester ?? '', t.source ?? '', t.sourceUrl ?? null, t.session ?? null,
-        t.stage ?? (t.session ? 1 : 0), t.prio ?? 'P2', at, at);
+        t.stage ?? (t.session ? 1 : 0), t.prio ?? 'P2', at, at, direction);
       const id = 'T-' + res.lastInsertRowid;
       this.db.query('UPDATE tasks SET id = ? WHERE seq = ?').run(id, res.lastInsertRowid);
       return id;
@@ -129,15 +150,18 @@ export class Store {
     this.addEvent(id, 'ShiftBoss', 'shiftboss', 'Filed' + (t.requester ? ' for ' + t.requester : '') + (t.source ? ' from ' + t.source : ''));
     return this.getTask(id)!;
   }
-  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'ask' | 'session' | 'stage' | 'prio' | 'held'>>, who = 'you'): Task {
+  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'ask' | 'session' | 'stage' | 'prio' | 'held' | 'sourceUrl' | 'direction'>>, who = 'you'): Task {
     const cur = this.getTask(id);
     if (!cur) throw new NotFound('No task ' + id);
     if (patch.prio !== undefined && !['P1', 'P2', 'P3'].includes(patch.prio)) throw new Error('prio must be P1, P2 or P3');
     const next = { ...cur, ...patch };
     if (next.stage < 0 || next.stage > 6) throw new Error('Stage must be 0-6');
-    this.db.query('UPDATE tasks SET title=?, ask=?, session=?, stage=?, prio=?, held=?, updated_at=? WHERE id=?')
-      .run(next.title, next.ask, next.session, next.stage, next.prio, next.held ? 1 : 0, now(), id);
+    checkDirection(next.direction);
+    this.db.query('UPDATE tasks SET title=?, ask=?, session=?, stage=?, prio=?, held=?, source_url=?, direction=?, updated_at=? WHERE id=?')
+      .run(next.title, next.ask, next.session, next.stage, next.prio, next.held ? 1 : 0, next.sourceUrl ?? null, next.direction ?? null, now(), id);
     const notes: string[] = [];
+    if (patch.sourceUrl !== undefined && patch.sourceUrl !== cur.sourceUrl) notes.push(patch.sourceUrl ? 'Source link set: ' + patch.sourceUrl : 'Source link removed');
+    if (patch.direction !== undefined && patch.direction !== cur.direction) notes.push(patch.direction ? 'Marked ' + patch.direction : 'Direction cleared');
     if (patch.stage !== undefined && patch.stage !== cur.stage) notes.push('Moved to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][patch.stage]);
     if (patch.session !== undefined && patch.session !== cur.session) notes.push('Assigned to ' + (patch.session ?? 'nobody'));
     if (patch.held !== undefined && patch.held !== cur.held) notes.push(patch.held ? 'Put on hold' : 'Resumed');
@@ -191,25 +215,47 @@ export class Store {
   private rowPromise = (r: any): PromiseItem => ({ id: r.id, to: r.to_person, where: r.where_text, said: r.said, keptWhen: r.kept_when, taskId: r.task_id,
     // Overdue is worked out from the due time when read, so it is never stale.
     state: r.state === 'open' && r.due_at && Date.parse(r.due_at) < Date.now() ? 'due' : r.state,
-    dueAt: r.due_at, createdAt: r.created_at, keptAt: r.kept_at });
-  listPromises(): PromiseItem[] { return this.db.query('SELECT * FROM promises ORDER BY id DESC').all().map(this.rowPromise); }
-  /** Every promise belongs to a task. Without a (known) task id, one is filed in the Inbox for it. */
-  addPromise(p: { to: string; where?: string; said: string; keptWhen?: string; taskId?: string | null; dueAt?: string | null }): PromiseItem {
-    const taskId = p.taskId && this.getTask(p.taskId) ? p.taskId : this.taskForPromise(p.to, p.said, p.where ?? '', p.keptWhen ?? '').id;
-    const r = this.db.query('INSERT INTO promises (to_person, where_text, said, kept_when, task_id, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(p.to, p.where ?? '', p.said, p.keptWhen ?? '', taskId, p.dueAt ?? null, now());
-    this.addEvent(taskId, 'Slack', p.to, `Promised to ${p.to}${p.where ? ' in ' + p.where : ''}: "${p.said}"`);
-    return this.rowPromise(this.db.query('SELECT * FROM promises WHERE id = ?').get(r.lastInsertRowid));
+    dueAt: r.due_at, createdAt: r.created_at, keptAt: r.kept_at, url: r.url ?? null, direction: r.direction ?? null,
+    // Its own link, else its task's source link ("via T-n"). Worked out when read, never stored: fixing the task's
+    // link fixes the promise too, and an old promise with no link of its own still points somewhere.
+    link: r.url ? { url: r.url, via: null } : r.task_url ? { url: r.task_url, via: r.task_id } : null });
+  private static PROMISE_SELECT = 'SELECT p.*, t.source_url AS task_url FROM promises p LEFT JOIN tasks t ON t.id = p.task_id';
+  listPromises(): PromiseItem[] { return this.db.query(Store.PROMISE_SELECT + ' ORDER BY p.id DESC').all().map(this.rowPromise); }
+  getPromise(id: number): PromiseItem | null {
+    const r = this.db.query(Store.PROMISE_SELECT + ' WHERE p.id = ?').get(id);
+    return r ? this.rowPromise(r) : null;
   }
-  private taskForPromise(to: string, said: string, where: string, keptWhen: string): Task {
+  /** Fix a promise's own link or direction (a person on the promise page, or a session). null clears it. */
+  updatePromiseSource(id: number, patch: { url?: string | null; direction?: Direction }, who = 'you'): PromiseItem {
+    const cur = this.getPromise(id);
+    if (!cur) throw new NotFound('No promise ' + id);
+    const url = patch.url !== undefined ? patch.url : cur.url;
+    const d = checkDirection(patch.direction);
+    const direction = d !== undefined ? d : cur.direction;
+    this.db.query('UPDATE promises SET url = ?, direction = ? WHERE id = ?').run(url, direction, id);
+    if (cur.taskId && patch.url !== undefined && patch.url !== cur.url) {
+      this.addEvent(cur.taskId, 'ShiftBoss', who, patch.url ? `Link for the promise to ${cur.to}: ${patch.url}` : `Removed the link of the promise to ${cur.to}`);
+    }
+    return this.getPromise(id)!;
+  }
+  /** Every promise belongs to a task. Without a (known) task id, one is filed in the Inbox for it. */
+  addPromise(p: { to: string; where?: string; said: string; keptWhen?: string; taskId?: string | null; dueAt?: string | null; url?: string | null; direction?: Direction }): PromiseItem {
+    const direction = checkDirection(p.direction) ?? null;
+    const taskId = p.taskId && this.getTask(p.taskId) ? p.taskId : this.taskForPromise(p.to, p.said, p.where ?? '', p.keptWhen ?? '', p.url ?? null, direction).id;
+    const r = this.db.query('INSERT INTO promises (to_person, where_text, said, kept_when, task_id, due_at, created_at, url, direction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(p.to, p.where ?? '', p.said, p.keptWhen ?? '', taskId, p.dueAt ?? null, now(), p.url ?? null, direction);
+    this.addEvent(taskId, 'Slack', p.to, `Promised to ${p.to}${p.where ? ' in ' + p.where : ''}: "${p.said}"`);
+    return this.getPromise(Number(r.lastInsertRowid))!;
+  }
+  private taskForPromise(to: string, said: string, where: string, keptWhen: string, url: string | null = null, direction: Direction = null): Task {
     const short = said.length > 90 ? said.slice(0, 87).trimEnd() + '…' : said;
-    return this.addTask({ title: `${to}: ${short}`, ask: said + (keptWhen ? `\n\nKept when: ${keptWhen}` : ''), requester: to, source: where || 'promise' });
+    return this.addTask({ title: `${to}: ${short}`, ask: said + (keptWhen ? `\n\nKept when: ${keptWhen}` : ''), requester: to, source: where || 'promise', sourceUrl: url, direction });
   }
   /** Gives each promise that has no task (made before promises required one) a task of its own. */
   linkOrphanPromises(): number {
-    const rows = this.db.query("SELECT * FROM promises WHERE task_id IS NULL OR task_id = '' OR task_id NOT IN (SELECT id FROM tasks)").all().map(this.rowPromise);
+    const rows = this.db.query("SELECT *, NULL AS task_url FROM promises WHERE task_id IS NULL OR task_id = '' OR task_id NOT IN (SELECT id FROM tasks)").all().map(this.rowPromise);
     for (const p of rows) {
-      const t = this.taskForPromise(p.to, p.said, p.where, p.keptWhen);
+      const t = this.taskForPromise(p.to, p.said, p.where, p.keptWhen, p.url, p.direction);
       this.db.query('UPDATE promises SET task_id = ? WHERE id = ?').run(t.id, p.id);
       if (p.state === 'kept') this.updateTask(t.id, { stage: 6 }, 'shiftboss');
     }
@@ -294,11 +340,13 @@ export class Store {
     return this.db.query('SELECT id, at, where_kind as "where", channel, text, by_who as "by", approval, corrected, note FROM audit ORDER BY id DESC LIMIT 500').all()
       .map((r: any) => ({ ...r, corrected: !!r.corrected }));
   }
-  addIntake(i: Omit<IntakeItem, 'id' | 'at'>) {
-    this.db.query('INSERT INTO intake (at, src, who, text, verdict, task_id, url) VALUES (?, ?, ?, ?, ?, ?, ?)').run(now(), i.src, i.who, i.text, i.verdict, i.taskId, i.url);
+  addIntake(i: Omit<IntakeItem, 'id' | 'at' | 'direction'> & { direction?: Direction }) {
+    this.db.query('INSERT INTO intake (at, src, who, text, verdict, task_id, url, direction) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(now(), i.src, i.who, i.text, i.verdict, i.taskId, i.url, checkDirection(i.direction) ?? null);
   }
   listIntake(limit = 200): IntakeItem[] {
-    return this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId, url FROM intake ORDER BY id DESC LIMIT ?').all(limit) as IntakeItem[];
+    return (this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId, url, direction FROM intake ORDER BY id DESC LIMIT ?').all(limit) as any[])
+      .map((r) => ({ ...r, direction: r.direction ?? null })) as IntakeItem[];
   }
   /** Messages read and turned into tasks per day, in the viewer's time zone (offset in minutes east of UTC). */
   intakeCountsByDay(days = 14, tzMin = 0): { day: string; read: number; filed: number }[] {
@@ -391,7 +439,8 @@ export class Store {
     const r: any = this.db.query("SELECT value FROM settings WHERE key = 'settings'").get();
     if (!r) return DEFAULT_SETTINGS;
     const s = JSON.parse(r.value);
-    return { ...DEFAULT_SETTINGS, ...s, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...s.thresholds }, switches: { ...DEFAULT_SETTINGS.switches, ...s.switches }, budgets: { ...DEFAULT_SETTINGS.budgets, ...s.budgets } };
+    return { ...DEFAULT_SETTINGS, ...s, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...s.thresholds }, switches: { ...DEFAULT_SETTINGS.switches, ...s.switches }, budgets: { ...DEFAULT_SETTINGS.budgets, ...s.budgets },
+      notify: { ...DEFAULT_NOTIFY, ...s.notify } };
   }
   // ---------- first-run onboarding ----------
   onboarding(): Onboarding {
