@@ -11,7 +11,10 @@ export interface ToolCall { at: number; name: string; key: string; files: string
 export interface TranscriptState {
   path: string;
   offset: number;
-  partial: string;
+  /** Bytes after the last newline: an unfinished line, possibly cut inside a UTF-8 character. */
+  partial: Buffer;
+  /** First read started mid-file: the first line is cut, so drop it. */
+  skipFirst?: boolean;
   model: string | null;
   contextTokens: number;
   usage: { at: number; tokens: number }[]; // per assistant message, last 8 days
@@ -79,6 +82,21 @@ export function applyLine(st: TranscriptState, raw: string) {
   }
 }
 
+/**
+ * Split `partial + chunk` into complete lines on byte 0x0a. Lines are decoded only once whole, so a
+ * multi-byte character cut across two reads is never decoded in halves. `rest` is carried to the next read.
+ */
+export function splitLines(partial: Buffer, chunk: Buffer): { lines: string[]; rest: Buffer } {
+  const buf = partial.length ? Buffer.concat([partial, chunk]) : chunk;
+  const lines: string[] = [];
+  let start = 0;
+  for (let i = buf.indexOf(0x0a); i !== -1; i = buf.indexOf(0x0a, start)) {
+    lines.push(buf.toString('utf8', start, i));
+    start = i + 1;
+  }
+  return { lines, rest: Buffer.from(buf.subarray(start)) };
+}
+
 function prune(st: TranscriptState) {
   const nowMs = Date.now();
   st.usage = st.usage.filter((u) => u.at > nowMs - 8 * 864e5);
@@ -110,11 +128,11 @@ export class Transcripts {
     let st = this.states.get(sessionId);
     const size = statSync(path).size;
     if (!st) {
-      st = { path, offset: Math.max(0, size - INITIAL_TAIL), partial: '', model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] };
+      const offset = Math.max(0, size - INITIAL_TAIL);
+      st = { path, offset, partial: Buffer.alloc(0), skipFirst: offset > 0, model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] };
       this.states.set(sessionId, st);
-      if (st.offset > 0) st.partial = '\u0000'; // drop the first, cut line
     }
-    if (size < st.offset) { st.offset = 0; st.partial = ''; } // file rotated
+    if (size < st.offset) { st.offset = 0; st.partial = Buffer.alloc(0); st.skipFirst = false; } // file rotated
     if (size > st.offset) {
       const fd = openSync(path, 'r');
       try {
@@ -122,11 +140,11 @@ export class Transcripts {
         const buf = Buffer.alloc(len);
         readSync(fd, buf, 0, len, st.offset);
         st.offset = size;
-        const chunk = st.partial + buf.toString('utf8');
-        const parts = chunk.split('\n');
-        st.partial = parts.pop() ?? '';
-        const startAt = parts.length && parts[0].startsWith('\u0000') ? 1 : 0;
-        for (let i = startAt; i < parts.length; i++) applyLine(st, parts[i]);
+        const { lines, rest } = splitLines(st.partial, buf);
+        st.partial = rest;
+        let startAt = 0;
+        if (st.skipFirst && lines.length) { startAt = 1; st.skipFirst = false; } // drop the first, cut line
+        for (let i = startAt; i < lines.length; i++) applyLine(st, lines[i]);
       } finally { closeSync(fd); }
       prune(st);
     }

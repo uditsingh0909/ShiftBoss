@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { healthOf, loopKeys, overlapsOf } from '../server/analysis';
 import { Store } from '../server/db';
-import { Engine } from '../server/engine';
+import { Engine, herdrBackoffMs } from '../server/engine';
+import { makeApi } from '../server/api';
+import { SnapshotFrames, SnapshotHub } from '../server/stream';
 import { loadConfig } from '../server/config';
 import { nameOf, parseAgentList } from '../server/herdr';
 import { onboardingPrompt } from '../server/onboarding';
@@ -9,10 +11,12 @@ import { buildReport } from '../server/report';
 import { contextPercent, parseFooter } from '../server/statusline';
 import { mergeSettings } from '../server/settings';
 import { checkRequest, safeUrl } from '../server/guard';
-import { applyLine, type TranscriptState } from '../server/transcripts';
+import { applyLine, splitLines, Transcripts, type TranscriptState } from '../server/transcripts';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Session } from '../shared/types';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
-import { tmpdir } from 'node:os';
 
 const mem = () => new Store('', ':memory:');
 const session = (over: Partial<Session> = {}): Session => ({
@@ -163,7 +167,30 @@ describe('status line footer', () => {
 });
 
 describe('transcripts', () => {
-  const blank = (): TranscriptState => ({ path: '', offset: 0, partial: '', model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] });
+  const blank = (): TranscriptState => ({ path: '', offset: 0, partial: Buffer.alloc(0), model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] });
+  test('a character cut across two reads is decoded whole', () => {
+    const all = Buffer.from('héllo wörld ✓ done\nnext ✓\npart', 'utf8');
+    const cut = all.indexOf(Buffer.from('✓', 'utf8')) + 1; // inside the 3-byte check mark
+    const a = splitLines(Buffer.alloc(0), all.subarray(0, cut));
+    expect(a.lines).toEqual([]);
+    const b = splitLines(a.rest, all.subarray(cut));
+    expect(b.lines).toEqual(['héllo wörld ✓ done', 'next ✓']);
+    expect(b.rest.toString('utf8')).toBe('part');
+  });
+  test('the reader keeps a cut character for the next poll', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-tx-'));
+    mkdirSync(join(dir, 'proj'));
+    const file = join(dir, 'proj', 'sid.jsonl');
+    const line = Buffer.from(JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: 'héllo wörld ✓ done' }] } }) + '\n', 'utf8');
+    const cut = line.indexOf(Buffer.from('✓', 'utf8')) + 2;
+    const tx = new Transcripts(dir);
+    try {
+      writeFileSync(file, line.subarray(0, cut));
+      expect(tx.read('sid')!.lines).toEqual([]);
+      appendFileSync(file, line.subarray(cut));
+      expect(tx.read('sid')!.lines.map((l) => l.text)).toEqual(['héllo wörld ✓ done']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   test('usage, tools, files and output lines', () => {
     const st = blank();
     const ts = new Date().toISOString();
@@ -302,6 +329,116 @@ describe('audit fixes', () => {
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).toBeNull();
     s.approveSlack(id);
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).not.toBeNull();
+  });
+  test('live stream: one frame per change, same JSON shape, keepalive and write version', () => {
+    const e = new Engine(loadConfig(), mem(), {} as any);
+    const snap = e.snapshot();
+    const f = new SnapshotFrames(30_000);
+    const first = f.next(snap, 1000, 1)!;
+    expect(first.startsWith('data: ') && first.endsWith('\n\n')).toBe(true);
+    expect(JSON.parse(first.slice(6))).toEqual(JSON.parse(JSON.stringify(snap))); // same content and shape
+    expect(Object.keys(JSON.parse(first.slice(6)))).toEqual(Object.keys(snap)); // same key order
+    expect(f.next({ ...snap, now: new Date(5000).toISOString() }, 2000, 1)).toBeNull(); // only `now` moved
+    expect(f.next(snap, 3000, 2)).not.toBeNull(); // a write the snapshot does not show
+    expect(f.next({ ...snap, owner: 'Sam' }, 4000, 2)).not.toBeNull(); // content changed
+    expect(f.next({ ...snap, owner: 'Sam' }, 4000 + 30_000, 2)).not.toBeNull(); // keepalive
+  });
+  test('live stream hub: builds once for every tab and skips unchanged ticks', () => {
+    let builds = 0;
+    const e = new Engine(loadConfig(), mem(), {} as any);
+    const hub = new SnapshotHub(() => { builds++; return e.snapshot(); }, () => 0, 250, 30_000);
+    const got: Uint8Array[][] = [[], []];
+    const offA = hub.add((b) => got[0].push(b));
+    const offB = hub.add((b) => got[1].push(b));
+    expect(got[0].length).toBe(1);
+    expect(got[1][0]).toBe(got[0][0]); // the same encoded frame, not a copy per tab
+    const before = builds;
+    hub.flush();
+    expect(builds).toBe(before + 1);
+    expect(got[0].length).toBe(1); // unchanged: nothing sent
+    offA(); offB();
+    expect(hub.size).toBe(0);
+  });
+  test('a tick with nothing new writes nothing, so the stream stays quiet', async () => {
+    const store = mem();
+    const e = new Engine(loadConfig(), store, { list: async () => [] } as any);
+    await e.tick();
+    const n = store.writeCount();
+    e.snapshot();
+    await e.tick();
+    expect(store.writeCount()).toBe(n);
+    store.addTask({ title: 'One' });
+    expect(store.writeCount()).toBeGreaterThan(n);
+  });
+  test('herdr down: back off up to 30 s and log the outage once', async () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map((f) => herdrBackoffMs(f, 2000))).toEqual([0, 2000, 4000, 8000, 16000, 30000, 30000]);
+    let calls = 0, up = false;
+    const herdr = { list: async () => { calls++; if (!up) throw new Error('herdr: not found'); return []; } };
+    const e = new Engine(loadConfig(), mem(), herdr as any);
+    await e.tick();
+    await e.tick(); // inside the backoff: herdr is not asked again
+    expect(calls).toBe(1);
+    expect(e.herdrOk).toBe(false);
+    (e as any).herdrRetryAt = 0;
+    await e.tick();
+    expect(calls).toBe(2);
+    up = true;
+    (e as any).herdrRetryAt = 0;
+    await e.tick();
+    expect(e.herdrOk).toBe(true);
+    const herdrFeed = (e as any).feed.filter((f: any) => f.who === 'herdr').map((f: any) => f.text);
+    expect(herdrFeed.length).toBe(2);
+    expect(herdrFeed[0]).toBe('answering again');
+    expect(herdrFeed[1]).toContain('not answering');
+  });
+  test('stored PRs that are not finished stay on the GitHub check list', () => {
+    const s = mem();
+    const link = { taskIds: ['T-1'], state: 'MERGED', mergeSha: null, repo: 'acme/api', number: 1 };
+    s.savePrLink({ ...link, url: 'https://github.com/acme/api/pull/1', done: false });
+    s.savePrLink({ ...link, url: 'https://github.com/acme/api/pull/2', number: 2, done: true });
+    expect(s.openPrUrls()).toEqual(['https://github.com/acme/api/pull/1']);
+  });
+  test('an answer is claimed once, and not at all after an undo', () => {
+    const s = mem();
+    const n = s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'worker' });
+    const a = s.answerNeed(n.id, 'Yes');
+    const claimed = s.claimSend(a);
+    expect(claimed).not.toBeNull();
+    expect(s.claimSend(a)).toBeNull(); // already claimed
+    s.releaseSend(n.id, claimed!); // the send failed: retry next tick
+    expect(s.claimSend(a)).not.toBeNull();
+    // Undo after the claim: the store reports it as sent, so the caller tells the session.
+    expect(s.undoAnswer(n.id).was.sentAt).not.toBeNull();
+    expect(s.claimSend(a)).toBeNull(); // the old answer is gone
+    const b = s.answerNeed(n.id, 'No');
+    expect(s.claimSend(b)).not.toBeNull(); // a new answer still goes out
+  });
+  test('an undo during the send waits for it, then takes the answer back', async () => {
+    const store = mem();
+    const sent: string[] = [];
+    let finish!: () => void;
+    const herdr = { prompt: async (_p: string, text: string) => { sent.push(text); if (sent.length === 1) await new Promise<void>((r) => (finish = r)); } };
+    const e = new Engine(loadConfig(), store, herdr as any);
+    e.herdrOk = true;
+    e.sessions = [session({ name: 'worker', status: 'idle' })];
+    const n = store.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'worker' });
+    store.answerNeed(n.id, 'Yes');
+    store.db.query('UPDATE needs SET answered_at = ? WHERE id = ?').run(new Date(Date.now() - 60e3).toISOString(), n.id);
+    const flushing = (e as any).flushAnswers();
+    await Bun.sleep(0);
+    expect(e.sendingAnswers.has(n.id)).toBe(true);
+    const handle = makeApi(e);
+    const undoing = handle(new Request(`http://x/api/needs/${n.id}/undo`, { method: 'POST', headers: { 'x-shiftboss': '1' } }), new URL(`http://x/api/needs/${n.id}/undo`));
+    await Bun.sleep(0);
+    expect(sent.length).toBe(1); // the take-back waits for the answer to land
+    finish();
+    await flushing;
+    const res = await undoing;
+    expect(await res!.json()).toEqual({ ok: true, wasSent: true });
+    expect(sent[1]).toContain('took back');
+    const after = store.listNeeds().find((x) => x.id === n.id)!;
+    expect(after.answer).toBeNull();
+    expect(after.sentAt).toBeNull(); // open again, so the next answer is sent
   });
   test('auto-dispatch sends only vetted tasks, and never one that is already being sent', () => {
     const store = mem();

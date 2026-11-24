@@ -357,7 +357,10 @@ In `~/.claude/settings.json`, put the tap in front of the status line command yo
 
 The tap saves a copy of the input to `data/status/<session-id>.json`, then runs your command with the
 same input, so your status line looks exactly the same. With no existing status line, end the command
-after `.cjs`.
+after `.cjs`. If ShiftBoss keeps its data elsewhere (`SHIFTBOSS_DATA_DIR`, as the desktop app does), put
+`--data-dir=<that folder>` right after `.cjs`; the Connect page shows the exact command. Commands that are
+`.cmd` shims on Windows (`npx …`, `bunx …`) work as they are, and if your command fails the status line
+says so in one short line instead of going blank.
 
 ## The intake session
 

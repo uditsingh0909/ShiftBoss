@@ -8,12 +8,19 @@ import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
-import { contains, fetchPr, targetStage, taskIdsIn } from './github';
+import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
 import { HANDOFF_TIMEOUT_MS, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
 import { setupInfo } from './setup';
+import { UNDO_MS } from './api';
 
 type Listener = () => void;
+
+/** Wait before asking herdr again after `fails` failures in a row: one poll, then doubling, capped at 30 s. */
+export function herdrBackoffMs(fails: number, pollMs: number): number {
+  if (fails <= 0) return 0;
+  return Math.min(30_000, pollMs * 2 ** (fails - 1));
+}
 
 export class Engine {
   sessions: Session[] = [];
@@ -31,6 +38,8 @@ export class Engine {
   private ghTimer: ReturnType<typeof setInterval> | null = null;
   private ghBusy = false;
   private busy = false;
+  private herdrFails = 0; // consecutive failed `herdr agent list` calls
+  private herdrRetryAt = 0;
 
   constructor(public cfg: Config, public store: Store, public herdr: Herdr) {
     this.transcripts = new Transcripts(cfg.transcriptsDir);
@@ -64,11 +73,18 @@ export class Engine {
         this.pushFeed('intake', 'resumed on schedule; catching up on what came in while paused');
       }
       let agents: HerdrAgent[] = [];
-      try {
-        agents = await this.herdr.list(settings.herdrWorkspace || this.cfg.herdrWorkspace);
-        this.herdrOk = true; this.herdrError = null;
-      } catch (e) {
-        this.herdrOk = false; this.herdrError = (e as Error).message;
+      // While herdr is down, ask it less often (backoff up to 30 s) and log the change once, not every tick.
+      if (Date.now() >= this.herdrRetryAt) {
+        try {
+          agents = await this.herdr.list(settings.herdrWorkspace || this.cfg.herdrWorkspace);
+          if (this.herdrFails > 0) this.pushFeed('herdr', 'answering again');
+          this.herdrOk = true; this.herdrError = null; this.herdrFails = 0; this.herdrRetryAt = 0;
+        } catch (e) {
+          if (this.herdrFails === 0) this.pushFeed('herdr', 'not answering: ' + (e as Error).message + ' (retrying, less often while it is down)');
+          this.herdrFails++;
+          this.herdrRetryAt = Date.now() + herdrBackoffMs(this.herdrFails, this.cfg.pollMs);
+          this.herdrOk = false; this.herdrError = (e as Error).message;
+        }
       }
       // Footer text from one pane per tick keeps herdr load flat.
       if (agents.length) {
@@ -156,12 +172,13 @@ export class Engine {
 
   /** Deliver answers whose undo window has passed. */
   private waitingAnswers = new Set<number>();
+  /** Answers being typed into a pane right now. An undo waits for these, so it never races the send. */
+  sendingAnswers = new Map<number, Promise<void>>();
   private async flushAnswers() {
-    for (const n of this.store.pendingAnswers(10_000)) {
+    for (const n of this.store.pendingAnswers(UNDO_MS)) {
       // No session asked: there is nobody to send it to, so record it and say so.
       if (!n.session) {
-        this.store.markSent(n.id);
-        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', 'Answer recorded; no session asked, so nobody was prompted');
+        if (this.store.claimSend(n) && n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', 'Answer recorded; no session asked, so nobody was prompted');
         continue;
       }
       const s = this.sessions.find((x) => x.name === n.session);
@@ -170,14 +187,21 @@ export class Engine {
         if (!this.waitingAnswers.has(n.id)) { this.waitingAnswers.add(n.id); this.pushFeed('shiftboss', `holding your answer for ${n.session} until it is running again`); }
         continue;
       }
-      try {
-        await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
-        this.store.markSent(n.id);
-        this.waitingAnswers.delete(n.id);
-        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', `Sent the answer to ${s.name}`);
-      } catch (e) {
-        this.pushFeed('shiftboss', `could not send answer to ${n.session}: ${(e as Error).message}`);
-      }
+      // Claim first: if it was undone (or re-answered) since pendingAnswers ran, there is nothing to send.
+      const claimed = this.store.claimSend(n);
+      if (!claimed) continue;
+      const send = (async () => {
+        try {
+          await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
+          this.waitingAnswers.delete(n.id);
+          if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', `Sent the answer to ${s.name}`);
+        } catch (e) {
+          this.store.releaseSend(n.id, claimed); // retried next tick
+          this.pushFeed('shiftboss', `could not send answer to ${n.session}: ${(e as Error).message}`);
+        }
+      })();
+      this.sendingAnswers.set(n.id, send);
+      try { await send; } finally { this.sendingAnswers.delete(n.id); }
     }
   }
 
@@ -189,9 +213,9 @@ export class Engine {
       `Done means merged, live on dev and checked, and the requester told. When you have told them, use the shiftboss task_stage tool with stage "told" (or run: shiftboss task stage ${t.id} told).`].filter(Boolean).join('\n');
   }
 
-  /** Send a queued task to its session now. */
   /** Tasks whose brief is being sent right now: the next tick must not send them again. */
   dispatching = new Set<string>();
+  /** Send a queued task to its session now. */
   async dispatchTask(taskId: string, who = 'you') {
     const t = this.store.getTask(taskId);
     if (!t?.session) throw new Error('Assign a session first');
@@ -250,18 +274,16 @@ export class Engine {
     let merged: MergedPr[] = [];
     let freeze: boolean | null = null;
     if (this.cfg.releaseRepo) {
+      // gh() kills a hung gh after 15 s and drains both streams, so a stuck auth prompt cannot pile up processes.
       try {
-        const p = Bun.spawn(['gh', 'pr', 'list', '--repo', this.cfg.releaseRepo, '--state', 'merged', '--limit', '15', '--json', 'number,title,author,mergedAt,url'], { stdout: 'pipe', stderr: 'pipe' });
-        const out = await new Response(p.stdout).text();
-        if ((await p.exited) === 0) merged = JSON.parse(out).map((x: any) => ({ number: x.number, title: x.title, author: x.author?.login ?? '', mergedAt: x.mergedAt, url: x.url }));
-      } catch { /* gh missing */ }
+        const out = await gh(['pr', 'list', '--repo', this.cfg.releaseRepo, '--state', 'merged', '--limit', '15', '--json', 'number,title,author,mergedAt,url']);
+        merged = JSON.parse(out).map((x: any) => ({ number: x.number, title: x.title, author: x.author?.login ?? '', mergedAt: x.mergedAt, url: x.url }));
+      } catch { /* gh missing, offline or timed out */ }
     }
     if (this.cfg.freezeVar) {
       try {
-        const p = Bun.spawn(['gh', 'variable', 'get', this.cfg.freezeVar.name, '--repo', this.cfg.freezeVar.repo], { stdout: 'pipe', stderr: 'pipe' });
-        const out = (await new Response(p.stdout).text()).trim();
-        if ((await p.exited) === 0) freeze = out.toLowerCase() === 'true';
-      } catch { /* gh missing */ }
+        freeze = (await gh(['variable', 'get', this.cfg.freezeVar.name, '--repo', this.cfg.freezeVar.repo])).trim().toLowerCase() === 'true';
+      } catch { /* gh missing, offline or timed out */ }
     }
     this.releases = { envs, merged, freeze };
     this.emit();
@@ -275,7 +297,9 @@ export class Engine {
     if (this.ghBusy) return;
     this.ghBusy = true;
     try {
-      const urls = [...new Set(this.sessions.flatMap((s) => s.prUrls))];
+      // Live transcripts plus every stored PR not finished yet, so a task does not stall at "PR open"
+      // after a restart or once the session that opened the PR has closed.
+      const urls = [...new Set([...this.sessions.flatMap((s) => s.prUrls), ...this.store.openPrUrls()])];
       const devSha = this.releases.envs.find((e) => /dev/i.test(e.name))?.version ?? null;
       const prodSha = this.releases.envs.find((e) => /prod/i.test(e.name))?.version ?? null;
       for (const url of urls) {

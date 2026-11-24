@@ -11,6 +11,8 @@ import { NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
 import { checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
+import { PaneBlockedError } from './herdr';
+import { SnapshotHub } from './stream';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
@@ -30,6 +32,8 @@ const STAGE_WORDS: Record<string, Stage> = { inbox: 0, queued: 1, progress: 2, p
 export function makeApi(engine: Engine) {
   const store = engine.store;
   const done = (r: Response) => { engine.emit(); return r; };
+  const hub = new SnapshotHub(() => engine.snapshot(), () => store.writeCount());
+  engine.onChange(() => hub.changed());
   const session = (name: string) => {
     const s = engine.sessions.find((x) => x.name === name);
     if (!s) throw new Error(name + ' is not running in herdr');
@@ -46,16 +50,11 @@ export function makeApi(engine: Engine) {
       if (p === '/api/snapshot' && req.method === 'GET') return json(engine.snapshot());
 
       if (p === '/api/stream' && req.method === 'GET') {
+        // All tabs share one hub: one snapshot build and one serialized frame per change, none when unchanged.
         let off: (() => void) | null = null;
-        let pending: ReturnType<typeof setTimeout> | null = null;
         const stream = new ReadableStream({
-          start(ctrl) {
-            const enc = new TextEncoder();
-            const send = () => { try { ctrl.enqueue(enc.encode('data: ' + JSON.stringify(engine.snapshot()) + '\n\n')); } catch { off?.(); } };
-            send();
-            off = engine.onChange(() => { if (!pending) pending = setTimeout(() => { pending = null; send(); }, 250); });
-          },
-          cancel() { off?.(); if (pending) clearTimeout(pending); },
+          start(ctrl) { off = hub.add((frame) => { try { ctrl.enqueue(frame); } catch { off?.(); } }); },
+          cancel() { off?.(); },
         });
         return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' } });
       }
@@ -205,6 +204,9 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/needs\/(\d+)\/undo$/);
       if (r && write) {
+        // If the engine is typing this answer into the pane right now, let it finish first: the undo then
+        // sees it as sent and tells the session to disregard it, instead of racing the send.
+        await engine.sendingAnswers.get(Number(r[1]));
         const { was } = store.undoAnswer(Number(r[1]));
         if (was.sentAt) {
           const s = was.session ? engine.sessions.find((x) => x.name === was.session) : null;
@@ -358,7 +360,14 @@ export function makeApi(engine: Engine) {
         if (!write) return fail('Use POST', 405);
         if (r[2] === 'prompt') { const b = await body<any>(req); await engine.herdr.prompt(session(name).paneId, str(b.text, 'text', 8000)); engine.pushFeed('you', '→ ' + name); }
         if (r[2] === 'focus') await engine.herdr.focus(session(name).paneId);
-        if (r[2] === 'interrupt') { await engine.herdr.interrupt(session(name).paneId); engine.pushFeed('you', 'interrupted ' + name); }
+        // Esc on a permission prompt denies it. ShiftBoss never answers a permission prompt, so no interrupt then.
+        // The last poll is checked here and herdr's live status again in Herdr.interrupt.
+        if (r[2] === 'interrupt') {
+          const blocked = () => fail(`${name} is waiting on a permission prompt: answer it in herdr`, 409);
+          if (session(name).status === 'blocked') return blocked();
+          try { await engine.herdr.interrupt(session(name).paneId); } catch (e) { if (e instanceof PaneBlockedError) return blocked(); throw e; }
+          engine.pushFeed('you', 'interrupted ' + name);
+        }
         if (r[2] === 'meta') { const b = await body<any>(req); store.setMeta(name, { lane: typeof b.lane === 'string' ? b.lane.trim().slice(0, 300) : undefined, slots: b.slots === undefined ? undefined : Number(b.slots), handoffPath: b.handoffPath === undefined ? undefined : optStr(b.handoffPath, 500) ?? null }); }
         return done(json({ ok: true }));
       }

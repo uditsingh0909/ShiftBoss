@@ -31,7 +31,8 @@ export function targetStage(pr: Pick<PrInfo, 'state'>, onDev: boolean, onProd: b
   return 3;
 }
 
-async function gh(args: string[], token?: string): Promise<string> {
+/** Run gh with a 15 s kill timer, draining stdout and stderr. Throws on a non-zero exit. */
+export async function gh(args: string[], token?: string): Promise<string> {
   const proc = Bun.spawn(['gh', ...args], { stdout: 'pipe', stderr: 'pipe', env: token ? { ...process.env, GH_TOKEN: token } : process.env });
   const timer = setTimeout(() => proc.kill(), 15000);
   const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);

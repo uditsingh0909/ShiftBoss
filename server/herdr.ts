@@ -15,6 +15,11 @@ async function raiseHerdrWindow(): Promise<void> {
   } catch { /* the pane is focused either way */ }
 }
 
+/** The pane shows a permission prompt; ShiftBoss must not send it keys. */
+export class PaneBlockedError extends Error {
+  constructor() { super('It is waiting on a permission prompt: answer it in herdr'); }
+}
+
 export interface HerdrAgent {
   agent: string;
   agent_status: string;
@@ -77,8 +82,14 @@ export class Herdr {
     await run(this.bin, startArgs);
     return pane;
   }
-  /** Same as pressing Esc in the pane: stops the current turn. */
+  /**
+   * Same as pressing Esc in the pane: stops the current turn. Esc on a permission prompt would deny it,
+   * so this checks the pane's live status first and refuses while it is blocked (unlike `agent prompt`,
+   * `send-keys` has no agent_blocked check of its own).
+   */
   async interrupt(pane: string): Promise<void> {
+    const live = parseAgentList(await run(this.bin, ['agent', 'list']), '').find((a) => a.pane_id === pane);
+    if (live?.agent_status === 'blocked') throw new PaneBlockedError();
     await run(this.bin, ['agent', 'send-keys', pane, 'esc']);
   }
 }
