@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { resolveLead } from '../../shared/types';
 import { act, ago, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
 import { Cmd, Step, type SetupInfo } from './setup';
+import { ModePicker } from '../mode';
 
 const IMPORT_SHAPE = `[
   { "extId": "JIRA-123", "title": "Fix the billing export", "stage": 2,
@@ -121,7 +122,12 @@ export function Welcome() {
           <a className="pill sm" style={{ alignSelf: 'flex-start' }} href={href('setup')}>All connection checks<Arrow /></a>
         </Step>
 
-        <Step n={2} title="Your lead session and workspace" state={leadRunning && basicsSaved ? 'ok' : 'todo'}>
+        <Step n={2} title="How much ShiftBoss may do on its own" state={snap.settings.mode && snap.settings.mode !== 'dry' ? 'ok' : 'optional'}>
+          <span className="dim" style={{ fontSize: 14 }}>New installs start in <b>Dry run</b>: ShiftBoss only records what it would do, so you can watch it for a while before letting it act. Switch whenever you are ready; the sidebar has the same switch.</span>
+          <ModePicker />
+        </Step>
+
+        <Step n={3} title="Your lead session and workspace" state={leadRunning && basicsSaved ? 'ok' : 'todo'}>
           <span className="dim" style={{ fontSize: 14 }}>The lead is the session that coordinates the others; it always gets the big card on Sessions. A replacement named <code className="mono">name-v2</code> takes over automatically.</span>
           <form className="settings-controls" onSubmit={(e) => { e.preventDefault(); void saveBasics(); }}>
             <div className="col" style={{ gap: 6 }}><label htmlFor="wl-lead" style={{ fontSize: 13 }}>Lead session</label>
@@ -138,11 +144,11 @@ export function Welcome() {
           </form>
         </Step>
 
-        <Step n={3} title="Not on herdr yet? Bring your sessions in" state="optional">
+        <Step n={4} title="Not on herdr yet? Bring your sessions in" state="optional">
           <BringIn />
         </Step>
 
-        <Step n={4} title="Bring in the work your sessions are already doing" state={askedCount ? 'ok' : workers.length ? 'todo' : 'optional'}>
+        <Step n={5} title="Bring in the work your sessions are already doing" state={askedCount ? 'ok' : workers.length ? 'todo' : 'optional'}>
           <span className="dim" style={{ fontSize: 14 }}>
             Each picked session gets one prompt asking it to put its current tasks, their stage and any promises on the board. It does not change their work. Sessions with tasks on the board already are left unticked.
           </span>
@@ -169,7 +175,7 @@ export function Welcome() {
           </div>
         </Step>
 
-        <Step n={5} title="Read back Slack and Gmail" state={ob.backfillFrom ? 'ok' : intake ? 'todo' : 'optional'}>
+        <Step n={6} title="Read back Slack and Gmail" state={ob.backfillFrom ? 'ok' : intake ? 'todo' : 'optional'}>
           <span className="dim" style={{ fontSize: 14 }}>
             {intake
               ? <>Send the intake session back in time: it reads mentions, DMs, threads you are in, watched channels and meeting notes from then until now, and files what is still open.{ob.backfillFrom && <> Last sent back to {new Date(ob.backfillFrom).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</>}</>
@@ -182,7 +188,7 @@ export function Welcome() {
           </div>
         </Step>
 
-        <Step n={6} title="Import tasks from elsewhere" state="optional">
+        <Step n={7} title="Import tasks from elsewhere" state="optional">
           <span className="dim" style={{ fontSize: 14 }}>Tasks from Jira or a spreadsheet can come in as a JSON file. Running it again updates the same tasks (matched by <code className="mono">extId</code>) instead of adding copies.</span>
           {info && <Cmd text={`bun ${info.repoPath}/cli/shiftboss.ts import tasks.json`} />}
           <Cmd text={IMPORT_SHAPE} />
