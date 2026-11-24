@@ -12,9 +12,10 @@ import { contextPercent, parseFooter } from '../server/statusline';
 import { mergeSettings } from '../server/settings';
 import { checkRequest, safeUrl } from '../server/guard';
 import { applyLine, splitLines, Transcripts, type TranscriptState } from '../server/transcripts';
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { listOutside, readOutside, suggestName } from '../server/outside';
+import { needsInstall, Updater } from '../server/update';
 import { join } from 'node:path';
 import type { Session } from '../shared/types';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
@@ -592,3 +593,42 @@ describe('sessions outside herdr', () => {
   });
 });
 
+
+describe('self-update', () => {
+  const sh = (cwd: string, ...a: string[]) => { const r = Bun.spawnSync(['git', ...a], { cwd, env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }); if (r.exitCode) throw new Error(a.join(' ') + ': ' + r.stderr.toString()); };
+  test('only fast-forwards a clean copy, and goes back when the new version does not build', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sb-upd-'));
+    try {
+      const origin = join(root, 'origin.git'), dev = join(root, 'dev'), mine = join(root, 'mine');
+      sh(root, 'init', '--bare', '-b', 'main', origin);
+      sh(root, 'clone', '-q', origin, dev);
+      mkdirSync(join(dev, 'server'));
+      writeFileSync(join(dev, 'server', 'index.ts'), 'export const v = 1;\n');
+      sh(dev, 'add', '-A'); sh(dev, 'commit', '-qm', 'v1'); sh(dev, 'push', '-q', 'origin', 'HEAD:main');
+      sh(root, 'clone', '-q', origin, mine);
+      const logs: string[] = [];
+      const up = new Updater({ busy: () => null, log: (t) => logs.push(t), supervised: false, repo: mine });
+      expect((await up.check(true)).state).toBe('up-to-date');
+
+      writeFileSync(join(dev, 'server', 'index.ts'), 'export const v = 2;\n');
+      sh(dev, 'commit', '-qam', 'v2'); sh(dev, 'push', '-q', 'origin', 'HEAD:main');
+      expect((await up.check(false)).state).toBe('available');
+      writeFileSync(join(mine, 'server', 'index.ts'), 'export const v = 99; // my edit\n');
+      expect((await up.check(true)).state).toBe('blocked');
+      sh(mine, 'checkout', '--', '.');
+      const busy = new Updater({ busy: () => 'your answers are sent', log: () => {}, supervised: false, repo: mine });
+      expect((await busy.check(true)).note).toContain('waiting until');
+      const done = await up.check(true);
+      expect(done.state).toBe('updated');
+      expect(readFileSync(join(mine, 'server', 'index.ts'), 'utf8')).toContain('v = 2');
+
+      writeFileSync(join(dev, 'server', 'index.ts'), 'export const v = ;\n'); // does not build
+      sh(dev, 'commit', '-qam', 'broken'); sh(dev, 'push', '-q', 'origin', 'HEAD:main');
+      const bad = await up.check(true);
+      expect(bad.state).toBe('failed');
+      expect(readFileSync(join(mine, 'server', 'index.ts'), 'utf8')).toContain('v = 2');
+      expect(needsInstall(['web/a.tsx'])).toBe(false);
+      expect(needsInstall(['bun.lock'])).toBe(true);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+});

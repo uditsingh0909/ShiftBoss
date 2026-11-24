@@ -33,6 +33,8 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
 | `mcp/server.ts` | MCP server (`shiftboss`), 21 tools over the HTTP API |
 | `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
+| `server/update.ts` | Self-update: fetch, fast-forward only, reinstall packages if needed, build check, roll back, exit 75 for run.sh |
+| `server/outside.ts` | Claude sessions outside herdr, for bringing them in with `--resume` |
 | `shared/port.ts` | The install's port for the CLI, MCP and scripts: env, then config, then 4400 |
 | `cli/shiftboss.ts` | CLI over the HTTP API |
 | `cli/statusline-tap.cjs` | Status line tap: copies Claude Code's status JSON to `data/status/`, then runs the user's own command |

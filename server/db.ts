@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: Settings = {
   handoffsDir: '',
   leadSession: '',
   watchedChannels: [],
+  autoUpdate: true,
 };
 
 const now = () => new Date().toISOString();

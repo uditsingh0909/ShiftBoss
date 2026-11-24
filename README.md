@@ -258,6 +258,19 @@ Open <http://127.0.0.1:4400>. Sessions appear within a few seconds.
 `scripts/run.sh` exits straight away if ShiftBoss is already answering on its port, so starting it twice
 is harmless.
 
+### Updates
+
+ShiftBoss keeps itself up to date. Every 30 minutes it checks GitHub. If there is a newer version and your
+copy has no local edits or commits, it installs it (and any new packages), checks that it builds, and restarts
+quietly; open pages reload by themselves. If the new version does not build, it goes back to the one that was
+running. It waits while an answer, a brief or a new session is in flight.
+
+- Settings → Updates shows the running version and has **Check now** and an on/off switch.
+- From a terminal: `shiftboss update` (or `shiftboss update --check` to only look). It works with ShiftBoss
+  stopped too.
+- A restart into the new version needs `scripts/run.sh` (setup and the login launcher use it). Started any other
+  way, it updates and tells you to restart.
+
 ### Start at login (Windows)
 
 Create `ShiftBoss.vbs` in your Startup folder (Win+R, `shell:startup`), with your own path:

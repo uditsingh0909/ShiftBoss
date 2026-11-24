@@ -345,8 +345,21 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   // ---------- starting sessions ----------
   /** herdr starts one session at a time (it waits for each to be ready), so every start goes through this queue. */
   private spawnChain: Promise<void> = Promise.resolve();
+  private spawnsPending = 0;
+  /** Set by index.ts: the self-updater's status, shown on Settings and used by pages to reload. */
+  updateStatus: () => import('./update').UpdateStatus | null = () => null;
+  updater: import('./update').Updater | null = null;
+
+  /** Why a restart (for an update) should wait, or null when nothing would be cut off. */
+  busyReason(): string | null {
+    if (this.sendingAnswers.size || this.store.pendingAnswers(0).length) return 'your answers are sent';
+    if (this.dispatching.size) return 'a brief is sent';
+    if (this.spawnsPending || this.replacing.size) return 'new sessions have started';
+    return null;
+  }
   private queueSpawn(job: () => Promise<void>): Promise<void> {
-    const next = this.spawnChain.then(job, job);
+    this.spawnsPending++;
+    const next = this.spawnChain.then(job, job).finally(() => { this.spawnsPending--; });
     this.spawnChain = next.catch(() => {});
     return next;
   }
@@ -574,6 +587,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       intakeState: this.store.intakeState(),
       onboarding: this.store.onboarding(),
       owner: this.cfg.ownerName,
+      update: this.updateStatus(),
       feed: this.feed.slice(0, 40),
       replacements: this.store.listReplacements(),
     };

@@ -20,6 +20,7 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss decide "<what the lead decided>"
   shiftboss import <tasks.json>     (re-runnable: matched on extId)
   shiftboss status
+  shiftboss update [--check]                       install the newest ShiftBoss (--check: only say if there is one)
 
 Setup and onboarding (the same steps as the Get started screen, which updates live):
   shiftboss setup status [--json]                 what is connected, sessions, what is left to do
@@ -179,6 +180,18 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
         return;
       }
       break;
+    }
+    case 'update': {
+      const apply = !('check' in flags || pos.includes('--check'));
+      let st: any;
+      try { st = await call('POST', '/api/update/check', { apply }); }
+      catch (e) {
+        if (!/not running/.test((e as Error).message)) throw e;
+        // ShiftBoss is not running: update the folder directly; it starts on the new version.
+        const { Updater } = await import('../server/update');
+        st = await new Updater({ busy: () => null, log: (t) => console.log(t), supervised: false }).check(apply);
+      }
+      return console.log(`${st.note}${st.current ? `  (running ${st.current.sha}: ${st.current.subject})` : ''}`);
     }
     case 'status': {
       const s = await call('GET', '/api/snapshot');

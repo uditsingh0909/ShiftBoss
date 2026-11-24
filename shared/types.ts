@@ -137,6 +137,8 @@ export interface Settings {
   leadSession: string;
   /** Slack channels intake reads for new top-level messages, e.g. "#team-billing". */
   watchedChannels: string[];
+  /** Install new versions of ShiftBoss by itself (a git checkout with no local edits). */
+  autoUpdate?: boolean;
 }
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
@@ -204,6 +206,8 @@ export interface Snapshot {
   intakeState: IntakeState;
   onboarding: Onboarding;
   owner: string;
+  /** The self-updater: running version, newer one if any, and what it last did. Null when not a git checkout. */
+  update: { supported: boolean; current: { sha: string; date: string; subject: string } | null; latest: { sha: string; date: string; subject: string } | null; behind: number; checking: boolean; checkedAt: string | null; state: string; note: string } | null;
   feed: { at: string; who: string; text: string }[];
   replacements: Replacement[];
 }

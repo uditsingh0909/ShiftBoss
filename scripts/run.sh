@@ -14,9 +14,11 @@ fi
 OPEN=1
 while true; do
   echo "$(date -u +%FT%TZ) starting ShiftBoss" >> data/server.log
-  SHIFTBOSS_OPEN=$OPEN bun server/index.ts >> data/server.log 2>&1
-  OPEN=0
+  SHIFTBOSS_OPEN=$OPEN SHIFTBOSS_SUPERVISED=1 bun server/index.ts >> data/server.log 2>&1
   code=$?
+  OPEN=0
+  # 75: it updated itself and wants the new version running now.
+  if [ "$code" = 75 ]; then echo "$(date -u +%FT%TZ) restarting into the new version" >> data/server.log; sleep 1; continue; fi
   # Someone else took the port while we were down: stop looping.
   if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/"; then exit 0; fi
   echo "$(date -u +%FT%TZ) ShiftBoss exited with ${code}; restarting in 3 s" >> data/server.log

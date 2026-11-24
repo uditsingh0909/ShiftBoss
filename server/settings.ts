@@ -14,6 +14,7 @@ const Patch = z.object({
   handoffsDir: z.string().max(500).optional(),
   leadSession: z.string().max(100).optional(),
   watchedChannels: z.array(z.string().min(1).max(100)).max(100).optional(),
+  autoUpdate: z.boolean().optional(),
 }).strip();
 
 export function mergeSettings(cur: Settings, input: unknown): Settings {

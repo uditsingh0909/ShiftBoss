@@ -51,6 +51,9 @@ function markSeen(page: string) { try { localStorage.setItem(KEY, JSON.stringify
 /** Ask the current page's tour to run again (palette: "Show this page's tour"). */
 export function replayTour() { dispatchEvent(new Event('shiftboss-tour')); }
 
+/** Forget which pages' tours were seen, so each shows again on the next visit. */
+export function resetTours() { try { localStorage.removeItem(KEY); } catch { /* private window */ } }
+
 export function Tour({ page }: { page: string }) {
   const [steps, setSteps] = useState<TourStep[] | null>(null);
   const [i, setI] = useState(0);

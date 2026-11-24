@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Settings } from '../../shared/types';
 import { act, ago, api, C, Card, Dot, Empty, Hero, hhmm, Seg, toast, useSnap } from '../lib';
 import { IntakeControl } from '../intake-control';
+import { resetTours } from '../tour';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
@@ -142,6 +143,30 @@ function Field({ id, label, hint, wide, children }: { id: string; label: string;
   );
 }
 
+/** The running version, a newer one if there is, and a button to check now. */
+function UpdateRow() {
+  const snap = useSnap()!;
+  const u = snap.update;
+  const [busy, setBusy] = useState(false);
+  if (!u) return <span className="faint" style={{ fontSize: 13 }}>This copy is not a git checkout, so it cannot update itself.</span>;
+  const tone = u.state === 'failed' ? C.red : u.state === 'available' || u.state === 'blocked' ? C.amber : u.state === 'updated' || u.state === 'up-to-date' ? C.green : C.faint;
+  const check = async () => {
+    setBusy(true);
+    try { const r = await api<{ note: string }>('POST', '/api/update/check', { apply: true }); toast(r.note); } catch (e) { toast((e as Error).message); }
+    setBusy(false);
+  };
+  return (
+    <div className="row well" style={{ gap: 14, padding: '12px 16px', flexWrap: 'wrap' }}>
+      <div className="col" style={{ gap: 4, flex: '1 1 280px', minWidth: 0 }}>
+        <span style={{ fontSize: 14 }}>Running <span className="mono">{u.current?.sha ?? '?'}</span>{u.current ? <span className="faint"> · {u.current.date.slice(0, 10)} · {u.current.subject}</span> : null}</span>
+        <span style={{ fontSize: 12, color: tone }}>{u.checking ? 'Checking…' : u.note}{u.checkedAt && !u.checking ? <span className="faint"> · checked {ago(u.checkedAt) === 'now' ? 'just now' : ago(u.checkedAt) + ' ago'}</span> : null}</span>
+        {u.latest && u.behind > 0 && <span className="faint ellipsis" style={{ fontSize: 12 }}>Newest: <span className="mono">{u.latest.sha}</span> {u.latest.subject}</span>}
+      </div>
+      <button type="button" className="pill sm" disabled={busy || u.checking} onClick={() => void check()}>{busy || u.checking ? 'Checking…' : 'Check now'}</button>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const snap = useSnap()!;
   const [st, setSt] = useState<Settings>(snap.settings);
@@ -165,6 +190,21 @@ export function SettingsPage() {
         <button type="button" className="pill w" disabled={!dirty || badOrder} onClick={() => void save()}>Save</button>
       </Hero>
       <div className="col" style={{ gap: 16 }}>
+        <SettingsSection title="Updates" text="ShiftBoss checks GitHub every 30 minutes and installs new versions by itself, then restarts quietly. A copy with local edits is never touched.">
+          <div style={{ gridColumn: '1 / -1', gap: 14 }} className="col">
+            <Switch label="Install new versions automatically" on={st.autoUpdate !== false} onChange={(v) => setSt({ ...st, autoUpdate: v })}
+              hint="Waits until no answer, brief or new session is in flight. Save to apply." />
+            <UpdateRow />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="Help" text="Each page shows a short tour the first time you open it.">
+          <div style={{ gridColumn: '1 / -1' }} className="row">
+            <button type="button" className="pill sm" onClick={() => { resetTours(); toast('Each page shows its tour again on your next visit'); }}>Show the tours again</button>
+            <span className="faint" style={{ fontSize: 12, marginLeft: 12 }}>Or press Ctrl+K and pick "Show this page's tour".</span>
+          </div>
+        </SettingsSection>
+
         <SettingsSection title="General" text="Where ShiftBoss looks, and which session leads.">
           <Field id="lead-session" label="Lead session" hint="Always the big card on Sessions. Its replacements (name-v2, name-v3 …) take over automatically.">
             <input id="lead-session" className="field mono" value={st.leadSession ?? ''} placeholder="lead" onChange={(e) => setSt({ ...st, leadSession: e.target.value })} />

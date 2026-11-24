@@ -278,6 +278,15 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/replacements\/(\d+)\/cancel$/);
       if (r && write) { engine.cancelReplacement(Number(r[1])); return done(json({ ok: true })); }
+      // ----- self-update -----
+      if (p === '/api/update' && req.method === 'GET') return json(engine.updateStatus() ?? { supported: false });
+      if (p === '/api/update/check' && write) {
+        if (!engine.updater) return fail('Updates are not available here', 404);
+        const b = await body<any>(req).catch(() => ({}));
+        const st = await engine.updater.check(b?.apply !== false);
+        engine.emit();
+        return done(json(st));
+      }
       // ----- sessions that run outside herdr -----
       if (p === '/api/outside-sessions' && req.method === 'GET') {
         const days = Math.min(60, Math.max(1, Number(url.searchParams.get('days')) || 14));

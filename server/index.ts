@@ -5,6 +5,7 @@ import { Store } from './db';
 import { Engine } from './engine';
 import { Herdr } from './herdr';
 import { checkRequest } from './guard';
+import { Updater } from './update';
 
 // One bad poll must never take the whole control room down: log it and keep serving.
 process.on('unhandledRejection', (e) => console.error(new Date().toISOString(), 'unhandled rejection:', e));
@@ -17,6 +18,16 @@ const api = makeApi(engine);
 const linked = store.linkOrphanPromises(); // older promises predate the one-task-per-promise rule
 if (linked) console.log(`Filed ${linked} task(s) for promises that had none`);
 engine.start();
+
+// Self-update: check every 30 minutes (first a minute after start); install when nothing would be cut off.
+// Only run.sh restarts us (SHIFTBOSS_SUPERVISED=1); started any other way, it updates and says to restart.
+const updater = new Updater({ busy: () => engine.busyReason(), log: (t) => engine.pushFeed('shiftboss', t), supervised: process.env.SHIFTBOSS_SUPERVISED === '1' });
+engine.updateStatus = () => (updater.status.supported ? updater.status : null);
+void updater.readCurrent().then(() => engine.emit());
+const autoCheck = async () => { await updater.check(store.settings().autoUpdate !== false); engine.emit(); };
+setTimeout(() => void autoCheck(), 60_000);
+setInterval(() => void autoCheck(), 30 * 60_000);
+engine.updater = updater;
 
 // If the port is taken (an old copy still shutting down), exit so scripts/run.sh retries in 3 s.
 // The uncaughtException handler above would otherwise keep this process alive with no server.

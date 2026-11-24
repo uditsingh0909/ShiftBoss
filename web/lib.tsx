@@ -11,7 +11,15 @@ export function useLiveSnapshot(): { snap: Snapshot | null; connected: boolean }
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     const es = new EventSource('/api/stream');
-    es.onmessage = (e) => { setSnap(JSON.parse(e.data)); setConnected(true); };
+    let version: string | null = null;
+    es.onmessage = (e) => {
+      const s: Snapshot = JSON.parse(e.data);
+      // After a self-update the server restarts with new screens: load them instead of running stale code.
+      const v = s.update?.current?.sha ?? null;
+      if (version && v && v !== version) { location.reload(); return; }
+      if (v) version = v;
+      setSnap(s); setConnected(true);
+    };
     es.onerror = () => setConnected(false);
     return () => es.close();
   }, []);

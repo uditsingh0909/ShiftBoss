@@ -40,7 +40,6 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true" style={{ flex: 'none' }}><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4-4" /></svg>
           <span className="x">Search or run a command</span><span className="x" style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '1px 6px' }}>⌘K</span>
         </button>
-        <button type="button" onClick={replayTour} aria-label="Show this page's tour" title="Show this page's tour" className="row" style={{ justifyContent: 'center', width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', cursor: 'pointer', color: '#F4F4F5', fontSize: 14 }}>?</button>
         <a href={href('settings')} aria-label="Settings" aria-current={top === 'settings' ? 'page' : undefined} className="row" style={{ justifyContent: 'center', width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: top === 'settings' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F4F4F5" strokeWidth="1.25" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
         </a>
@@ -70,7 +69,8 @@ function Palette({ onClose }: { onClose: () => void }) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   const items = useMemo(() => {
-    const all: { group: string; label: string; meta: string; to: string }[] = [
+    const all: { group: string; label: string; meta: string; to: string; run?: () => void }[] = [
+      { group: 'Help', label: "Show this page's tour", meta: 'a short walk through this screen', to: '#', run: replayTour },
       { group: 'Go to', label: 'Tasks board', meta: 'board and list', to: href('tasks') },
       { group: 'Go to', label: 'Needs you', meta: 'decisions', to: href('needs') },
       { group: 'Go to', label: 'Roster', meta: 'every session', to: href('roster') },
@@ -90,7 +90,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     const ql = q.toLowerCase();
     return all.filter((i) => !ql || (i.label + ' ' + i.meta).toLowerCase().includes(ql)).slice(0, 14);
   }, [q, snap]);
-  const go = (to: string) => { location.hash = to.slice(1); onClose(); };
+  const go = (i: { to: string; run?: () => void }) => { onClose(); if (i.run) setTimeout(i.run, 60); else location.hash = i.to.slice(1); };
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <section className="shell rise" role="dialog" aria-modal="true" aria-label="Command palette" style={{ width: 'min(760px, 100%)' }}>
@@ -101,7 +101,7 @@ function Palette({ onClose }: { onClose: () => void }) {
               onKeyDown={(e) => {
                 if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)); }
                 if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
-                if (e.key === 'Enter' && items[sel]) go(items[sel].to);
+                if (e.key === 'Enter' && items[sel]) go(items[sel]);
                 if (e.key === 'Escape') onClose();
               }}
               placeholder="Sessions, tasks, screens" style={{ flex: 1, height: 36, border: 'none', background: 'transparent', fontSize: 20, outline: 'none' }} />
@@ -110,7 +110,7 @@ function Palette({ onClose }: { onClose: () => void }) {
           <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 10px' }} />
           <div className="col" style={{ padding: 6, gap: 2, maxHeight: '56vh', overflowY: 'auto' }} role="listbox">
             {items.map((i, k) => (
-              <a key={i.group + i.label} href={i.to} onClick={onClose} role="option" aria-selected={k === sel} onMouseEnter={() => setSel(k)}
+              <a key={i.group + i.label} href={i.to} onClick={(e) => { if (i.run) { e.preventDefault(); go(i); } else onClose(); }} role="option" aria-selected={k === sel} onMouseEnter={() => setSel(k)}
                 className="row" style={{ gap: 14, height: 46, padding: '0 14px', borderRadius: 14, background: k === sel ? 'rgba(255,255,255,0.06)' : 'transparent' }}>
                 <span className="label" style={{ width: 70 }}>{i.group}</span>
                 <span className="ellipsis" style={{ flex: 1, fontSize: 14 }}>{i.label}</span>
