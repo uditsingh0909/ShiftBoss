@@ -17,6 +17,7 @@ anything on your behalf.
 - [Install](#install)
 - [Configuration](#configuration)
 - [Running it](#running-it)
+- [Desktop app (Windows)](#desktop-app-windows)
 - [Connecting your sessions](#connecting-your-sessions)
 - [Exact usage numbers](#exact-usage-numbers)
 - [The intake session](#the-intake-session)
@@ -170,6 +171,33 @@ user service.
 | `data/server.log` | Server output and restarts |
 
 All of `data/` is gitignored.
+
+## Desktop app (Windows)
+
+`desktop/` wraps ShiftBoss in a native Windows app (Tauri 2): its own window, a tray icon (Open, Needs
+you, Start at login, Quit), a desktop notification for each new decision in Needs you, and only one copy
+running at a time. Closing the window keeps it in the tray; Quit is in the tray menu.
+
+When it starts, it uses a ShiftBoss already answering on `127.0.0.1:4400`. If none is, it starts the
+server bundled inside the app, with its data in the app's own data folder
+(`%APPDATA%\dev.shiftboss.app`) instead of `data/`.
+
+To build it you need [Rust](https://rustup.rs) and the Visual Studio C++ Build Tools (the "Desktop
+development with C++" workload), plus Bun. Then:
+
+```bash
+cd desktop
+bun install
+bun scripts/build-server.ts                      # compiles the server into binaries/
+./node_modules/.bin/tauri build --bundles nsis   # the installer
+```
+
+The installer lands in `desktop/src-tauri/target/release/bundle/nsis/`. Run it, or install silently to
+a folder of your choice with `ShiftBoss_0.1.0_x64-setup.exe /S /D=D:\Apps\ShiftBoss`.
+
+The window's browser data (WebView2) goes in `%LOCALAPPDATA%\dev.shiftboss.app`, about 20 MB.
+
+macOS and Linux builds are planned but not yet built.
 
 ## Connecting your sessions
 
