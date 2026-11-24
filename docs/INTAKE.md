@@ -23,7 +23,7 @@ Without them, `shiftboss` below means `bun <path-to-shiftboss>/cli/shiftboss.ts`
 Each run, from `readFrom`:
 
 1. **Slack.** Read new messages that mention the owner, DMs to them, and new top-level messages in
-   the watched channels (see ShiftBoss → Settings). Read a message's whole thread before deciding
+   the watched channels (`watchedChannels` in the `intake_begin` answer; edit them in ShiftBoss → Settings). Read a message's whole thread before deciding
    anything is open.
    **Threads the owner is in.** A new reply inside a thread is a new message even when the thread
    started days ago, and channel history does not show it. Each run, read replies newer than

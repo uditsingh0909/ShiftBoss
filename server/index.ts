@@ -18,7 +18,17 @@ const linked = store.linkOrphanPromises(); // older promises predate the one-tas
 if (linked) console.log(`Filed ${linked} task(s) for promises that had none`);
 engine.start();
 
-const server = Bun.serve({
+// If the port is taken (an old copy still shutting down), exit so scripts/run.sh retries in 3 s.
+// The uncaughtException handler above would otherwise keep this process alive with no server.
+let server: ReturnType<typeof Bun.serve>;
+try {
+  server = serve();
+} catch (e) {
+  console.error(new Date().toISOString(), 'could not listen on port', cfg.port, '-', (e as Error).message);
+  process.exit(1);
+}
+
+function serve() { return Bun.serve({
   hostname: '127.0.0.1', // never exposed beyond this machine: the API can prompt sessions
   port: cfg.port,
   idleTimeout: 0, // keep event streams open
@@ -33,6 +43,6 @@ const server = Bun.serve({
     const res = await api(req, url);
     return res ?? new Response('Not found', { status: 404 });
   },
-});
+}); }
 
 console.log(`ShiftBoss on http://127.0.0.1:${server.port}`);

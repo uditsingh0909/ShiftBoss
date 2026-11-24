@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const now = () => new Date().toISOString();
+/** Thrown for an id that does not exist; the API answers 404. */
+export class NotFound extends Error {}
 
 export class Store {
   db: Database;
@@ -62,6 +64,8 @@ export class Store {
     if (!icols.some((c) => c.name === 'url')) this.db.exec('ALTER TABLE intake ADD COLUMN url TEXT');
     // vetted: the owner queued or assigned this task in the UI. Only vetted tasks are sent automatically,
     // so text from Slack (filed by the intake) never reaches a session as a prompt without a person.
+    const pcols = this.db.query('PRAGMA table_info(promises)').all() as { name: string }[];
+    if (!pcols.some((c) => c.name === 'kept_by_task')) this.db.exec('ALTER TABLE promises ADD COLUMN kept_by_task INTEGER NOT NULL DEFAULT 0');
     if (!cols.some((c) => c.name === 'vetted')) this.db.exec('ALTER TABLE tasks ADD COLUMN vetted INTEGER NOT NULL DEFAULT 0');
     const scols = this.db.query('PRAGMA table_info(slack_msgs)').all() as { name: string }[];
     if (!scols.some((c) => c.name === 'approved_at')) this.db.exec('ALTER TABLE slack_msgs ADD COLUMN approved_at TEXT');
@@ -77,9 +81,12 @@ export class Store {
   importTask(t: { extId: string; title: string; ask?: string; requester?: string; source?: string; sourceUrl?: string | null; session?: string | null; stage: Stage; prio?: Task['prio']; held?: boolean; links?: { label: string; url: string }[] }): { id: string; created: boolean } {
     const row: any = this.db.query('SELECT id, stage FROM tasks WHERE ext_id = ?').get(t.extId);
     if (row) {
-      this.db.query('UPDATE tasks SET title=?, ask=?, stage=?, held=?, source_url=COALESCE(?, source_url), updated_at=? WHERE id=?')
-        .run(t.title, t.ask ?? '', t.stage, t.held ? 1 : 0, t.sourceUrl ?? null, now(), row.id);
-      if (row.stage !== t.stage) this.addEvent(row.id, 'ShiftBoss', 'import', 'Tracker moved it to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][t.stage]);
+      // A re-import only moves a task forward: work ShiftBoss has seen ship must not be undone by an older export.
+      const stage = Math.max(row.stage, t.stage);
+      this.db.query(`UPDATE tasks SET title=?, ask=?, stage=?, held=?, source_url=COALESCE(?, source_url), prio=COALESCE(?, prio),
+        session=COALESCE(?, session), requester=COALESCE(?, requester), updated_at=? WHERE id=?`)
+        .run(t.title, t.ask ?? '', stage, t.held ? 1 : 0, t.sourceUrl ?? null, t.prio ?? null, t.session ?? null, t.requester ?? null, now(), row.id);
+      if (row.stage !== stage) this.addEvent(row.id, 'ShiftBoss', 'import', 'Tracker moved it to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][stage]);
       return { id: row.id, created: false };
     }
     const task = this.addTask({ title: t.title, ask: t.ask, requester: t.requester, source: t.source, sourceUrl: t.sourceUrl, session: t.session, prio: t.prio, stage: t.stage });
@@ -120,7 +127,8 @@ export class Store {
   }
   updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'ask' | 'session' | 'stage' | 'prio' | 'held'>>, who = 'you'): Task {
     const cur = this.getTask(id);
-    if (!cur) throw new Error('No task ' + id);
+    if (!cur) throw new NotFound('No task ' + id);
+    if (patch.prio !== undefined && !['P1', 'P2', 'P3'].includes(patch.prio)) throw new Error('prio must be P1, P2 or P3');
     const next = { ...cur, ...patch };
     if (next.stage < 0 || next.stage > 6) throw new Error('Stage must be 0-6');
     this.db.query('UPDATE tasks SET title=?, ask=?, session=?, stage=?, prio=?, held=?, updated_at=? WHERE id=?')
@@ -132,12 +140,18 @@ export class Store {
     if (notes.length) this.addEvent(id, 'ShiftBoss', who, notes.join(' · '));
     // Telling the requester keeps every open promise tied to this task.
     if (patch.stage === 6 && cur.stage !== 6) {
-      const kept = this.db.query("UPDATE promises SET state = 'kept', kept_at = ? WHERE task_id = ? AND state != 'kept'").run(now(), id).changes;
+      const kept = this.db.query("UPDATE promises SET state = 'kept', kept_at = ?, kept_by_task = 1 WHERE task_id = ? AND state != 'kept'").run(now(), id).changes;
       if (kept) this.addEvent(id, 'ShiftBoss', who, `${kept} promise${kept === 1 ? '' : 's'} marked kept`);
+    }
+    // Moving back from "Requester told" reopens exactly the promises that move closed.
+    if (cur.stage === 6 && patch.stage !== undefined && patch.stage < 6) {
+      const reopened = this.db.query("UPDATE promises SET state = 'open', kept_at = NULL, kept_by_task = 0 WHERE task_id = ? AND kept_by_task = 1").run(id).changes;
+      if (reopened) this.addEvent(id, 'ShiftBoss', who, `${reopened} promise${reopened === 1 ? '' : 's'} reopened`);
     }
     return this.getTask(id)!;
   }
   addEvent(taskId: string, src: TaskEvent['src'], who: string, text: string) {
+    if (!this.db.query('SELECT 1 FROM tasks WHERE id = ?').get(taskId)) throw new NotFound('No task ' + taskId);
     this.db.query('INSERT INTO task_events (task_id, at, src, who, text) VALUES (?, ?, ?, ?, ?)').run(taskId, now(), src, who, text);
   }
   events(taskId: string): TaskEvent[] {
@@ -166,7 +180,10 @@ export class Store {
   }
 
   // ---------- promises ----------
-  private rowPromise = (r: any): PromiseItem => ({ id: r.id, to: r.to_person, where: r.where_text, said: r.said, keptWhen: r.kept_when, taskId: r.task_id, state: r.state, dueAt: r.due_at, createdAt: r.created_at, keptAt: r.kept_at });
+  private rowPromise = (r: any): PromiseItem => ({ id: r.id, to: r.to_person, where: r.where_text, said: r.said, keptWhen: r.kept_when, taskId: r.task_id,
+    // Overdue is worked out from the due time when read, so it is never stale.
+    state: r.state === 'open' && r.due_at && Date.parse(r.due_at) < Date.now() ? 'due' : r.state,
+    dueAt: r.due_at, createdAt: r.created_at, keptAt: r.kept_at });
   listPromises(): PromiseItem[] { return this.db.query('SELECT * FROM promises ORDER BY id DESC').all().map(this.rowPromise); }
   /** Every promise belongs to a task. Without a (known) task id, one is filed in the Inbox for it. */
   addPromise(p: { to: string; where?: string; said: string; keptWhen?: string; taskId?: string | null; dueAt?: string | null }): PromiseItem {
@@ -193,11 +210,13 @@ export class Store {
   linkPromise(id: number, taskId: string) {
     if (!this.getTask(taskId)) throw new Error('No task ' + taskId);
     const p = this.listPromises().find((x) => x.id === id);
-    if (!p) throw new Error('No promise ' + id);
+    if (!p) throw new NotFound('No promise ' + id);
     this.db.query('UPDATE promises SET task_id = ? WHERE id = ?').run(taskId, id);
     this.addEvent(taskId, 'ShiftBoss', 'you', `Linked the promise to ${p.to}: "${p.said}"`);
   }
   setPromiseState(id: number, state: PromiseItem['state']) {
+    if (!this.listPromises().some((x) => x.id === id)) throw new NotFound('No promise ' + id);
+    if (!['open', 'ready', 'waiting', 'due', 'kept'].includes(state)) throw new Error('state must be open, due or kept');
     this.db.query('UPDATE promises SET state = ?, kept_at = ? WHERE id = ?').run(state, state === 'kept' ? now() : null, id);
     const p = this.listPromises().find((x) => x.id === id);
     if (p?.taskId && state === 'kept') this.addEvent(p.taskId, 'ShiftBoss', 'you', `Promise to ${p.to} kept`);
@@ -246,7 +265,9 @@ export class Store {
     this.db.query('INSERT INTO audit (at, where_kind, channel, text, by_who, approval, note) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(now(), a.where, a.channel, a.text, a.by, a.approval, a.note ?? '');
   }
-  markCorrected(id: number, note: string) { this.db.query('UPDATE audit SET corrected = 1, note = ? WHERE id = ?').run(note, id); }
+  markCorrected(id: number, note: string) {
+    if (!this.db.query('UPDATE audit SET corrected = 1, note = ? WHERE id = ?').run(note, id).changes) throw new NotFound('No audit entry ' + id);
+  }
   listAudit(): AuditEntry[] {
     return this.db.query('SELECT id, at, where_kind as "where", channel, text, by_who as "by", approval, corrected, note FROM audit ORDER BY id DESC LIMIT 500').all()
       .map((r: any) => ({ ...r, corrected: !!r.corrected }));
@@ -257,9 +278,11 @@ export class Store {
   listIntake(limit = 200): IntakeItem[] {
     return this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId, url FROM intake ORDER BY id DESC LIMIT ?').all(limit) as IntakeItem[];
   }
-  intakeCountsByDay(days = 14): { day: string; read: number; filed: number }[] {
-    return this.db.query(`SELECT substr(at, 1, 10) as day, count(*) as read, sum(CASE WHEN verdict LIKE 'filed%' THEN 1 ELSE 0 END) as filed
-      FROM intake WHERE at >= ? GROUP BY day ORDER BY day`).all(new Date(Date.now() - days * 864e5).toISOString()) as any;
+  /** Messages read and turned into tasks per day, in the viewer's time zone (offset in minutes east of UTC). */
+  intakeCountsByDay(days = 14, tzMin = 0): { day: string; read: number; filed: number }[] {
+    const off = `${tzMin >= 0 ? '+' : '-'}${Math.abs(Math.trunc(tzMin))} minutes`;
+    return this.db.query(`SELECT date(at, ?) as day, count(*) as read, sum(CASE WHEN verdict LIKE 'filed%' OR verdict LIKE 'linked%' THEN 1 ELSE 0 END) as filed
+      FROM intake WHERE at >= ? GROUP BY day ORDER BY day`).all(off, new Date(Date.now() - (days + 1) * 864e5).toISOString()) as any;
   }
   addDecision(text: string) { this.db.query('INSERT INTO decisions (at, text) VALUES (?, ?)').run(now(), text); }
   listDecisions(limit = 50): Decision[] { return this.db.query('SELECT * FROM decisions ORDER BY id DESC LIMIT ?').all(limit) as Decision[]; }

@@ -80,8 +80,8 @@ server.registerTool('slack_sent', {
 server.registerTool('promise_add', {
   title: 'Record a promise',
   description: 'Record a line sent from the owner\'s account that says what we will do or tell someone, so it is tracked until kept.',
-  inputSchema: { said: z.string().min(1).max(1000), to: z.string().min(1).max(100), where: z.string().max(200).optional(), kept_when: z.string().max(300).optional(), task: TASK.optional() },
-}, wrap(async (a) => { const p = await call('POST', '/api/promises', { said: a.said, to: a.to, where: a.where, keptWhen: a.kept_when, taskId: a.task }); return 'promise ' + p.id; }));
+  inputSchema: { said: z.string().min(1).max(1000), to: z.string().min(1).max(100), where: z.string().max(200).optional(), kept_when: z.string().max(300).optional(), task: TASK.optional(), due: z.string().max(40).optional().describe('When it is due, e.g. 2026-12-01 or 2026-12-01T17:00. Overdue promises show in red') },
+}, wrap(async (a) => { const p = await call('POST', '/api/promises', { said: a.said, to: a.to, where: a.where, keptWhen: a.kept_when, taskId: a.task, dueAt: a.due }); return 'promise ' + p.id; }));
 
 server.registerTool('ask_owner', {
   title: 'Ask the owner for a decision',

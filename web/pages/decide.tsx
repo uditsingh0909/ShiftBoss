@@ -168,8 +168,9 @@ export function Promises() {
   const page = usePage(list, 20, filter);
   const taskOpts = snap.tasks.map((t) => ({ value: t.id, hint: t.title }));
   const kept = all.filter((p) => p.state === 'kept');
-  const onTime = kept.filter((p) => !p.dueAt || !p.keptAt || Date.parse(p.keptAt) <= Date.parse(p.dueAt)).length;
-  const pct = all.length ? Math.round((onTime / all.length) * 100) : 0;
+  const dated = kept.filter((p) => p.dueAt && p.keptAt);
+  const onTime = dated.filter((p) => Date.parse(p.keptAt!) <= Date.parse(p.dueAt!)).length;
+  const pct = dated.length ? Math.round((onTime / dated.length) * 100) : 0;
   const byPerson = Object.entries(pending.reduce<Record<string, PromiseItem[]>>((m, p) => { (m[p.to] ??= []).push(p); return m; }, {}))
     .map(([to, ps]) => ({ to, n: ps.length, oldest: ps.reduce((a, b) => (Date.parse(a.createdAt) < Date.parse(b.createdAt) ? a : b)).createdAt }))
     .sort((a, b) => Date.parse(a.oldest) - Date.parse(b.oldest));
@@ -220,9 +221,9 @@ export function Promises() {
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} delay={80}>
             <span className="label">Kept on time</span>
-            <span style={{ fontSize: 48, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1 }}>{pct}%</span>
+            <span style={{ fontSize: 48, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1 }}>{dated.length ? pct + '%' : '—'}</span>
             <Bar pct={pct} color={C.fg} />
-            <span className="faint" style={{ fontSize: 12 }}>{onTime} of {all.length} promises kept by their due time</span>
+            <span className="faint" style={{ fontSize: 12 }}>{dated.length ? `${onTime} of ${dated.length} kept promises with a due time were kept by it` : 'No kept promise had a due time yet. Sessions can set one with promise_add due.'}</span>
           </Card>
           <Card span={4} delay={140}>
             <span className="label">Who's waiting longest</span>

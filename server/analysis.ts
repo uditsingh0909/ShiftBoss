@@ -20,7 +20,9 @@ export function loopKeys(tools: ToolCall[], repeats: number, nowMs = Date.now())
 export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Settings, nowMs = Date.now()): HealthCard {
   const t = set.thresholds;
   const silentMin = s.lastActivity ? (nowMs - Date.parse(s.lastActivity)) / MIN : Infinity;
-  const queued = tasks.filter((x) => x.session === s.name && x.stage >= 1 && x.stage <= 4 && !x.held);
+  // Only work the session has actually been given and not yet shipped counts: a queued task (stage 1) waits on
+  // the dispatcher or the owner, and PR open / On dev wait on review and deploys, not on the session.
+  const working = tasks.filter((x) => x.session === s.name && x.stage === 2 && !x.held);
   const loops = loopKeys(tools, t.loopRepeats, nowMs);
   const edits15 = tools.filter((x) => nowMs - x.at < 15 * MIN && x.files.length).length;
   const card = (verdict: HealthCard['verdict'], title: string, signals: HealthCard['signals'], suggest: string, loop: string[] = []): HealthCard =>
@@ -36,10 +38,10 @@ export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Sett
       'interrupt it and point it at the cause',
       hits.slice(-4).map((h) => new Date(h.at).toTimeString().slice(0, 5) + '  ' + h.key.split(':').slice(1).join(':').slice(0, 120)));
   }
-  if (s.status !== 'working' && queued.length && silentMin >= t.stuckMin) {
-    return card('stuck', `No output for ${Math.round(silentMin)} minutes while ${queued.length} task${queued.length === 1 ? '' : 's'} wait.`,
-      [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? new Date(s.lastActivity).toTimeString().slice(0, 5) : 'unknown'), tone: 'red' }, { k: 'queue', v: queued.map((q) => q.id).join(', '), tone: 'amber' }],
-      'nudge it to start ' + queued[0].id);
+  if (s.status !== 'working' && working.length && silentMin >= t.stuckMin) {
+    return card('stuck', `No output for ${Math.round(silentMin)} minutes with ${working.length} task${working.length === 1 ? '' : 's'} in progress.`,
+      [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? new Date(s.lastActivity).toTimeString().slice(0, 5) : 'unknown'), tone: 'red' }, { k: 'in progress', v: working.map((q) => q.id).join(', '), tone: 'amber' }],
+      'ask it how ' + working[0].id + ' is going');
   }
   if (s.contextPct >= t.replace) {
     return card('heavy', `Context at ${Math.round(s.contextPct)}%.`, [{ k: 'context', v: Math.round(s.contextPct) + '% of ' + Math.round(s.contextWindow / 1000) + 'k', tone: 'red' },

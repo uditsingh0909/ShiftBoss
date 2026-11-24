@@ -188,12 +188,15 @@ describe('health and overlaps', () => {
     expect(loopKeys([bash('mvn test', 9), bash('mvn test', 6), bash('mvn test', 3)], 3, nowMs).size).toBe(1);
     expect(loopKeys([bash('mvn test', 9), bash('ls', 6), bash('mvn test', 3)], 3, nowMs).size).toBe(0);
   });
-  test('blocked pane is waiting; idle with queued work is stuck', () => {
+  test('blocked pane is waiting; silent with work in progress is stuck', () => {
     const settings = mem().settings();
     expect(healthOf(session({ status: 'blocked' }), [], [], settings).verdict).toBe('waiting');
     const old = new Date(nowMs - 40 * 60e3).toISOString();
     const task = { id: 'T-1', title: 't', ask: '', requester: '', source: '', sourceUrl: null, session: 's1', stage: 1 as const, prio: 'P2' as const, held: false, createdAt: old, updatedAt: old };
-    expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [task], settings).verdict).toBe('stuck');
+    // Queued (stage 1) is waiting on the dispatcher, not the session; in progress (stage 2) and silent is stuck.
+    expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [task], settings).verdict).not.toBe('stuck');
+    expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [{ ...task, stage: 3 as const }], settings).verdict).not.toBe('stuck');
+    expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [{ ...task, stage: 2 as const }], settings).verdict).toBe('stuck');
     expect(healthOf(session({ contextPct: 90 }), [], [], settings).verdict).toBe('heavy');
   });
   test('same file and same migration number across sessions', () => {
@@ -310,5 +313,20 @@ describe('audit fixes', () => {
     e.dispatching.add(t.id);
     expect(e.readyToDispatch()).toEqual([]);
     expect(e.briefFor(t.id)).not.toContain('Ask: ');
+  });
+  test('moving back from Requester told reopens the promises it closed; re-import only moves forward; overdue is computed', () => {
+    const s = mem();
+    const t = s.addTask({ title: 'Ship it' });
+    s.addPromise({ to: 'Sam', said: 'will tell you', taskId: t.id });
+    s.updateTask(t.id, { stage: 6 });
+    expect(s.listPromises()[0].state).toBe('kept');
+    s.updateTask(t.id, { stage: 5 });
+    expect(s.listPromises()[0].state).toBe('open');
+    expect(() => s.updateTask(t.id, { prio: 'P9' as any })).toThrow();
+    s.importTask({ extId: 'X-1', title: 'Imported', stage: 4 });
+    const again = s.importTask({ extId: 'X-1', title: 'Imported', stage: 1, prio: 'P1' });
+    expect(s.getTask(again.id)).toMatchObject({ stage: 4, prio: 'P1' });
+    const late = s.addPromise({ to: 'Ann', said: 'by Monday', taskId: t.id, dueAt: new Date(Date.now() - 864e5).toISOString() });
+    expect(s.listPromises().find((p) => p.id === late.id)!.state).toBe('due');
   });
 });

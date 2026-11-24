@@ -119,6 +119,8 @@ export function TaskPage({ id }: { id: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [src, setSrc] = useState<'All' | 'Slack' | 'GitHub' | 'Session' | 'ShiftBoss'>('All');
   const [note, setNote] = useState('');
+  // Moving a task backwards, or to "Requester told" (which closes its promises), asks for a second click.
+  const [confirmStage, setConfirmStage] = useState<number | null>(null);
   useEffect(() => { api('GET', `/api/tasks/${id}`).then(setD).catch((e) => setErr(e.message)); }, [id, snap.now]);
   if (err) return <div className="page"><Hero eyebrow="Task" title={id} sub={err} /></div>;
   if (!d) return <div className="page faint">Loading…</div>;
@@ -149,10 +151,18 @@ export function TaskPage({ id }: { id: string }) {
         {STAGES.map((label, i) => {
           const done = i < t.stage, cur = i === t.stage;
           return (
-            <button key={label} type="button" onClick={() => patch({ stage: i as Stage }, 'Moved to ' + label)} aria-current={cur ? 'step' : undefined}
+            <button key={label} type="button" aria-current={cur ? 'step' : undefined}
+              onClick={() => {
+                if (cur) return;
+                const risky = i < t.stage || i === 6;
+                if (risky && confirmStage !== i) { setConfirmStage(i); return; }
+                setConfirmStage(null);
+                void patch({ stage: i as Stage }, 'Moved to ' + label);
+              }}
+              onBlur={() => setConfirmStage((c) => (c === i ? null : c))}
               className="col" style={{ gap: 14, padding: 16, borderRadius: 16, textAlign: 'left', cursor: 'pointer', border: '1px solid ' + (cur ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.04)'), background: cur ? 'rgba(255,255,255,0.04)' : '#070707' }}>
               <span className="mono" style={{ fontSize: 12, color: done ? C.green : cur ? C.fg : C.faint }}>{done ? '✓' : String(i + 1).padStart(2, '0')}</span>
-              <span style={{ fontSize: 15, fontWeight: 500, color: done ? C.dim : cur ? C.fg : C.faint }}>{label}</span>
+              <span style={{ fontSize: 15, fontWeight: 500, color: confirmStage === i ? C.amber : done ? C.dim : cur ? C.fg : C.faint }}>{confirmStage === i ? (i === 6 ? 'Click again: closes its promises' : 'Click again to move back') : label}</span>
             </button>
           );
         })}
@@ -164,7 +174,7 @@ export function TaskPage({ id }: { id: string }) {
           {t.ask ? <blockquote style={{ margin: 0, paddingLeft: 20, borderLeft: '2px solid rgba(255,255,255,0.14)', fontSize: 20, lineHeight: 1.5 }}>{t.ask}</blockquote> : <Empty text="No ask recorded." />}
           {t.sourceUrl && <a className="mono faint" style={{ fontSize: 12 }} href={safeHref(t.sourceUrl)} target="_blank" rel="noreferrer">open the source ↗</a>}
           <span className="label" style={{ marginTop: 8 }}>What done means</span>
-          {[['Merged, review bot approved', 3], ['Live on dev and checked', 4], ['Live on prod', 5], ['Requester told', 6]].map(([text, need]) => {
+          {[['PR open', 3], ['On dev', 4], ['Live', 5], ['Requester told', 6]].map(([text, need]) => {
             const ok = t.stage >= (need as number);
             return <div key={text as string} className="row well" style={{ gap: 14, padding: '12px 16px' }}><span style={{ width: 20, height: 20, borderRadius: 999, border: '1px solid ' + (ok ? C.green : 'rgba(255,255,255,0.16)'), color: C.green, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">{ok ? '✓' : ''}</span><span style={{ color: ok ? C.fg : C.dim }}>{text}</span></div>;
           })}
@@ -232,18 +242,20 @@ export function Intake() {
   const snap = useSnap()!;
   const [filter, setFilter] = useState<'All' | 'Filed' | 'To lead' | 'Dropped'>('All');
   const [days, setDays] = useState<{ day: string; read: number; filed: number }[]>([]);
-  useEffect(() => { api('GET', '/api/intake/days').then(setDays).catch(() => setDays([])); }, [snap.intake[0]?.id]);
+  useEffect(() => { api('GET', '/api/intake/days?tz=' + -new Date().getTimezoneOffset()).then(setDays).catch(() => setDays([])); }, [snap.intake[0]?.id]);
   const isTask = (v: string) => /^(filed|linked)/.test(v);
   const match = { All: () => true, Filed: (v: string) => isTask(v), 'To lead': (v: string) => v === 'to lead', Dropped: (v: string) => v === 'dropped' };
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todays = snap.intake.filter((i) => Date.parse(i.at) >= today.getTime());
+  // Today's counts come from the server (the snapshot holds only the latest 100 messages), in local days.
+  const d0 = new Date();
+  const todayKey = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+  const today = days.find((d) => d.day === todayKey) ?? { read: 0, filed: 0 };
   const max = Math.max(1, ...days.map((d) => d.read));
   const intakeSession = snap.sessions.find((s) => /intake/i.test(s.name));
   const intakePage = usePage(snap.intake.filter((i) => match[filter](i.verdict)), 50, filter);
   return (
     <div className="page">
       <Hero eyebrow={'Intake · ' + (intakeSession ? intakeSession.name + ' · ' + (intakeSession.model ?? '') : 'no intake session running')} live={!!intakeSession}
-        title={`${todays.length} messages read today.`} sub={`${todays.filter((i) => isTask(i.verdict)).length} became tasks.`}>
+        title={`${today.read} messages read today.`} sub={`${today.filed} became tasks.`}>
         <Seg label="Filter" value={filter} options={['All', 'Filed', 'To lead', 'Dropped'] as const} onChange={setFilter} />
         <a className="pill" href={href('tasks', 'inbox')}>Open inbox<Arrow /></a>
       </Hero>

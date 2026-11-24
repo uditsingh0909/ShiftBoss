@@ -6,6 +6,8 @@ import { existsSync, statSync } from 'node:fs';
 import { buildReport, type Audience } from './report';
 import { setupInfo } from './setup';
 import { safeUrl } from './guard';
+import { HerdrError } from './herdr';
+import { NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
 
@@ -154,7 +156,7 @@ export function makeApi(engine: Engine) {
       // ----- promises -----
       if (p === '/api/promises' && write) {
         const b = await body<any>(req);
-        const pr = store.addPromise({ to: str(b.to, 'to', 100), where: optStr(b.where, 200), said: str(b.said, 'said', 1000), keptWhen: optStr(b.keptWhen, 300), taskId: optStr(b.taskId, 20) ?? null, dueAt: optStr(b.dueAt, 40) ?? null });
+        const pr = store.addPromise({ to: str(b.to, 'to', 100), where: optStr(b.where, 200), said: str(b.said, 'said', 1000), keptWhen: optStr(b.keptWhen, 300), taskId: optStr(b.taskId, 20) ?? null, dueAt: dueIso(b.dueAt) });
         return done(json(pr, 201));
       }
       r = m(/^\/api\/promises\/(\d+)$/);
@@ -171,8 +173,11 @@ export function makeApi(engine: Engine) {
       // ----- needs -----
       if (p === '/api/needs' && write) {
         const b = await body<any>(req);
-        const answers = Array.isArray(b.answers) ? b.answers.map((a: unknown) => str(a, 'answer', 60)).slice(0, 4) : [];
+        const answers = Array.isArray(b.answers) ? [...new Set(b.answers.map((a: unknown) => str(a, 'answer', 60).trim()))].slice(0, 4) as string[] : [];
         if (!answers.length) throw new Error('answers must list 1-4 choices');
+        // 'Permission' is reserved for blocked panes ShiftBoss detects itself.
+        const kinds = ['Decision', 'Production write', 'Live customers', 'Money', 'Access'];
+        if (b.kind !== undefined && !kinds.includes(b.kind)) throw new Error('kind must be one of: ' + kinds.join(', '));
         const n = store.addNeed({ kind: b.kind ?? 'Decision', source: optStr(b.source, 200), title: str(b.title, 'title', 300), body: optStr(b.body, 2000),
           code: optStr(b.code, 2000), answers, session: optStr(b.session, 100) ?? null, taskId: optStr(b.taskId, 20) ?? null });
         engine.pushFeed(n.session ?? 'shiftboss', 'asked you: ' + n.title);
@@ -319,7 +324,8 @@ export function makeApi(engine: Engine) {
       }
       if (p === '/api/intake/begin' && write) {
         const st = store.intakeBegin();
-        return done(json({ ...st, run: !st.paused, readFrom: st.since ?? st.catchUpFrom,
+        const set = store.settings();
+        return done(json({ ...st, run: !st.paused, readFrom: st.since ?? st.catchUpFrom, owner: engine.cfg.ownerName, watchedChannels: set.watchedChannels ?? [],
           note: st.paused ? 'Intake is paused: do nothing this run.' : st.catchUpFrom ? `Catching up: read everything since ${st.since ?? st.catchUpFrom}, oldest first, then checkpoint.` : st.since ? `Read messages newer than ${st.since}.` : 'First run: read the last 2 hours.' }));
       }
       if (p === '/api/intake/checkpoint' && write) {
@@ -332,7 +338,7 @@ export function makeApi(engine: Engine) {
           url: safeUrl(b.url) });
         return done(json({ ok: true }, 201));
       }
-      if (p === '/api/intake/days') return json(store.intakeCountsByDay());
+      if (p === '/api/intake/days') { const tz = Number(url.searchParams.get('tz') ?? 0); return json(store.intakeCountsByDay(14, Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? tz : 0)); }
       if (p === '/api/decisions' && write) { const b = await body<any>(req); store.addDecision(str(b.text, 'text', 500)); return done(json({ ok: true }, 201)); }
 
       // ----- sessions -----
@@ -362,8 +368,15 @@ export function makeApi(engine: Engine) {
       if (p === '/api/setup') return json(setupInfo(engine.cfg.port));
       return fail('Not found', 404);
     } catch (e) {
-      return fail((e as Error).message, 400);
+      return fail((e as Error).message, e instanceof NotFound ? 404 : e instanceof HerdrError ? 502 : 400);
     }
   };
 }
 
+/** A promise's due time: an ISO date or time, stored as ISO, or nothing. */
+function dueIso(v: unknown): string | null {
+  if (v === undefined || v === null || v === '') return null;
+  const t = Date.parse(String(v));
+  if (!Number.isFinite(t)) throw new Error('due must be a date or time, e.g. 2026-12-01 or 2026-12-01T17:00');
+  return new Date(t).toISOString();
+}

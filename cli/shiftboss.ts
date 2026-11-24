@@ -12,7 +12,7 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss task note <T-n> "<text>" [--src Session|GitHub|Slack] [--who NAME]
   shiftboss slack <T-n> "<text>" --kind ask|promise|draft|sent [--who NAME]
   shiftboss slack sent <message-id>
-  shiftboss promise "<what was said>" --to NAME [--where CHANNEL] [--when "kept when…"] [--task T-n]
+  shiftboss promise "<what was said>" --to NAME [--where CHANNEL] [--when "kept when…"] [--task T-n] [--due 2026-12-01]
   shiftboss need "<question>" --answers "Yes,Not now" [--kind Decision|"Production write"|"Live customers"|Money|Access] [--body TEXT] [--session NAME] [--task T-n]
   shiftboss intake begin | checkpoint <ISO time> | pause [--until ISO] | resume [--from-now]
   shiftboss intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" [--who NAME] [--task T-n] [--url PERMALINK]
@@ -73,7 +73,7 @@ async function main() {
       return console.log('saved');
     }
     case 'promise': {
-      const p = await call('POST', '/api/promises', { said: sub, to: flags.to, where: flags.where, keptWhen: flags.when, taskId: flags.task });
+      const p = await call('POST', '/api/promises', { said: sub, to: flags.to, where: flags.where, keptWhen: flags.when, taskId: flags.task, dueAt: flags.due });
       return console.log('promise ' + p.id);
     }
     case 'need': {

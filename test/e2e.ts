@@ -1,6 +1,6 @@
 // Browser check against a running ShiftBoss: opens every screen, fails on any page error or
 // console error, and saves a screenshot of each. Run with: bun test/e2e.ts [outDir]
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
@@ -9,15 +9,22 @@ const BASE = process.env.SHIFTBOSS_URL ?? 'http://127.0.0.1:4400';
 const OUT = process.argv[2] ?? join(import.meta.dir, '..', 'data', 'e2e');
 mkdirSync(OUT, { recursive: true });
 
+// Any Chromium will do: CHROME_PATH, a Playwright download of any version, or an installed Chrome / Edge.
 function findChrome(): string | undefined {
-  const root = join(homedir(), 'AppData', 'Local', 'ms-playwright');
-  for (const rev of ['chromium-1255', 'chromium-1148']) {
-    const p = join(root, rev, 'chrome-win64', 'chrome.exe');
-    if (existsSync(p)) return p;
-    const q = join(root, rev, 'chrome-win', 'chrome.exe');
-    if (existsSync(q)) return q;
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  const pw = [join(homedir(), 'AppData', 'Local', 'ms-playwright'), join(homedir(), '.cache', 'ms-playwright'), join(homedir(), 'Library', 'Caches', 'ms-playwright')];
+  for (const root of pw) {
+    if (!existsSync(root)) continue;
+    for (const dir of readdirSync(root).filter((d) => d.startsWith('chromium-')).sort().reverse()) {
+      for (const rel of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe', 'chrome-linux/chrome', 'chrome-mac/Chromium.app/Contents/MacOS/Chromium']) {
+        const p = join(root, dir, rel);
+        if (existsSync(p)) return p;
+      }
+    }
   }
-  return process.env.CHROME_PATH;
+  for (const p of ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']) if (existsSync(p)) return p;
+  return undefined;
 }
 
 const snap = await (await fetch(BASE + '/api/snapshot')).json();
@@ -32,7 +39,9 @@ const routes: [string, string, string][] = [
 if (session) routes.push(['session', '#/session/' + encodeURIComponent(session), session]);
 if (task) routes.push(['task', '#/task/' + task, task]);
 
-const browser = await chromium.launch({ executablePath: findChrome(), headless: true });
+const chrome = findChrome();
+if (!chrome) { console.log('No Chrome, Edge or Chromium found. Set CHROME_PATH to one, or run: bunx playwright install chromium'); process.exit(2); }
+const browser = await chromium.launch({ executablePath: chrome, headless: true });
 const failures: string[] = [];
 for (const width of [1920, 390]) {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 1080 } });

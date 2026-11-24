@@ -157,11 +157,12 @@ export function SettingsPage() {
   const bud = (k: keyof Settings['budgets']) => (v: number) => setSt({ ...st, budgets: { ...st.budgets, [k]: v } });
   const save = () => act(async () => { const next = await api<Settings>('PUT', '/api/settings', st); setSt(next); setBase(JSON.stringify(next)); }, 'Saved');
   const T = st.thresholds;
+  const badOrder = T.warn >= T.replace;
   return (
     <div className="page">
-      <Hero eyebrow="Settings" title="How ShiftBoss behaves." sub={dirty ? <span style={{ color: C.amber }}>Unsaved changes.</span> : 'Everything is saved.'}>
+      <Hero eyebrow="Settings" title="How ShiftBoss behaves." sub={badOrder ? <span style={{ color: C.red }}>The warning must be below the replace line.</span> : dirty ? <span style={{ color: C.amber }}>Unsaved changes.</span> : 'Everything is saved.'}>
         <button type="button" className="pill" disabled={!dirty} onClick={() => { setSt(JSON.parse(base)); }}>Discard</button>
-        <button type="button" className="pill w" disabled={!dirty} onClick={() => void save()}>Save</button>
+        <button type="button" className="pill w" disabled={!dirty || badOrder} onClick={() => void save()}>Save</button>
       </Hero>
       <div className="col" style={{ gap: 16 }}>
         <SettingsSection title="General" text="Where ShiftBoss looks, and which session leads.">
@@ -189,19 +190,18 @@ export function SettingsPage() {
           <div style={{ gridColumn: '1 / -1', gap: 22 }} className="col">
             <Switch label="Send queued tasks automatically when a session frees a slot" on={st.switches.autoDispatch} onChange={sw('autoDispatch')}
               warn="When on, ShiftBoss prompts sessions on its own without asking you first." />
-            <Switch label="Quiet hours" hint="Hold non-urgent prompts and nudges." on={st.switches.quietHours} onChange={sw('quietHours')} />
           </div>
         </SettingsSection>
 
         <SettingsSection title="Intake" text="The session that reads Slack and meeting notes, and the channels it watches.">
           <div style={{ gridColumn: '1 / -1' }}><IntakeControl compact /></div>
           <Field id="watched-channels" label="Watched Slack channels" hint="One per line. The intake reads new top-level messages here." wide>
-            <textarea id="watched-channels" className="field mono" rows={5} defaultValue={(st.watchedChannels ?? []).join('\n')} onBlur={(e) => setSt({ ...st, watchedChannels: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) })} />
+            <textarea key={(st.watchedChannels ?? []).join('\n')} id="watched-channels" className="field mono" rows={5} defaultValue={(st.watchedChannels ?? []).join('\n')} onBlur={(e) => setSt({ ...st, watchedChannels: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) })} />
           </Field>
         </SettingsSection>
 
         <SettingsSection title="Usage budgets" text="Only used when Claude Code's own usage numbers are not available (no status line tap).">
-          {([['fiveHourTokens', 'Tokens per 5-hour window'], ['weeklyTokens', 'Tokens per week']] as const).map(([k, lbl]) => (
+          {([['fiveHourTokens', 'Tokens per 5-hour window']] as const).map(([k, lbl]) => (
             <Field key={k} id={'bud-' + k} label={lbl}>
               <input id={'bud-' + k} className="field mono" type="number" min={0} step={1000} value={st.budgets[k]} onChange={(e) => bud(k)(Math.max(0, Number(e.target.value) || 0))} />
             </Field>

@@ -27,12 +27,15 @@ export interface HerdrAgent {
   workspace_id: string;
 }
 
+/** herdr itself failed (not running, pane gone): the API answers 502, not 400. */
+export class HerdrError extends Error {}
+
 async function run(bin: string, args: string[], timeoutMs = 8000): Promise<string> {
   const proc = Bun.spawn([bin, ...args], { stdout: 'pipe', stderr: 'pipe' });
   const timer = setTimeout(() => proc.kill(), timeoutMs);
   const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   clearTimeout(timer);
-  if (code !== 0) throw new Error((err || out).trim() || `herdr ${args.join(' ')} exited ${code}`);
+  if (code !== 0) throw new HerdrError((err || out).trim() || `herdr ${args.join(' ')} exited ${code}`);
   return out;
 }
 
