@@ -8,6 +8,7 @@ export interface HerdrAgent {
   cwd: string;
   focused: boolean;
   pane_id: string;
+  name?: string; // set with `herdr agent rename`; wins over the terminal title
   terminal_title_stripped?: string;
   workspace_id: string;
 }
@@ -28,7 +29,7 @@ export function parseAgentList(json: string, workspace: string): HerdrAgent[] {
 }
 
 export function nameOf(a: HerdrAgent): string {
-  return (a.terminal_title_stripped || a.pane_id).trim();
+  return (a.name || a.terminal_title_stripped || a.pane_id).trim();
 }
 
 export class Herdr {

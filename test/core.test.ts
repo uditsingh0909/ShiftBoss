@@ -55,6 +55,7 @@ describe('herdr', () => {
     const a = parseAgentList(json, 'w5');
     expect(a.map(nameOf)).toEqual(['vdp']);
     expect(parseAgentList(json, '').length).toBe(2);
+    expect(nameOf({ ...a[0], name: 'intake', terminal_title_stripped: 'Rename intake' })).toBe('intake');
   });
 });
 
