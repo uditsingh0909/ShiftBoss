@@ -228,7 +228,7 @@ export function Intake() {
   const snap = useSnap()!;
   const [filter, setFilter] = useState<'All' | 'Filed' | 'To lead' | 'Dropped'>('All');
   const [days, setDays] = useState<{ day: string; read: number; filed: number }[]>([]);
-  useEffect(() => { api('GET', '/api/intake/days').then(setDays).catch(() => setDays([])); }, [snap.intake.length]);
+  useEffect(() => { api('GET', '/api/intake/days').then(setDays).catch(() => setDays([])); }, [snap.intake[0]?.id]);
   const isTask = (v: string) => /^(filed|linked)/.test(v);
   const match = { All: () => true, Filed: (v: string) => isTask(v), 'To lead': (v: string) => v === 'to lead', Dropped: (v: string) => v === 'dropped' };
   const today = new Date(); today.setHours(0, 0, 0, 0);

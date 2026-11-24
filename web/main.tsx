@@ -10,7 +10,7 @@ const NAV = [
   ['', 'Sessions'], ['tasks', 'Tasks'], ['intake', 'Intake'], ['promises', 'Promises'], ['releases', 'Releases'], ['needs', 'Needs you'],
 ] as const;
 
-function Nav({ route, onSearch }: { route: string[]; onSearch: () => void }) {
+function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => void; connected: boolean }) {
   const snap = useSnap();
   const counts: Record<string, number> = {
     needs: snap?.needs.filter((n) => !n.answer).length ?? 0,
@@ -24,6 +24,7 @@ function Nav({ route, onSearch }: { route: string[]; onSearch: () => void }) {
         <a href={href()} className="row" style={{ gap: 8, padding: '0 12px 0 10px' }} aria-label="Foreman home">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F4F5" strokeWidth="1.25" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M8 9h8M8 12h5M8 15h7" /></svg>
           <span style={{ fontWeight: 500 }}>Foreman</span>
+          <span className={'dot' + (connected ? ' blink' : '')} title={connected ? 'Live' : 'Reconnecting'} aria-label={connected ? 'Live' : 'Reconnecting'} style={{ background: connected ? C.green : C.red }} />
         </a>
         {NAV.map(([k, label]) => (
           <a key={k} className="item" href={href(...(k ? [k] : []))} aria-current={section === k ? 'page' : undefined}>
@@ -137,7 +138,7 @@ function App() {
       )}
       {!connected && snap && <div role="status" className="mono faint" style={{ textAlign: 'center', padding: 8, fontSize: 12 }}>Reconnecting…</div>}
       <main key={route.join('/')}>{page}</main>
-      <Nav route={route} onSearch={() => setPalette(true)} />
+      <Nav route={route} onSearch={() => setPalette(true)} connected={connected} />
       {palette && <Palette onClose={() => setPalette(false)} />}
       <Toaster />
     </SnapshotCtx.Provider>

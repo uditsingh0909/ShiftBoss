@@ -146,6 +146,13 @@ export function SessionPage({ name }: { name: string }) {
   const [screen, setScreen] = useState<string | null>(null);
   const th = snap.settings.thresholds;
   useEffect(() => { setScreen(null); }, [name]);
+  // The raw terminal is read from herdr on demand; while it is open, refresh it every 3 s.
+  const showingScreen = screen !== null;
+  useEffect(() => {
+    if (!showingScreen) return;
+    const id = setInterval(() => { api('GET', `/api/sessions/${encodeURIComponent(name)}/screen`).then((r) => setScreen(r.text)).catch(() => {}); }, 3000);
+    return () => clearInterval(id);
+  }, [showingScreen, name]);
   if (!s) return <div className="page"><Hero eyebrow="Session" title={name} sub="Not running in herdr right now." /><a className="pill" href={href('roster')}>Back to roster</a></div>;
   const tasks = snap.tasks.filter((t) => t.session === s.name && t.stage >= 1 && t.stage <= 4);
   const current = tasks.find((t) => t.stage >= 2);
@@ -188,7 +195,7 @@ export function SessionPage({ name }: { name: string }) {
       <section className="grid12" style={{ alignItems: 'stretch' }}>
         <article className="shell rise" style={{ gridColumn: 'span 8', gridRow: 'span 2' }}>
           <div className="core col" style={{ gap: 16, padding: 22 }}>
-            <div className="row" style={{ gap: 10 }}><Dot color={C.green} blink={s.status === 'working'} /><span style={{ fontWeight: 500 }}>{screen ? 'Raw screen' : 'Live output'}</span>
+            <div className="row" style={{ gap: 10 }}><Dot color={C.green} blink={s.status === 'working'} /><span style={{ fontWeight: 500 }}>{screen ? 'Raw screen · refreshes every 3 s' : 'Live output'}</span>
               <span className="mono faint" style={{ marginLeft: 'auto', fontSize: 12 }}>{screen ? <button type="button" className="pill sm" onClick={() => setScreen(null)}>Back to live</button> : 'from the transcript · ' + s.lines.length + ' lines'}</span></div>
             {screen ? <pre className="term" style={{ height: 460, margin: 0, padding: 18, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{screen}</pre> : <Lines s={s} n={60} height={460} stamps />}
             <form className="row" style={{ gap: 10, padding: 6, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: '#070707' }} onSubmit={(e) => { e.preventDefault(); void send(); }}>
