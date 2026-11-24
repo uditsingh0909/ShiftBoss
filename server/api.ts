@@ -1,6 +1,7 @@
 // HTTP API. Every write needs the X-ShiftBoss header, so a web page on another origin
 // cannot trigger one (the custom header forces a CORS preflight that we never allow).
-import type { Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent } from '../shared/types';
+import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../shared/types';
+import { monitorSessionPrompt } from './monitors';
 import type { Engine } from './engine';
 import { existsSync, statSync } from 'node:fs';
 import { buildReport, type Audience } from './report';
@@ -278,6 +279,61 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/replacements\/(\d+)\/cancel$/);
       if (r && write) { engine.cancelReplacement(Number(r[1])); return done(json({ ok: true })); }
+      // ----- monitors -----
+      if (p === '/api/monitors' && req.method === 'GET') {
+        const ms = store.listMonitors();
+        const ms2 = engine.monitorSession();
+        const lead = resolveLead(engine.sessions, store.settings().leadSession ?? '');
+        return json({
+          monitors: ms.map((x) => ({ ...x, checks: store.monitorChecks(x.id, 200) })),
+          session: ms2 ? { name: ms2.name, status: ms2.status, cwd: ms2.cwd } : null,
+          sessionName: MONITOR_SESSION, leadCwd: lead?.cwd ?? null,
+          startPrompt: monitorSessionPrompt(engine.cfg.ownerName, setupInfo(engine.cfg.port).repoPath),
+        });
+      }
+      if (p === '/api/monitors' && req.method === 'POST') {
+        const mon = store.addMonitor(monitorInput(await body<any>(req), store, true) as Parameters<typeof store.addMonitor>[0]);
+        engine.pushFeed('you', `started watching ${mon.title} for ${mon.durationDays} day${mon.durationDays === 1 ? '' : 's'}, every ${mon.intervalHours} h`);
+        return done(json(mon, 201));
+      }
+      r = m(/^\/api\/monitors\/(\d+)$/);
+      if (r && req.method === 'GET') return json({ ...store.getMonitor(Number(r[1])), checks: store.monitorChecks(Number(r[1]), 200) });
+      if (r && req.method === 'PATCH') {
+        const id = Number(r[1]);
+        const b = await body<any>(req);
+        let mon = store.getMonitor(id);
+        const edit = monitorInput(b, store, false);
+        if (Object.keys(edit).length) mon = store.updateMonitor(id, edit);
+        if (b.action !== undefined) {
+          if (!['pause', 'resume', 'stop'].includes(b.action)) throw new Error('action must be pause, resume or stop');
+          mon = store.setMonitorState(id, b.action);
+          engine.pushFeed('you', `${b.action === 'pause' ? 'paused' : b.action === 'resume' ? 'resumed' : 'stopped'} the monitor for ${mon.title}`);
+        }
+        return done(json(mon));
+      }
+      r = m(/^\/api\/monitors\/(\d+)\/check-now$/);
+      if (r && write) {
+        const id = Number(r[1]);
+        store.getMonitor(id); // 404 for an unknown id
+        const s = engine.monitorSession();
+        if (!s) return fail(`No monitor session is running, so nobody can check. Start it on the Monitors page (a session named ${MONITOR_SESSION}).`, 409);
+        const mon = store.checkMonitorNow(id);
+        const busy = s.status !== 'idle' && s.status !== 'done';
+        const queued = !!store.monitorInFlight();
+        engine.pushFeed('you', `asked for a check of ${mon.title} now`);
+        return done(json({ ...mon, session: s.name, waiting: s.status === 'blocked' ? `${s.name} is waiting on a prompt in herdr; the check goes once you answer it there`
+          : busy ? `${s.name} is busy; the check goes when it is idle` : queued ? 'another check is running; this one goes next' : null }));
+      }
+      r = m(/^\/api\/monitors\/(\d+)\/report$/);
+      if (r && write) {
+        const b = await body<any>(req);
+        if (!['ok', 'warn', 'bad', 'error'].includes(b.verdict)) throw new Error('verdict must be ok, warn, bad or error');
+        const links: string[] = Array.isArray(b.links) ? b.links.slice(0, 5).map((u: unknown) => safeUrl(u)).filter((u: string | null): u is string => !!u) : [];
+        const res = store.reportMonitor(Number(r[1]), { verdict: b.verdict, summary: str(b.summary, 'summary', 500), details: optStr(b.details, 4000), links });
+        engine.pushFeed('monitor', `${res.monitor.title}: ${b.verdict}, ${res.check.summary}`);
+        if (res.becameAlerting) engine.pushFeed('monitor', `${res.monitor.title} is alerting`);
+        return done(json(res));
+      }
       // ----- self-update -----
       if (p === '/api/update' && req.method === 'GET') return json(engine.updateStatus() ?? { supported: false });
       if (p === '/api/update/check' && write) {
@@ -431,6 +487,38 @@ export function makeApi(engine: Engine) {
       return fail((e as Error).message, e instanceof NotFound ? 404 : e instanceof HerdrError ? 502 : 400);
     }
   };
+}
+
+/**
+ * A monitor from a request body. `create`: title, prompt, days and hours are required. Otherwise only the
+ * fields present are returned, for an edit. Links must be http(s); a task must exist.
+ */
+function monitorInput(b: any, store: Engine['store'], create: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (create || b.title !== undefined) out.title = str(b.title, 'title', 200);
+  if (create || b.prompt !== undefined) out.prompt = str(b.prompt, 'what to check', 4000);
+  if (b.links !== undefined) {
+    if (typeof b.links !== 'object' || b.links === null) throw new Error('links must be { pr, ticket, dashboard }');
+    const l: Record<string, string | null> = {};
+    for (const k of ['pr', 'ticket', 'dashboard'] as const) if (b.links[k] !== undefined) l[k] = safeUrl(b.links[k]);
+    out.links = l;
+  }
+  if (b.taskId !== undefined) {
+    const t = optStr(b.taskId, 20) ?? null;
+    if (t && (!/^T-\d+$/.test(t) || !store.getTask(t))) throw new Error('No task ' + t);
+    out.taskId = t;
+  }
+  if (create || b.durationDays !== undefined) {
+    const d = Number(b.durationDays);
+    if (!(MONITOR_DAYS as readonly number[]).includes(d)) throw new Error('days must be ' + MONITOR_DAYS.join(', '));
+    out.durationDays = d;
+  }
+  if (create || b.intervalHours !== undefined) {
+    const h = Number(b.intervalHours);
+    if (!(MONITOR_HOURS as readonly number[]).includes(h)) throw new Error('every must be ' + MONITOR_HOURS.join(', ') + ' hours');
+    out.intervalHours = h;
+  }
+  return out;
 }
 
 /** A promise's due time: an ISO date or time, stored as ISO, or nothing. */

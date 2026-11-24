@@ -188,6 +188,49 @@ export interface Replacement {
   missing: string[];
 }
 
+/** Watching something after it shipped: one dedicated session (`monitor`) runs a check every few hours for a few days. */
+export const MONITOR_SESSION = 'monitor';
+export const MONITOR_DAYS = [1, 3, 7, 14] as const;
+export const MONITOR_HOURS = [1, 3, 6, 12, 24] as const;
+export type MonitorVerdict = 'ok' | 'warn' | 'bad' | 'error';
+/** finished: its days are up, or it was stopped. alerting: still watched, and the last check was bad (or two errors in a row). */
+export type MonitorState = 'active' | 'paused' | 'finished' | 'alerting';
+export interface MonitorLinks { pr: string | null; ticket: string | null; dashboard: string | null }
+export interface MonitorCheck {
+  id: number;
+  monitorId: number;
+  dueAt: string;
+  sentAt: string | null; // when the prompt went to the monitor session; null for a report nobody asked for
+  reportedAt: string | null; // null while the check is in flight
+  verdict: MonitorVerdict | null;
+  summary: string;
+  details: string;
+  links: string[];
+}
+export interface Monitor {
+  id: number;
+  title: string;
+  prompt: string;
+  links: MonitorLinks;
+  taskId: string | null;
+  durationDays: number;
+  intervalHours: number;
+  state: MonitorState;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string;
+  endsAt: string;
+  nextDueAt: string | null; // null once finished
+  finishedAt: string | null;
+  finishReason: 'ended' | 'stopped' | null;
+  lastVerdict: MonitorVerdict | null;
+  lastSummary: string | null;
+  lastCheckAt: string | null;
+  checksDone: number;
+  checksLeft: number; // still to run, counting the one due next
+  inFlight: { checkId: number; sentAt: string } | null;
+}
+
 export interface Snapshot {
   now: string;
   herdrOk: boolean;
@@ -210,4 +253,6 @@ export interface Snapshot {
   update: { supported: boolean; current: { sha: string; date: string; subject: string } | null; latest: { sha: string; date: string; subject: string } | null; behind: number; checking: boolean; checkedAt: string | null; state: string; note: string } | null;
   feed: { at: string; who: string; text: string }[];
   replacements: Replacement[];
+  /** Monitors being watched (active, paused, alerting) and those finished in the last day. */
+  monitors: Monitor[];
 }
