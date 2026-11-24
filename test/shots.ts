@@ -15,16 +15,21 @@ const task = snap.tasks.find((t: any) => t.stage >= 2 && t.stage <= 4)?.id ?? sn
 const shots: [string, string, string][] = [
   ['sessions', '#/', 'sessions running'], ['tasks', '#/tasks', 'in flight'], ['needs', '#/needs', 'Needs you'],
   ['intake', '#/intake', 'messages read today'], ['health', '#/health', 'Session health'],
+  ['welcome', '#/welcome', 'Set up ShiftBoss'], ['connect', '#/setup', 'Connect your sessions'],
 ];
 if (session) shots.splice(1, 0, ['session', '#/session/' + encodeURIComponent(session), session]);
 if (task) shots.splice(3, 0, ['task', '#/task/' + task, task]);
 
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
+// No guided tour over the pictures.
+await page.addInitScript(() => localStorage.setItem('shiftboss-tour-seen', JSON.stringify(['home', 'tasks', 'task', 'needs', 'promises', 'intake', 'session', 'settings', 'welcome'])));
 for (const [name, hash, expect] of shots) {
   await page.goto(BASE + '/' + hash);
   await page.getByText(expect, { exact: false }).first().waitFor({ timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1600);
+  // Alert details can name people or logins: keep them out of shared pictures.
+  await page.addStyleTag({ content: '.alert-slide .faint { visibility: hidden; }' });
   await page.screenshot({ path: join(OUT, name + '.jpg'), type: 'jpeg', quality: 78 });
 }
 await browser.close();
