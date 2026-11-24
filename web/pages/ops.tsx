@@ -219,6 +219,11 @@ export function SettingsPage() {
               <input id="herdr-ws" className="field mono" value={st.herdrWorkspace} onChange={(e) => setSt({ ...st, herdrWorkspace: e.target.value })} />
             </div>
             <div className="col" style={{ gap: 6 }}>
+              <label htmlFor="lead-session" style={{ fontSize: 13 }}>Lead session</label>
+              <span className="faint" style={{ fontSize: 12 }}>Always the big card on Sessions. Its replacements (name-v2, name-v3 …) take over automatically.</span>
+              <input id="lead-session" className="field mono" value={st.leadSession ?? ''} placeholder="lead-manager" onChange={(e) => setSt({ ...st, leadSession: e.target.value })} />
+            </div>
+            <div className="col" style={{ gap: 6 }}>
               <label htmlFor="handoffs-dir" style={{ fontSize: 13 }}>Handoffs folder</label>
               <input id="handoffs-dir" className="field mono" value={st.handoffsDir} onChange={(e) => setSt({ ...st, handoffsDir: e.target.value })} />
             </div>

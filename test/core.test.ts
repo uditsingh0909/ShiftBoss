@@ -162,6 +162,20 @@ describe('overlap ignore list', () => {
 });
 
 import { parsePrUrl, targetStage, taskIdsIn } from '../server/github';
+import { resolveLead } from '../shared/types';
+describe('lead session', () => {
+  const s = (name: string) => ({ name });
+  test('the newest replacement is the lead', () => {
+    expect(resolveLead([s('lead-manager'), s('lead-manager-v2'), s('vdp')], 'lead-manager')?.name).toBe('lead-manager-v2');
+    expect(resolveLead([s('lead-manager-v10'), s('lead-manager-v9')], 'lead-manager')?.name).toBe('lead-manager-v10');
+    expect(resolveLead([s('lead-manager')], 'lead-manager')?.name).toBe('lead-manager');
+  });
+  test('other names never match', () => {
+    expect(resolveLead([s('lead-manager-old'), s('my-lead-manager'), s('lead-manager-v2x')], 'lead-manager')).toBeNull();
+    expect(resolveLead([s('lead-manager')], '')).toBeNull();
+  });
+});
+
 describe('github auto-advance', () => {
   test('finds task ids in title, body and branch', () => {
     expect(taskIdsIn('fix(analytics): name screens (T-74)\nShiftBoss: t-75\nfeat/t76-chat')).toEqual(['T-74', 'T-75', 'T-76']);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Session } from '../../shared/types';
+import { resolveLead, type Session } from '../../shared/types';
 import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Seg, toneColor, useSnap } from '../lib';
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
@@ -33,7 +33,9 @@ export function CommandCenter() {
   const th = snap.settings.thresholds;
   const blocked = snap.sessions.filter((s) => s.status === 'blocked');
   const near = snap.sessions.filter((s) => s.contextPct >= th.replace);
-  const hero = blocked[0] ?? [...snap.sessions].sort((a, b) => b.contextPct - a.contextPct)[0];
+  // The lead session is always the big card; without one, whoever needs you, then the fullest context.
+  const lead = resolveLead(snap.sessions, snap.settings.leadSession ?? '');
+  const hero = lead ?? blocked[0] ?? [...snap.sessions].sort((a, b) => b.contextPct - a.contextPct)[0];
   const need = hero ? snap.needs.find((n) => !n.answer && n.session === hero.name) : null;
   const match = { All: () => true, Working: (s: Session) => s.status === 'working', 'Needs you': (s: Session) => s.status === 'blocked', 'Near limit': (s: Session) => s.contextPct >= 80, Idle: (s: Session) => s.status === 'idle' || s.status === 'done' };
   const tiles = snap.sessions.filter((s) => s !== hero).filter(match[filter]);
@@ -54,7 +56,7 @@ export function CommandCenter() {
         {hero ? (
           <Card span={8} tone={hero.status === 'blocked' ? 'amber' : undefined} pad={28}>
             <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-              <span className="eyebrow" style={{ borderColor: statusColor(hero.status), color: statusColor(hero.status) }}>{hero.status === 'blocked' ? 'Needs you' : 'Fullest context'}</span>
+              <span className="eyebrow" style={{ borderColor: statusColor(hero.status), color: statusColor(hero.status) }}>{hero === lead ? (hero.status === 'blocked' ? 'Lead · needs you' : 'Lead') : hero.status === 'blocked' ? 'Needs you' : 'Fullest context'}</span>
               <span className="mono dim" style={{ fontSize: 12 }}>{hero.name} · {hero.model ?? 'model unknown'}</span>
               <span style={{ flex: 1 }} />
               <a className="pill sm" href={href('session', hero.name)}>Open session<Arrow /></a>

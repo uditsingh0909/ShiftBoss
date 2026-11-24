@@ -118,8 +118,23 @@ export interface Settings {
   budgets: { fiveHourTokens: number; weeklyTokens: number };
   herdrWorkspace: string;
   handoffsDir: string;
+  /** Name of the lead session, e.g. 'lead-manager'. Also matches its replacements: lead-manager-v2, -v3, … */
+  leadSession: string;
   /** Slack channels intake reads for new top-level messages, e.g. "#proj-vdp-plus". */
   watchedChannels: string[];
+}
+
+/** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
+export function resolveLead<T extends { name: string }>(sessions: T[], base: string): T | null {
+  const b = base.trim().toLowerCase();
+  if (!b) return null;
+  let best: T | null = null, bestV = -1;
+  for (const s of sessions) {
+    const n = s.name.toLowerCase();
+    const m = n === b ? ['', '1'] : n.match(new RegExp('^' + b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-v(\\d+)$'));
+    if (m && Number(m[1]) > bestV) { best = s; bestV = Number(m[1]); }
+  }
+  return best;
 }
 
 export interface Snapshot {
