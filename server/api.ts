@@ -463,9 +463,23 @@ export function makeApi(engine: Engine) {
 
       // ----- settings, report, dispatcher -----
       if (p === '/api/settings' && req.method === 'PUT') {
-        const next = mergeSettings(store.settings(), await body<unknown>(req));
+        const cur = store.settings();
+        const next = mergeSettings(cur, await body<unknown>(req));
+        if ((next.instructions ?? '') !== (cur.instructions ?? '')) { next.instructionsPrev = cur.instructions ?? ''; engine.pushFeed('you', 'changed your way of working'); }
         store.saveSettings(next);
         return done(json(next));
+      }
+      if (p === '/api/owner-instructions' && write) {
+        // From the CLI (shiftboss instructions add/set): a session doing it because the owner asked. Logged, undoable.
+        const b = await body<any>(req);
+        const cur = store.settings();
+        const old = cur.instructions ?? '';
+        const text = b.add !== undefined ? (old.trim() ? old.trimEnd() + '\n' : '') + '- ' + str(b.add, 'add', 500).trim().replace(/^-\s*/, '')
+          : b.set !== undefined ? String(b.set) : b.undo ? cur.instructionsPrev ?? '' : null;
+        if (text === null) return fail('Pass add, set or undo');
+        store.saveSettings(mergeSettings(cur, { instructions: text, instructionsPrev: old }));
+        engine.pushFeed(byOf(req, b), b.undo ? 'restored the previous way of working' : 'updated your way of working');
+        return done(json({ instructions: text }));
       }
       if (p === '/api/report') {
         const aud = (['plain', 'team', 'me'].includes(url.searchParams.get('aud') ?? '') ? url.searchParams.get('aud') : 'plain') as Audience;

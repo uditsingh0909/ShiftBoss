@@ -200,7 +200,12 @@ export function SettingsPage() {
             <textarea id="owner-instructions" aria-label="Your way of working" className="field" rows={6} maxLength={4000}
               placeholder={'For example:\n- Always let me review a PR before it is merged, and ask before any deploy.\n- Keep Slack replies to a few lines.\n- Test on dev with real requests before opening a PR.'}
               value={st.instructions ?? ''} onChange={(e) => setSt({ ...st, instructions: e.target.value })} style={{ height: 'auto', padding: 12, lineHeight: 1.55 }} />
-            <span className="faint" style={{ fontSize: 12, marginTop: 6 }}>{(st.instructions ?? '').length}/4000 · Save at the top to apply.</span>
+            <span className="row faint" style={{ fontSize: 12, marginTop: 6, gap: 10, flexWrap: 'wrap' }}>
+              <span>{(st.instructions ?? '').length}/4000 · Save at the top to apply. Sessions can change it with <code className="mono">shiftboss instructions add "…"</code> when you ask them.</span>
+              {base && JSON.parse(base).instructionsPrev !== undefined && JSON.parse(base).instructionsPrev !== (JSON.parse(base).instructions ?? '') && (
+                <button type="button" className="pill sm" onClick={() => setSt({ ...st, instructions: JSON.parse(base).instructionsPrev })}>Bring back the previous version</button>
+              )}
+            </span>
           </div>
         </SettingsSection>
 

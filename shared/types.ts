@@ -143,6 +143,8 @@ export interface Settings {
   mode?: 'dry' | 'ask' | 'safe' | 'auto';
   /** The owner's way of working, in their words. Added to everything ShiftBoss tells sessions. */
   instructions?: string;
+  /** The text before the last change, so a change can be undone. */
+  instructionsPrev?: string;
 }
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */

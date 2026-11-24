@@ -17,6 +17,7 @@ const Patch = z.object({
   autoUpdate: z.boolean().optional(),
   mode: z.enum(['dry', 'ask', 'safe', 'auto']).optional(),
   instructions: z.string().max(4000).optional(),
+  instructionsPrev: z.string().max(4000).optional(),
 }).strip();
 
 export function mergeSettings(cur: Settings, input: unknown): Settings {

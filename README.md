@@ -291,6 +291,9 @@ Leaving Dry run asks whether to review what it recorded (it becomes approvals) o
 Settings → **Your way of working**: how you like work done, in your own words ("always let me review a PR before
 it is merged"). ShiftBoss adds it to every brief, handoff and prompt it sends, the intake gets it from
 `intake_begin`, and any session can read it with the `owner_instructions` tool.
+Claude can change it when you ask it to: `shiftboss instructions add "<rule>"`, `shiftboss instructions set "<text>"`
+(or `--file`), and `shiftboss instructions undo`. Every change shows in the feed, and Settings can bring back the
+previous version.
 
 ### Start at login (Windows)
 

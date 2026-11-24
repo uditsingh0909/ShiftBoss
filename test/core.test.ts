@@ -730,3 +730,19 @@ describe('owner instructions and thread checks', () => {
     expect(() => s.resolveIntake(99999)).toThrow();
   });
 });
+
+describe('instructions from the CLI', () => {
+  test('add, set and undo through the API; every change keeps the previous version', async () => {
+    const store = mem();
+    const e = new Engine(loadConfig(), store, {} as any);
+    const api = makeApi(e);
+    const call = (b: any) => api(new Request('http://127.0.0.1:4400/api/owner-instructions', { method: 'POST', headers: { 'x-shiftboss': '1', 'content-type': 'application/json' }, body: JSON.stringify(b) }), new URL('http://127.0.0.1:4400/api/owner-instructions'));
+    await call({ add: 'Review PRs before merge' });
+    await call({ add: '- Ask before deploys' });
+    expect(store.settings().instructions).toBe('- Review PRs before merge\n- Ask before deploys');
+    await call({ set: 'Only this' });
+    expect(store.settings().instructions).toBe('Only this');
+    await call({ undo: true });
+    expect(store.settings().instructions).toBe('- Review PRs before merge\n- Ask before deploys');
+  });
+});

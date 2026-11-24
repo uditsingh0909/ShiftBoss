@@ -20,6 +20,9 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss decide "<what the lead decided>"
   shiftboss import <tasks.json>     (re-runnable: matched on extId)
   shiftboss status
+  shiftboss instructions                        show the owner's way of working
+  shiftboss instructions add "<rule>"            add one rule
+  shiftboss instructions set "<text>" | --file F  replace them (undo: shiftboss instructions undo)
   shiftboss update [--check]                       install the newest ShiftBoss (--check: only say if there is one)
 
 Setup and onboarding (the same steps as the Get started screen, which updates live):
@@ -187,6 +190,13 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
         for (const x of s.replacements) console.log(`${String(x.id).padStart(3)}  ${x.oldName} -> ${x.newName}  ${x.state}${x.error ? '  (' + x.error + ')' : ''}${x.state === 'done' ? `  ${x.oldName} can be closed` : ''}`);
         return;
       }
+      break;
+    }
+    case 'instructions': {
+      if (!sub) { const r = await call('GET', '/api/owner-instructions'); return console.log(r.instructions || '(none yet)'); }
+      if (sub === 'add') { await call('POST', '/api/owner-instructions', { add: a1 }); return console.log('added'); }
+      if (sub === 'set') { const text = flags.file ? await Bun.file(flags.file).text() : a1 ?? ''; await call('POST', '/api/owner-instructions', { set: text }); return console.log('saved'); }
+      if (sub === 'undo') { await call('POST', '/api/owner-instructions', { undo: true }); return console.log('restored the previous version'); }
       break;
     }
     case 'update': {
