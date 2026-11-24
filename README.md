@@ -610,9 +610,12 @@ always do it by hand in the UI. `shiftboss help` lists every command; the MCP se
 Two kinds of action differ:
 - **Things ShiftBoss does to sessions** (send a brief, start, replace, prompt or stop a session, an intake pass)
   go through your [mode](#modes-how-much-shiftboss-does-on-its-own), whoever asks.
-- **Your decisions** (answering Needs you, approving held actions or Slack drafts, the mode, settings) need
-  `owner_asked: true` (MCP) or `--as-owner` (CLI): a session sets it only when you asked it to in the
-  conversation. The feed shows "<session> on your behalf: …" for each one.
+- **Your decisions** (answering Needs you, approving held actions or Slack drafts, the mode, settings, your way
+  of working) need `owner_asked: true` (MCP) or `--as-owner` (CLI), which a session sets only when you asked it
+  to, **and** Settings → Mode → **Claude can make my decisions** turned on. It is off for new installs (only
+  ShiftBoss's own screens decide) and on for installs from before modes existed. A session cannot turn it on
+  itself. The feed shows "<session> on your behalf: …" for each decision. Setup commands count as yours only
+  until setup is finished.
 
 `bun test/mcp-check.ts` drives the MCP server as a real client against a running ShiftBoss (reads only).
 

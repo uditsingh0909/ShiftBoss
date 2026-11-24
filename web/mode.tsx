@@ -46,6 +46,7 @@ export function ModePicker() {
           <button type="button" className="pill sm" onClick={() => setLeaving(null)}>Cancel</button>
         </div>
       )}
+      <DelegateSwitch />
       <span className="faint" style={{ fontSize: 12 }}>
         Your own clicks in ShiftBoss always run. The mode covers what ShiftBoss does on its own (automatic sending, monitor checks) and what a session asks it to do. <span style={{ color: C.dim }}>Saved as soon as you pick one.</span>
       </span>
@@ -113,5 +114,30 @@ export function ModeSwitch({ collapsed, onDone }: { collapsed?: boolean; onDone?
         document.body,
       )}
     </>
+  );
+}
+
+/** Whether a Claude session may make the owner's decisions when asked (approvals, mode, settings, answers). Saves at once. */
+function DelegateSwitch() {
+  const snap = useSnap()!;
+  const on = !!snap.settings.delegate;
+  const flip = async () => {
+    try { await api('PUT', '/api/settings', { delegate: !on }); toast(!on ? 'Claude can now make your decisions when you ask it to' : 'Only ShiftBoss itself can make your decisions now'); }
+    catch (e) { toast((e as Error).message); }
+  };
+  return (
+    <div className="row well" style={{ gap: 12, padding: '12px 14px', flexWrap: 'wrap' }}>
+      <div className="col" style={{ gap: 3, flex: '1 1 300px', minWidth: 0 }}>
+        <span style={{ fontSize: 14 }}>Claude can make my decisions</span>
+        <span className="faint" style={{ fontSize: 12, lineHeight: 1.5 }}>
+          {on ? 'On: when you ask a Claude session to approve something, change the mode or settings, or answer for you, it can. The feed shows which session did it.'
+            : 'Off: only ShiftBoss itself can approve, change the mode or settings, or answer for you. Claude sessions can still read everything and do their own work.'}
+        </span>
+      </div>
+      <button type="button" role="switch" aria-checked={on} aria-label="Claude can make my decisions" className="switch" onClick={() => void flip()}
+        style={{ width: 44, height: 24, borderRadius: 999, border: '1px solid rgba(255,255,255,.2)', background: on ? 'var(--fg)' : 'transparent', position: 'relative', cursor: 'pointer', flex: 'none' }}>
+        <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 16, height: 16, borderRadius: 999, background: on ? '#050505' : 'var(--fg)', transition: 'left .3s var(--ease)' }} />
+      </button>
+    </div>
   );
 }

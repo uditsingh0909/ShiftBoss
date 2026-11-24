@@ -70,7 +70,7 @@ log('config', !!cfg.ownerName && cfg.ownerName !== 'The owner', `owner ${cfg.own
 async function up(): Promise<boolean> { try { return (await fetch(BASE + '/api/onboarding', { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } }
 async function api(method: string, path: string, body?: unknown) {
   // Setup runs with the owner's consent, so its actions are the owner's (not held by the gate).
-  const r = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1', 'x-shiftboss-actor': 'owner' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const r = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1', 'x-shiftboss-actor': 'owner', 'x-shiftboss-by': 'setup' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const d: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
   return d;

@@ -48,7 +48,17 @@ export function makeApi(engine: Engine) {
 
   // The owner's own clicks (the UI, and setup run with their consent) carry this header and always run.
   // Sessions (MCP, CLI) and ShiftBoss itself go through the gate (server/gate.ts).
-  const actorOf = (req: Request): Actor => (req.headers.get('x-shiftboss-actor') === 'owner' ? 'owner' : 'session');
+  // ShiftBoss's own screens send the owner header with no name. A session acting for the owner (CLI --as-owner, MCP
+  // owner_asked) also names itself (x-shiftboss-by): that counts as the owner only while the owner allows it
+  // (Settings: Claude can make my decisions), or for setup while setup is not finished.
+  const actorOf = (req: Request): Actor => {
+    if (req.headers.get('x-shiftboss-actor') !== 'owner') return 'session';
+    const by = req.headers.get('x-shiftboss-by');
+    if (!by) return 'owner';
+    if (by === 'setup' && !store.onboarding().doneAt) return 'owner';
+    return store.settings().delegate ? 'owner' : 'session';
+  };
+  const ownerOnly = (what: string) => fail(`${what} is the owner's decision. Do it in ShiftBoss, or turn on Settings → Claude can make my decisions and ask Claude again.`, 403);
   const byOf = (req: Request, b: any) => (typeof b?.by === 'string' && b.by.trim() ? b.by.trim().slice(0, 100) : 'a session');
   const gated = (r: Awaited<ReturnType<Engine['act']>>, ok: (result: any) => Response) =>
     r.status === 'done' ? ok(r.result)
@@ -61,7 +71,7 @@ export function makeApi(engine: Engine) {
     if (write && req.headers.get('x-shiftboss') !== '1') return fail('Missing X-ShiftBoss header', 403);
     const m = (re: RegExp) => p.match(re);
     // A session acting on the owner's behalf (CLI --as-owner, MCP owner_asked) names itself: the feed says so.
-    const onBehalf = write && actorOf(req) === 'owner' ? req.headers.get('x-shiftboss-by') : null;
+    const onBehalf = write && req.headers.get('x-shiftboss-by') && actorOf(req) === 'owner' ? req.headers.get('x-shiftboss-by') : null;
     if (onBehalf) engine.pushFeed(onBehalf.slice(0, 60), `on your behalf: ${req.method} ${p.replace('/api/', '')}`);
     try {
       if (p === '/api/snapshot' && req.method === 'GET') return json(engine.snapshot());
@@ -81,7 +91,7 @@ export function makeApi(engine: Engine) {
         const b = await body<any>(req);
         const t = store.addTask({ title: str(b.title, 'title', 300), ask: optStr(b.ask), requester: optStr(b.requester, 100), source: optStr(b.source, 200),
           sourceUrl: safeUrl(b.sourceUrl), session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2', direction: checkDirection(b.direction) });
-        if (b.who === 'you' && t.session) store.vetTask(t.id);
+        if (actorOf(req) === 'owner' && t.session) store.vetTask(t.id);
         engine.pushFeed('shiftboss', `filed ${t.id}: ${t.title}`);
         return done(json(t, 201));
       }
@@ -110,7 +120,7 @@ export function makeApi(engine: Engine) {
         if (patch.session && patch.stage === undefined) { const cur = store.getTask(r[1]); if (cur?.stage === 0) patch.stage = 1; }
         const who = optStr(b.who, 100) ?? 'session';
         const updated = store.updateTask(r[1], patch, who);
-        if (who === 'you' && (patch.session || patch.stage === 1)) store.vetTask(r[1]);
+        if (actorOf(req) === 'owner' && (patch.session || patch.stage === 1)) store.vetTask(r[1]);
         return done(json(updated));
       }
       r = m(/^\/api\/tasks\/(T-\d+)\/dispatch$/);
@@ -120,7 +130,8 @@ export function makeApi(engine: Engine) {
         if (actor === 'owner') store.vetTask(r[1]);
         const t = store.getTask(r[1]);
         if (!t) throw new NotFound('No task ' + r[1]);
-        const g = await engine.act('dispatch', { taskId: r[1] }, { actor, by: byOf(req, b), summary: `send ${r[1]}'s brief to ${t.session ?? 'its session'}`, detail: t.title });
+        const kind = actor === 'owner' || t.vetted ? 'dispatch' : 'dispatch-unvetted';
+        const g = await engine.act(kind, { taskId: r[1] }, { actor, by: byOf(req, b), summary: `send ${r[1]}'s brief to ${t.session ?? 'its session'}${t.vetted ? '' : ' (nobody queued it yet)'}`, detail: t.title });
         return done(gated(g, () => json({ ok: true })));
       }
       r = m(/^\/api\/tasks\/(T-\d+)\/brief$/);
@@ -144,7 +155,7 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/slack\/(\d+)\/approve$/);
       if (r && write) {
-        if (actorOf(req) !== 'owner') return fail("This is the owner's decision: from ShiftBoss itself, or with --as-owner / owner_asked when they asked you to", 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('This');
         const id = Number(r[1]);
         const msg: any = store.db.query('SELECT * FROM slack_msgs WHERE id = ?').get(id);
         if (!msg || msg.kind !== 'draft') return fail('Not a draft', 404);
@@ -221,7 +232,7 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/needs\/(\d+)\/answer$/);
       if (r && write) {
-        if (actorOf(req) !== 'owner') return fail("This is the owner's decision: from ShiftBoss itself, or with --as-owner / owner_asked when they asked you to", 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('This');
         const b = await body<any>(req);
         const n = store.listNeeds().find((x) => x.id === Number(r![1]));
         if (!n) return fail('No item ' + r[1], 404);
@@ -241,7 +252,7 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/needs\/(\d+)\/undo$/);
       if (r && write) {
-        if (actorOf(req) !== 'owner') return fail("This is the owner's decision: from ShiftBoss itself, or with --as-owner / owner_asked when they asked you to", 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('This');
         // If the engine is typing this answer into the pane right now, let it finish first: the undo then
         // sees it as sent and tells the session to disregard it, instead of racing the send.
         await engine.sendingAnswers.get(Number(r[1]));
@@ -319,12 +330,12 @@ export function makeApi(engine: Engine) {
       // ----- approvals and mode (server/gate.ts) -----
       r = m(/^\/api\/actions\/(\d+)\/(approve|reject)$/);
       if (r && write) {
-        if (actorOf(req) !== 'owner') return fail('Only the owner can approve or reject, from ShiftBoss itself', 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('Approving or rejecting');
         if (r[2] === 'reject') { engine.rejectAction(Number(r[1])); return done(json({ ok: true })); }
         return done(json({ ok: true, result: await engine.approveAction(Number(r[1])) }));
       }
       if (p === '/api/actions/decide-all' && write) {
-        if (actorOf(req) !== 'owner') return fail('Only the owner can approve or reject, from ShiftBoss itself', 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('Approving or rejecting');
         const b = await body<any>(req);
         const ids = store.listActions().filter((a) => a.state === 'waiting').map((a) => a.id);
         let ok = 0; const failed: string[] = [];
@@ -335,7 +346,7 @@ export function makeApi(engine: Engine) {
       }
       if (p === '/api/mode' && write) {
         // Switching modes. Leaving Dry run, what it recorded is either reviewed (it becomes approvals) or dropped.
-        if (actorOf(req) !== 'owner') return fail('Only the owner can change the mode, from ShiftBoss itself', 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('The mode');
         const b = await body<any>(req);
         if (!isMode(b.mode)) return fail('mode must be dry, ask, safe or auto');
         const was = store.settings().mode ?? 'auto';
@@ -372,6 +383,7 @@ export function makeApi(engine: Engine) {
         if (b.action !== undefined) {
           if (!['pause', 'resume', 'stop'].includes(b.action)) throw new Error('action must be pause, resume or stop');
           mon = store.setMonitorState(id, b.action);
+          if (b.action !== 'resume') engine.ownerMonitorChecks.delete(id);
           engine.pushFeed('you', `${b.action === 'pause' ? 'paused' : b.action === 'resume' ? 'resumed' : 'stopped'} the monitor for ${mon.title}`);
         }
         return done(json(mon));
@@ -464,8 +476,12 @@ export function makeApi(engine: Engine) {
         // saves waiting for the loop; if the tab is at a startup or permission prompt, it waits for the owner.
         let prompted = false, waiting: string | null = null;
         if (s) {
-          try { await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} is setting up ShiftBoss and sent you back ${days} day(s). Run one pass now: intake_begin returns readFrom ${st.since}. Read the whole gap oldest first (Slack and Gmail, as docs/INTAKE.md says), paging until you reach now, file what is open (every item with its permalink and direction), then intake_checkpoint.`); prompted = true; }
-          catch (e) { waiting = /blocked|interactive|not ready/i.test((e as Error).message) ? 'waiting on a prompt in herdr' : (e as Error).message.slice(0, 200); }
+          // The nudge is an action on a session, so it goes through the mode like any other.
+          try {
+            const b2 = { by: req.headers.get('x-shiftboss-by') ?? 'a session' };
+            const g = await engine.act('intake-run', {}, { actor: actorOf(req), by: b2.by, summary: `ask the intake to read back ${days} day(s) now` });
+            if (g.status === 'done') prompted = true; else waiting = g.status === 'dry' ? 'not asked (Dry run)' : 'waiting for your approval in Needs you';
+          } catch (e) { waiting = /blocked|interactive|not ready/i.test((e as Error).message) ? 'waiting on a prompt in herdr' : (e as Error).message.slice(0, 200); }
         }
         engine.pushFeed('you', `sent the intake back ${days} day(s)`);
         return done(json({ ...st, prompted, intake: s?.name ?? null, waiting }));
@@ -536,16 +552,20 @@ export function makeApi(engine: Engine) {
 
       // ----- settings, report, dispatcher -----
       if (p === '/api/settings' && req.method === 'PUT') {
-        if (actorOf(req) !== 'owner') return fail("Settings are the owner's: change them in ShiftBoss, or with --as-owner / owner_asked when they asked you to", 403);
+        if (actorOf(req) !== 'owner') return ownerOnly('Settings');
         const cur = store.settings();
-        const next = mergeSettings(cur, await body<unknown>(req));
+        const input: any = await body<unknown>(req);
+        if (input && typeof input === 'object') { delete input.mode; if ('delegate' in input && req.headers.get('x-shiftboss-by')) delete input.delegate; }
+        const next = mergeSettings(cur, input);
         if ((next.instructions ?? '') !== (cur.instructions ?? '')) { next.instructionsPrev = cur.instructions ?? ''; engine.pushFeed('you', 'changed your way of working'); }
         store.saveSettings(next);
         return done(json(next));
       }
       if (p === '/api/owner-instructions' && write) {
         // From the CLI (shiftboss instructions add/set): a session doing it because the owner asked. Logged, undoable.
+        if (actorOf(req) !== 'owner') return ownerOnly('Your way of working');
         const b = await body<any>(req);
+        if (b.undo && store.settings().instructionsPrev === undefined) return fail('There is no earlier version to go back to');
         const cur = store.settings();
         const old = cur.instructions ?? '';
         const text = b.add !== undefined ? (old.trim() ? old.trimEnd() + '\n' : '') + '- ' + str(b.add, 'add', 500).trim().replace(/^-\s*/, '')

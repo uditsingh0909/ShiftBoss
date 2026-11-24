@@ -217,7 +217,7 @@ server.registerTool('session_bring_in', {
 server.registerTool('session_spawn', {
   title: 'Start a Claude Code session',
   description: 'Opens a new herdr tab in the folder and starts Claude Code, with an optional model and first prompt. A folder Claude has not opened before asks "trust this folder?" in herdr first; only the owner answers that.',
-  inputSchema: { name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku']).optional(), prompt: z.string().max(8000).optional() },
+  inputSchema: { name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku', 'fable']).optional(), prompt: z.string().max(8000).optional() },
 }, wrap(async ({ name, cwd, model, prompt }) => { const r = await call('POST', '/api/sessions/spawn', { name, cwd, model: model ?? null, prompt: prompt ?? null }); if (r.__held) return r.message; return `starting ${name}; watch the ShiftBoss feed for "ready" or "waiting for you"`; }));
 
 server.registerTool('session_replace', {
@@ -425,7 +425,7 @@ server.registerTool('monitor_update', {
   inputSchema: { id: z.number().int(), action: z.enum(['pause', 'resume', 'stop', 'check_now']).optional(), title: z.string().max(200).optional(), prompt: z.string().max(4000).optional(),
     days: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(14)]).optional(), every_hours: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)]).optional() },
 }, wrap(async ({ id, action, title, prompt, days, every_hours }) => {
-  if (action === 'check_now') { const r = await call('POST', `/api/monitors/${id}/check-now`, {}); return r.message ?? 'check queued'; }
+  if (action === 'check_now') { const r = await call('POST', `/api/monitors/${id}/check-now`, {}); return r.waiting ? 'queued: ' + r.waiting : 'check queued; the monitor session gets it when it is idle'; }
   const e: any = {};
   if (title) e.title = title; if (prompt) e.prompt = prompt; if (days) e.durationDays = days; if (every_hours) e.intervalHours = every_hours; if (action) e.action = action;
   await call('PATCH', `/api/monitors/${id}`, e);
@@ -492,7 +492,7 @@ server.registerTool('instructions_update', {
   title: "Change the owner's way of working",
   description: 'Add a rule, replace the text, or undo the last change. Only when the owner asked you to.',
   inputSchema: { add: z.string().max(500).optional(), set: z.string().max(4000).optional(), undo: z.boolean().optional(), owner_asked: OWNER_ASKED, by: ME },
-}, wrap(async ({ add, set, undo, by }) => { await call('POST', '/api/owner-instructions', { add, set, undo, by }); return undo ? 'restored the previous version' : 'saved'; }));
+}, wrap(async ({ add, set, undo, by }) => { await call('POST', '/api/owner-instructions', { add, set, undo }, { by }); return undo ? 'restored the previous version' : 'saved'; }));
 
 server.registerTool('update_check', {
   title: 'Update ShiftBoss',

@@ -16,6 +16,7 @@ const Patch = z.object({
   watchedChannels: z.array(z.string().min(1).max(100)).max(100).optional(),
   autoUpdate: z.boolean().optional(),
   mode: z.enum(['dry', 'ask', 'safe', 'auto']).optional(),
+  delegate: z.boolean().optional(),
   instructions: z.string().max(4000).optional(),
   instructionsPrev: z.string().max(4000).optional(),
   notify: z.object({

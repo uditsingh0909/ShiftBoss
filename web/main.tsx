@@ -32,7 +32,6 @@ function Palette({ onClose }: { onClose: () => void }) {
       { group: 'Go to', label: 'Daily report', meta: 'copy and send', to: href('report') },
       { group: 'Go to', label: 'Sent as you', meta: 'audit log', to: href('audit') },
       { group: 'Go to', label: 'Settings', meta: 'lanes, slots, thresholds', to: href('settings') },
-      { group: 'Go to', label: 'Monitors', meta: 'watch what shipped, checked on a schedule', to: href('monitors') },
       { group: 'Do', label: 'New monitor', meta: 'watch something you shipped for a few days', to: href('monitors') },
       { group: 'Go to', label: 'Connect', meta: 'MCP tools, status line, intake setup', to: href('setup') },
       { group: 'Do', label: 'Get started', meta: 'set up, bring in current work', to: href('welcome') },

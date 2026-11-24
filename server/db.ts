@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   watchedChannels: [],
   autoUpdate: true,
   mode: 'dry', // a new install watches first; installs from before modes keep Autopilot (see migrate)
+  delegate: false, // a new install: only ShiftBoss's own screens make the owner's decisions
   notify: { ...DEFAULT_NOTIFY },
 };
 
@@ -79,12 +80,18 @@ export class Store {
     const pcols = this.db.query('PRAGMA table_info(promises)').all() as { name: string }[];
     if (!pcols.some((c) => c.name === 'kept_by_task')) this.db.exec('ALTER TABLE promises ADD COLUMN kept_by_task INTEGER NOT NULL DEFAULT 0');
     // Held-back actions (gate.ts): waiting for approval, or recorded in Dry run. params is the JSON the executor needs.
+    const hadActions = !!this.db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'actions'").get();
     this.db.exec(`CREATE TABLE IF NOT EXISTS actions (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL,
       params TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL, by_who TEXT NOT NULL DEFAULT '',
       state TEXT NOT NULL, decided_at TEXT, result TEXT)`);
     // Installs from before modes existed ran everything; keep that (Autopilot) instead of the new-install default.
+    // That covers installs that never saved settings too: an existing database with any work in it.
     const srow: any = this.db.query("SELECT value FROM settings WHERE key = 'settings'").get();
-    if (srow) { const v = JSON.parse(srow.value); if (!('mode' in v)) this.db.query("UPDATE settings SET value = ? WHERE key = 'settings'").run(JSON.stringify({ ...v, mode: 'auto' })); }
+    if (srow) { const v = JSON.parse(srow.value); if (!('mode' in v)) this.db.query("UPDATE settings SET value = ? WHERE key = 'settings'").run(JSON.stringify({ ...v, mode: 'auto', delegate: true })); }
+    else if (!hadActions && (this.db.query('SELECT 1 FROM tasks LIMIT 1').get() || this.db.query('SELECT 1 FROM intake LIMIT 1').get()))
+      this.db.query("INSERT INTO settings (key, value) VALUES ('settings', ?)").run(JSON.stringify({ mode: 'auto', delegate: true }));
+    // An approval that was running when ShiftBoss stopped (crash, self-update) did not finish: say so, unblock its key.
+    this.db.exec("UPDATE actions SET state = 'failed', result = 'interrupted by a restart' WHERE state = 'approved'");
     const icols2 = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
     if (!icols2.some((c) => c.name === 'resolved')) this.db.exec('ALTER TABLE intake ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0');
     if (!cols.some((c) => c.name === 'vetted')) this.db.exec('ALTER TABLE tasks ADD COLUMN vetted INTEGER NOT NULL DEFAULT 0');
@@ -478,7 +485,7 @@ export class Store {
     state: r.state, decidedAt: r.decided_at, result: r.result });
   /** Record an action as waiting or dry. The same action already open is returned instead of a second copy. */
   holdAction(a: { kind: string; key: string; params: unknown; summary: string; detail?: string; actor: 'session' | 'auto'; by: string; state: 'waiting' | 'dry' }): { item: ActionItem; fresh: boolean } {
-    const open: any = this.db.query("SELECT * FROM actions WHERE key = ? AND state IN ('waiting', 'dry') ORDER BY id DESC LIMIT 1").get(a.key);
+    const open: any = this.db.query('SELECT * FROM actions WHERE key = ? AND state = ? ORDER BY id DESC LIMIT 1').get(a.key, a.state);
     if (open) return { item: this.rowAction(open), fresh: false };
     const r = this.db.query('INSERT INTO actions (at, kind, key, params, summary, detail, actor, by_who, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(now(), a.kind, a.key, JSON.stringify(a.params ?? null), a.summary, a.detail ?? '', a.actor, a.by, a.state);
@@ -494,7 +501,19 @@ export class Store {
     return this.db.query(`UPDATE actions SET state = ?, decided_at = COALESCE(decided_at, ?), result = COALESCE(?, result) WHERE id = ? AND state IN (${marks})`)
       .run(to, now(), result, id, ...from).changes > 0;
   }
-  hasOpenAction(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state IN ('waiting', 'dry', 'approved')").get(key); }
+  hasOpenAction(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state IN ('waiting', 'dry')").get(key); }
+  /** The owner did it directly: the same action held earlier is settled, so approving it later cannot run it twice. */
+  supersedeActions(key: string): number {
+    return this.db.query("UPDATE actions SET state = 'done', result = 'done directly by the owner', decided_at = ? WHERE key = ? AND state IN ('waiting', 'dry')").run(now(), key).changes;
+  }
+  /** Sessions that already have a brief waiting for approval (or recorded in Dry run): one at a time per session. */
+  sessionsWithHeldDispatch(): Set<string> {
+    const out = new Set<string>();
+    for (const r of this.db.query("SELECT params FROM actions WHERE kind IN ('dispatch', 'dispatch-unvetted') AND state IN ('waiting', 'dry')").all() as any[]) {
+      try { const t = this.getTask(JSON.parse(r.params).taskId); if (t?.session) out.add(t.session); } catch { /* bad row */ }
+    }
+    return out;
+  }
   listActions(): ActionItem[] {
     const since = new Date(Date.now() - 864e5).toISOString();
     return (this.db.query("SELECT * FROM actions WHERE state = 'waiting' OR at >= ? ORDER BY id DESC LIMIT 200").all(since) as any[]).map(this.rowAction);

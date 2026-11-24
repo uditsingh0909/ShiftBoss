@@ -30,14 +30,16 @@ const ICONS = {
 export function monitorCount(snap: Snapshot | null): number | null {
   const m = (snap as unknown as { monitors?: unknown } | null)?.monitors;
   if (m == null) return null;
-  if (Array.isArray(m)) return m.filter((x) => { const o = (x ?? {}) as { active?: boolean; state?: string; status?: string }; return o.active ?? ((o.state ?? o.status ?? 'active') === 'active'); }).length;
+  if (Array.isArray(m)) return m.filter((x) => { const o = (x ?? {}) as { active?: boolean; state?: string; status?: string }; return o.active ?? ['active', 'alerting'].includes(o.state ?? o.status ?? 'active'); }).length;
   const n = (m as { active?: unknown }).active;
   return typeof n === 'number' ? n : null;
 }
 
 function useGroups(): [string, NavItem[]][] {
   const snap = useSnap();
-  const needs = snap?.needs.filter((n) => !n.answer).length ?? 0;
+  // Questions and actions waiting for approval: both wait on the owner (the tab title counts the same).
+  const needs = (snap?.needs.filter((n) => !n.answer).length ?? 0) + (snap?.actions?.filter((a) => a.state === 'waiting').length ?? 0);
+  const alerting = (snap?.monitors ?? []).filter((m) => m.state === 'alerting').length;
   const due = snap?.promises.filter((p) => p.state === 'due').length ?? 0;
   const open = snap?.promises.filter((p) => p.state !== 'kept').length ?? 0;
   const inbox = snap?.tasks.filter((t) => t.stage === 0).length ?? 0;
@@ -51,7 +53,7 @@ function useGroups(): [string, NavItem[]][] {
       { k: 'tasks', label: 'Tasks', icon: ICONS.tasks, badge: b(inbox, 'dim', `${inbox} in the inbox`) },
       { k: 'needs', label: 'Needs you', icon: ICONS.needs, badge: b(needs, 'red', `${needs} waiting for your answer`) },
       { k: 'promises', label: 'Promises', icon: ICONS.promises, badge: due ? b(due, 'red', `${due} overdue`) : b(open, 'amber', `${open} open`) },
-      { k: 'monitors', label: 'Monitors', icon: ICONS.monitors, badge: monitors === null ? undefined : b(monitors, 'dim', `${monitors} active`) },
+      { k: 'monitors', label: 'Monitors', icon: ICONS.monitors, badge: alerting ? b(alerting, 'red', `${alerting} alerting`) : monitors === null ? undefined : b(monitors, 'dim', `${monitors} watching`) },
     ]],
     ['Watch', [
       { k: 'intake', label: 'Intake', icon: ICONS.intake },

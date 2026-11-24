@@ -104,9 +104,10 @@ function parse(argv: string[]) {
 // Everything else a session runs goes through the gate (Dry run / Ask first / Safe auto / Autopilot).
 let asOwner = false;
 let onBehalf = false; // --as-owner: a session doing what the owner asked; the feed names it
+let setupCall = false; // setup commands: the owner's only until setup is finished
 async function call(method: string, path: string, body?: unknown) {
   let res: Response;
-  const by = process.env.SHIFTBOSS_SESSION || 'a session';
+  const by = setupCall ? 'setup' : process.env.SHIFTBOSS_SESSION || 'a session';
   const headers: Record<string, string> = { 'content-type': 'application/json', 'x-shiftboss': '1', ...(asOwner ? { 'x-shiftboss-actor': 'owner', ...(onBehalf ? { 'x-shiftboss-by': by } : {}) } : {}) };
   const withBy = body && typeof body === 'object' && !Array.isArray(body) ? { by: process.env.SHIFTBOSS_SESSION || undefined, ...body } : body;
   try {
@@ -159,6 +160,7 @@ async function main() {
     case 'settings': {
       const s = await call('GET', '/api/snapshot');
       if (sub !== 'set') return console.log(JSON.stringify(s.settings, null, 2));
+      if (pos.slice(2).some((kv) => kv.startsWith('mode='))) throw new Error('Change the mode with: shiftboss mode <dry|ask|safe|auto> --as-owner');
       const next: any = structuredClone(s.settings);
       for (const kv of pos.slice(2)) {
         const i = kv.indexOf('=');
@@ -250,7 +252,7 @@ async function main() {
     }
     case 'monitor': {
       if (['pause', 'resume', 'stop'].includes(sub)) { await call('PATCH', `/api/monitors/${a1}`, { action: sub }); return console.log(`monitor ${a1}: ${sub}`); }
-      if (sub === 'check') { const r = await call('POST', `/api/monitors/${a1}/check-now`, {}); return console.log(r.message ?? 'check queued'); }
+      if (sub === 'check') { const r = await call('POST', `/api/monitors/${a1}/check-now`, {}); return console.log(r.waiting ? 'queued: ' + r.waiting : 'check queued; the monitor session gets it when it is idle'); }
       if (sub === 'edit') {
         const e: any = {};
         if (flags.title) e.title = flags.title;
@@ -287,7 +289,7 @@ async function main() {
       return console.log(`${r.created} added, ${r.updated} updated`);
     }
     case 'setup': {
-      asOwner = true;
+      asOwner = true; onBehalf = true; setupCall = true;
       const o = await call('GET', '/api/onboarding');
       if (sub === 'status' || !sub) {
         if ('json' in flags || pos.includes('--json')) return console.log(JSON.stringify(o, null, 2));
@@ -337,7 +339,7 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
         return console.log('\nBring one in: shiftboss session bring-in <session-id> [--name N]   (close its old window first)');
       }
       if (sub === 'bring-in') {
-        asOwner = true; // used during setup, with the owner's consent
+        asOwner = true; onBehalf = true; setupCall = true; // used during setup, with the owner's consent
         const r = await call('POST', '/api/sessions/bring-in', { sessions: pos.slice(2).map((id) => ({ sessionId: id, name: pos.length === 3 ? flags.name : undefined })) });
         return console.log(`opening in herdr: ${r.starting.join(', ')} (a new folder may ask "trust this folder?" there first)`);
       }

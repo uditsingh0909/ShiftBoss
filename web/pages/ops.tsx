@@ -183,7 +183,15 @@ export function SettingsPage({ section }: { section?: string }) {
   const sw = (k: keyof Settings['switches']) => (v: boolean) => setSt({ ...st, switches: { ...st.switches, [k]: v } });
   const bud = (k: keyof Settings['budgets']) => (v: number) => setSt({ ...st, budgets: { ...st.budgets, [k]: v } });
   // Notification switches save on their own (NotificationSettings), so Save never sends a stale copy of them.
-  const save = () => act(async () => { const { notify: _own, ...rest } = st; const next = await api<Settings>('PUT', '/api/settings', rest); setSt(next); setBase(JSON.stringify(next)); }, 'Saved');
+  // Only what changed on this page: the mode, notifications and the delegation switch save on their own, and a
+  // session may have changed other fields meanwhile, so sending the whole copy would undo those.
+  const save = () => act(async () => {
+    const was = JSON.parse(base) as Record<string, unknown>;
+    const now = st as unknown as Record<string, unknown>;
+    const changed = Object.fromEntries(Object.keys(now).filter((k) => !['mode', 'notify', 'delegate'].includes(k) && JSON.stringify(now[k]) !== JSON.stringify(was[k])).map((k) => [k, now[k]]));
+    const next = await api<Settings>('PUT', '/api/settings', changed);
+    setSt(next); setBase(JSON.stringify(next));
+  }, 'Saved');
   const T = st.thresholds;
   const badOrder = T.warn >= T.replace;
   // Most-used first. The menu jumps to a section without leaving the page, so unsaved edits survive;

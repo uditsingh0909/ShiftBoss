@@ -897,7 +897,7 @@ describe('instructions from the CLI', () => {
     const store = mem();
     const e = new Engine(loadConfig(), store, {} as any);
     const api = makeApi(e);
-    const call = (b: any) => api(new Request('http://127.0.0.1:4400/api/owner-instructions', { method: 'POST', headers: { 'x-shiftboss': '1', 'content-type': 'application/json' }, body: JSON.stringify(b) }), new URL('http://127.0.0.1:4400/api/owner-instructions'));
+    const call = (b: any) => api(new Request('http://127.0.0.1:4400/api/owner-instructions', { method: 'POST', headers: { 'x-shiftboss': '1', 'content-type': 'application/json', 'x-shiftboss-actor': 'owner' }, body: JSON.stringify(b) }), new URL('http://127.0.0.1:4400/api/owner-instructions'));
     await call({ add: 'Review PRs before merge' });
     await call({ add: '- Ask before deploys' });
     expect(store.settings().instructions).toBe('- Review PRs before merge\n- Ask before deploys');
@@ -1080,6 +1080,86 @@ describe('monitor checks go through the gate', () => {
     await e.approveAction(waiting.id);
     expect(sent.length).toBe(1);
     expect(sent[0]).toContain('Store A');
+  });
+});
+
+describe('review fixes', () => {
+  const req = (path: string, method: string, headers: Record<string, string>, b?: unknown) =>
+    [new Request('http://127.0.0.1:4400' + path, { method, headers: { 'x-shiftboss': '1', 'content-type': 'application/json', ...headers }, body: b === undefined ? undefined : JSON.stringify(b) }), new URL('http://127.0.0.1:4400' + path)] as const;
+  test('a session acting for the owner needs the switch; setup only until setup is done; the UI always', async () => {
+    const store = mem();
+    const e = new Engine(loadConfig(), store, {} as any);
+    const api = makeApi(e);
+    const asSession = { 'x-shiftboss-actor': 'owner', 'x-shiftboss-by': 'lead' };
+    expect((await api(...req('/api/mode', 'POST', asSession, { mode: 'auto' })))!.status).toBe(403);
+    expect((await api(...req('/api/owner-instructions', 'POST', asSession, { add: 'x' })))!.status).toBe(403);
+    expect((await api(...req('/api/owner-instructions', 'POST', {}, { add: 'x' })))!.status).toBe(403);
+    expect((await api(...req('/api/mode', 'POST', { 'x-shiftboss-actor': 'owner', 'x-shiftboss-by': 'setup' }, { mode: 'ask' })))!.status).toBe(200);
+    store.saveOnboarding({ doneAt: new Date().toISOString() });
+    expect((await api(...req('/api/mode', 'POST', { 'x-shiftboss-actor': 'owner', 'x-shiftboss-by': 'setup' }, { mode: 'auto' })))!.status).toBe(403);
+    // a session cannot turn the switch on for itself
+    await api(...req('/api/settings', 'PUT', asSession, { delegate: true }));
+    expect(store.settings().delegate).toBe(false);
+    expect((await api(...req('/api/settings', 'PUT', { 'x-shiftboss-actor': 'owner' }, { delegate: true })))!.status).toBe(200);
+    expect((await api(...req('/api/mode', 'POST', asSession, { mode: 'safe' })))!.status).toBe(200);
+    expect(store.settings().mode).toBe('safe');
+  });
+  test('settings never change the mode (only /api/mode, which settles the dry-run log)', async () => {
+    const store = mem();
+    const api = makeApi(new Engine(loadConfig(), store, {} as any));
+    await api(...req('/api/settings', 'PUT', { 'x-shiftboss-actor': 'owner' }, { mode: 'auto', thresholds: { warn: 60 } }));
+    expect(store.settings().mode).toBe('dry');
+    expect(store.settings().thresholds.warn).toBe(60);
+  });
+  test('a dry-run record is not reused in a live mode; the owner doing it settles the held one', async () => {
+    const store = mem();
+    const sent: string[] = [];
+    const e = new Engine(loadConfig(), store, { prompt: async (_p: string, t: string) => { sent.push(t); } } as any);
+    e.sessions = [session({ name: 'worker', status: 'idle' })];
+    const meta = { actor: 'session' as const, by: 'lead', summary: 'prompt worker' };
+    expect((await e.act('prompt', { session: 'worker', text: 'hi' }, meta)).status).toBe('dry');
+    store.saveSettings({ ...store.settings(), mode: 'ask' });
+    const held = await e.act('prompt', { session: 'worker', text: 'hi' }, meta);
+    expect(held.status).toBe('waiting');
+    await e.act('prompt', { session: 'worker', text: 'hi' }, { ...meta, actor: 'owner' });
+    expect(sent).toEqual(['hi']);
+    await expect(e.approveAction((held as any).id)).rejects.toThrow();
+    expect(sent).toEqual(['hi']);
+  });
+  test('an approved brief is not sent once the task moved on; one held brief per session', async () => {
+    const store = mem();
+    store.saveSettings({ ...store.settings(), mode: 'ask' });
+    const e = new Engine(loadConfig(), store, { prompt: async () => {} } as any);
+    e.sessions = [session({ name: 'worker', status: 'idle', slots: 3 })];
+    const a = store.addTask({ title: 'A', session: 'worker' }); store.vetTask(a.id);
+    const b = store.addTask({ title: 'B', session: 'worker' }); store.vetTask(b.id);
+    expect(e.readyToDispatch().length).toBe(1);
+    const held = await e.act('dispatch', { taskId: e.readyToDispatch()[0] }, { actor: 'auto', by: 'dispatcher', summary: 'send' });
+    expect(e.readyToDispatch()).toEqual([]); // the session already has one waiting
+    const id = (held as any).id;
+    const t = store.action(id)!.params.taskId;
+    store.updateTask(t, { stage: 3 });
+    await expect(e.approveAction(id)).rejects.toThrow(/past Queued/);
+  });
+  test('an approval cut off by a restart fails instead of blocking; an old install with no settings row keeps Autopilot', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-fix-'));
+    try {
+      const s1 = new Store(dir);
+      s1.db.exec('DROP TABLE actions');
+      s1.db.exec("DELETE FROM settings");
+      s1.addTask({ title: 'old work' });
+      s1.db.close();
+      const s2 = new Store(dir);
+      expect(s2.settings().mode).toBe('auto');
+      expect(s2.settings().delegate).toBe(true);
+      const h = s2.holdAction({ kind: 'prompt', key: 'k', params: {}, summary: 'x', actor: 'session', by: 's', state: 'waiting' });
+      s2.setActionState(h.item.id, ['waiting'], 'approved');
+      s2.db.close();
+      const s3 = new Store(dir);
+      expect(s3.action(h.item.id)!.state).toBe('failed');
+      expect(s3.hasOpenAction('k')).toBe(false);
+      s3.db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 

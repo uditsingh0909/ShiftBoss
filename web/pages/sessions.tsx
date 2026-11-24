@@ -53,7 +53,7 @@ function Alerts() {
   const due = snap.promises.filter((p) => p.state === 'due');
   if (due.length) out.push({ key: 'due', tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
   for (const c of snap.threadChecks ?? [])
-    out.push({ key: 'thread' + c.id, tone: 'amber', what: `Sessions may be confused in ${c.src}`, detail: (c.who ? c.who + ': ' : '') + c.text, to: c.url ?? href('intake'),
+    out.push({ key: 'thread' + c.id, tone: 'amber', what: `Sessions may be confused in ${c.src}`, detail: (c.who ? c.who + ': ' : '') + c.text, to: safeHref(c.url) ?? href('intake'),
       action: { label: 'Dismiss', run: () => void act(() => api('POST', `/api/intake/${c.id}/resolve`), 'Dismissed') } });
   const held = snap.actions.filter((a) => a.state === 'waiting');
   if (held.length) out.push({ key: 'approvals', tone: 'amber', what: `${held.length} action${held.length === 1 ? '' : 's'} waiting for your approval`, detail: held.slice(0, 2).map((a) => a.summary).join(' · '), to: href('needs') });

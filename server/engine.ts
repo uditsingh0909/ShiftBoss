@@ -223,6 +223,9 @@ export class Engine {
   async dispatchTask(taskId: string, who = 'you') {
     const t = this.store.getTask(taskId);
     if (!t?.session) throw new Error('Assign a session first');
+    // An approval can come long after it was asked: the task may have moved on or been put on hold meanwhile.
+    if (t.stage > 1) throw new Error(`${taskId} is already past Queued; its brief was not sent again`);
+    if (t.held) throw new Error(`${taskId} is on hold`);
     const s = this.sessions.find((x) => x.name === t.session);
     if (!s) throw new Error(t.session + ' is not running in herdr');
     if (this.dispatching.has(taskId)) throw new Error(taskId + ' is already being sent');
@@ -239,8 +242,10 @@ export class Engine {
   readyToDispatch(): string[] {
     const tasks = this.store.listTasks();
     const out: string[] = [];
+    const held = this.store.sessionsWithHeldDispatch(); // one brief at a time waiting for approval per session
     for (const s of this.sessions) {
       if (s.status !== 'idle' && s.status !== 'done') continue;
+      if (held.has(s.name)) continue;
       const active = tasks.filter((t) => t.session === s.name && t.stage >= 2 && t.stage <= 4 && !t.held).length;
       const next = tasks.filter((t) => t.session === s.name && t.stage === 1 && !t.held && t.vetted && !this.dispatching.has(t.id)
         && !this.store.hasOpenAction(actionKey('dispatch', { taskId: t.id }))).at(-1); // oldest (list is newest first)
@@ -267,7 +272,10 @@ export class Engine {
   async act(kind: ActionKind, params: any, meta: { actor: Actor; by: string; summary: string; detail?: string }):
     Promise<{ status: 'done'; result: any } | { status: 'waiting' | 'dry'; id: number; summary: string }> {
     const d = decide(this.store.settings().mode ?? 'auto', meta.actor, kind);
-    if (d === 'run') return { status: 'done', result: await this.execute(kind, params, meta.actor === 'owner' ? 'you' : meta.by) };
+    if (d === 'run') {
+      if (meta.actor === 'owner') this.store.supersedeActions(actionKey(kind, params));
+      return { status: 'done', result: await this.execute(kind, params, meta.actor === 'owner' ? 'you' : meta.by) };
+    }
     const { item, fresh } = this.store.holdAction({ kind, key: actionKey(kind, params), params, summary: meta.summary, detail: meta.detail,
       actor: meta.actor === 'owner' ? 'session' : meta.actor, by: meta.by, state: d === 'record' ? 'dry' : 'waiting' });
     if (fresh) { this.pushFeed(meta.by, (d === 'record' ? 'Dry run, would: ' : 'waiting for your approval: ') + meta.summary); this.emit(); }
@@ -303,7 +311,7 @@ export class Engine {
   async execute(kind: ActionKind, p: any, who: string): Promise<any> {
     const pane = (name: string) => { const s = this.sessions.find((x) => x.name === name); if (!s) throw new Error(name + ' is not running in herdr'); return s; };
     switch (kind) {
-      case 'dispatch': await this.dispatchTask(p.taskId, who); return `sent ${p.taskId}`;
+      case 'dispatch': case 'dispatch-unvetted': await this.dispatchTask(p.taskId, who); return `sent ${p.taskId}`;
       case 'spawn': void this.spawnOne(p.spec); return `starting ${p.spec.name}`;
       case 'spawn-many': this.spawnMany(p.specs); return `starting ${p.specs.length} sessions`;
       case 'bring-in':
@@ -705,11 +713,12 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       // The gate: in Dry run the check is only recorded, in Ask first it waits for approval. A check the owner
       // asked for with Check now is theirs and runs. Held checks are skipped until decided.
       const key = actionKey('monitor-check', { monitorId: m.id });
-      const owner = this.ownerMonitorChecks.delete(m.id);
+      const owner = this.ownerMonitorChecks.has(m.id);
       if (!owner && this.store.hasOpenAction(key)) continue;
       try {
         const g = await this.act('monitor-check', { monitorId: m.id }, { actor: owner ? 'owner' : 'auto', by: 'monitor', summary: `run the monitor check for ${m.title}`, detail: m.prompt });
         if (g.status !== 'done') continue;
+        this.ownerMonitorChecks.delete(m.id);
         this.monitorRetryAt.delete(m.id);
         return;
       } catch (e) {

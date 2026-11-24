@@ -11,11 +11,12 @@ export const MODES: readonly Mode[] = ['dry', 'ask', 'safe', 'auto'];
 export const MODE_LABEL: Record<Mode, string> = { dry: 'Dry run', ask: 'Ask first', safe: 'Safe auto', auto: 'Autopilot' };
 
 export type Actor = 'owner' | 'session' | 'auto';
-export type ActionKind = 'dispatch' | 'spawn' | 'spawn-many' | 'bring-in' | 'replace' | 'onboarding-ask' | 'intake-run' | 'prompt' | 'interrupt' | 'monitor-check';
+export type ActionKind = 'dispatch' | 'dispatch-unvetted' | 'spawn' | 'spawn-many' | 'bring-in' | 'replace' | 'onboarding-ask' | 'intake-run' | 'prompt' | 'interrupt' | 'monitor-check';
 
 /** Routine actions run in Safe auto; risky ones (new sessions, prompting or stopping another session) wait. */
 export const RISK: Record<ActionKind, 'routine' | 'risky'> = {
   dispatch: 'routine', 'intake-run': 'routine', 'monitor-check': 'routine',
+  'dispatch-unvetted': 'risky', // a brief for a task no person has queued (filed from Slack, say)
   spawn: 'risky', 'spawn-many': 'risky', 'bring-in': 'risky', replace: 'risky', 'onboarding-ask': 'risky', prompt: 'risky', interrupt: 'risky',
 };
 
