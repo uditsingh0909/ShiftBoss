@@ -118,7 +118,7 @@ function App() {
   else if (top === 'promises') page = <Promises />;
   else if (top === 'audit') page = <Audit />;
   else if (top === 'report') page = <Report />;
-  else if (top === 'settings') page = <SettingsPage />;
+  else if (top === 'settings') page = <SettingsPage section={a1} />;
   else if (top === 'welcome') page = <Welcome />;
   else if (top === 'setup') page = <SetupPage />;
   // A fresh install (nothing on the board, setup never finished) opens on Get started.
