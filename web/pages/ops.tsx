@@ -72,7 +72,7 @@ export function Report() {
   const tone = (t: string) => (t === 'green' ? C.green : t === 'amber' ? C.amber : C.faint);
   const copy = async () => {
     if (!rep) return;
-    try { await navigator.clipboard.writeText(rep.text); toast('Copied — Shiftboss never posts it for you'); } catch { toast('Could not copy; select the text instead'); }
+    try { await navigator.clipboard.writeText(rep.text); toast('Copied — ShiftBoss never posts it for you'); } catch { toast('Could not copy; select the text instead'); }
   };
   const liveToday = snap.tasks.filter((t) => t.stage >= 5 && isToday(t.updatedAt)).length;
   const inFlight = snap.tasks.filter((t) => t.stage >= 2 && t.stage <= 4).length;
@@ -181,7 +181,7 @@ export function SettingsPage() {
   const T = st.thresholds;
   return (
     <div className="page">
-      <Hero eyebrow="Settings" title="How Shiftboss behaves." sub={dirty ? <span style={{ color: C.amber }}>Unsaved changes.</span> : 'Everything is saved.'}>
+      <Hero eyebrow="Settings" title="How ShiftBoss behaves." sub={dirty ? <span style={{ color: C.amber }}>Unsaved changes.</span> : 'Everything is saved.'}>
         <button type="button" className="pill" disabled={!dirty} onClick={() => { setSt(JSON.parse(base)); }}>Discard</button>
         <button type="button" className="pill w" disabled={!dirty} onClick={() => void save()}>Save</button>
       </Hero>
@@ -199,7 +199,7 @@ export function SettingsPage() {
           <Card span={6} delay={60}>
             <span className="label">Switches</span>
             <Switch label="Send queued tasks automatically when a session frees a slot" on={st.switches.autoDispatch} onChange={sw('autoDispatch')}
-              warn="When on, Shiftboss prompts sessions on its own without asking you first." />
+              warn="When on, ShiftBoss prompts sessions on its own without asking you first." />
             <Switch label="Quiet hours" hint="Hold non-urgent prompts and nudges." on={st.switches.quietHours} onChange={sw('quietHours')} />
           </Card>
           <Card span={6} delay={120}>

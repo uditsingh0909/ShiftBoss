@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-// The CLI sessions use to write to Shiftboss. Every command is one HTTP call to the local server.
+// The CLI sessions use to write to ShiftBoss. Every command is one HTTP call to the local server.
 const PORT = process.env.SHIFTBOSS_PORT ?? '4400';
 const BASE = `http://127.0.0.1:${PORT}`;
 
-const HELP = `shiftboss: tell Shiftboss what happened
+const HELP = `shiftboss: tell ShiftBoss what happened
 
   shiftboss task add "<title>" [--ask TEXT] [--from NAME] [--source WHERE] [--url URL] [--session NAME] [--prio P1|P2|P3]
   shiftboss task stage <T-n> queued|progress|pr|dev|live|told
@@ -35,7 +35,7 @@ async function call(method: string, path: string, body?: unknown) {
   try {
     res = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1' }, body: body ? JSON.stringify(body) : undefined });
   } catch {
-    throw new Error(`Shiftboss is not running on ${BASE}. Start it with: bun run start (in the shiftboss folder)`);
+    throw new Error(`ShiftBoss is not running on ${BASE}. Start it with: bun run start (in the shiftboss folder)`);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as any).error ?? `HTTP ${res.status}`);

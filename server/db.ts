@@ -73,12 +73,12 @@ export class Store {
     if (row) {
       this.db.query('UPDATE tasks SET title=?, ask=?, stage=?, held=?, source_url=COALESCE(?, source_url), updated_at=? WHERE id=?')
         .run(t.title, t.ask ?? '', t.stage, t.held ? 1 : 0, t.sourceUrl ?? null, now(), row.id);
-      if (row.stage !== t.stage) this.addEvent(row.id, 'Shiftboss', 'import', 'Tracker moved it to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][t.stage]);
+      if (row.stage !== t.stage) this.addEvent(row.id, 'ShiftBoss', 'import', 'Tracker moved it to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][t.stage]);
       return { id: row.id, created: false };
     }
     const task = this.addTask({ title: t.title, ask: t.ask, requester: t.requester, source: t.source, sourceUrl: t.sourceUrl, session: t.session, prio: t.prio, stage: t.stage });
     this.db.query('UPDATE tasks SET ext_id = ?, held = ? WHERE id = ?').run(t.extId, t.held ? 1 : 0, task.id);
-    for (const l of t.links ?? []) this.addEvent(task.id, /github/i.test(l.url) ? 'GitHub' : /slack/i.test(l.url) ? 'Slack' : 'Shiftboss', 'import', `${l.label}: ${l.url}`);
+    for (const l of t.links ?? []) this.addEvent(task.id, /github/i.test(l.url) ? 'GitHub' : /slack/i.test(l.url) ? 'Slack' : 'ShiftBoss', 'import', `${l.label}: ${l.url}`);
     return { id: task.id, created: true };
   }
 
@@ -107,7 +107,7 @@ export class Store {
       return id;
     });
     const id = tx();
-    this.addEvent(id, 'Shiftboss', 'shiftboss', 'Filed' + (t.requester ? ' for ' + t.requester : '') + (t.source ? ' from ' + t.source : ''));
+    this.addEvent(id, 'ShiftBoss', 'shiftboss', 'Filed' + (t.requester ? ' for ' + t.requester : '') + (t.source ? ' from ' + t.source : ''));
     return this.getTask(id)!;
   }
   updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'ask' | 'session' | 'stage' | 'prio' | 'held'>>, who = 'you'): Task {
@@ -121,7 +121,7 @@ export class Store {
     if (patch.stage !== undefined && patch.stage !== cur.stage) notes.push('Moved to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][patch.stage]);
     if (patch.session !== undefined && patch.session !== cur.session) notes.push('Assigned to ' + (patch.session ?? 'nobody'));
     if (patch.held !== undefined && patch.held !== cur.held) notes.push(patch.held ? 'Put on hold' : 'Resumed');
-    if (notes.length) this.addEvent(id, 'Shiftboss', who, notes.join(' · '));
+    if (notes.length) this.addEvent(id, 'ShiftBoss', who, notes.join(' · '));
     return this.getTask(id)!;
   }
   addEvent(taskId: string, src: TaskEvent['src'], who: string, text: string) {

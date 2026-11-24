@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Opt-in status line tap for Shiftboss.
+// Opt-in status line tap for ShiftBoss.
 // Claude Code pipes its status line JSON (context %, 5-hour and weekly usage) to this
 // script. It saves a copy to shiftboss/data/status/<session_id>.json, then hands the same
 // input to your existing status line command so nothing on screen changes.

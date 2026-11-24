@@ -147,7 +147,7 @@ describe('overlap ignore list', () => {
 import { parsePrUrl, targetStage, taskIdsIn } from '../server/github';
 describe('github auto-advance', () => {
   test('finds task ids in title, body and branch', () => {
-    expect(taskIdsIn('fix(analytics): name screens (T-74)\nShiftboss: t-75\nfeat/t76-chat')).toEqual(['T-74', 'T-75', 'T-76']);
+    expect(taskIdsIn('fix(analytics): name screens (T-74)\nShiftBoss: t-75\nfeat/t76-chat')).toEqual(['T-74', 'T-75', 'T-76']);
     expect(taskIdsIn('UTF-8 and DT-12 are not tasks')).toEqual([]);
   });
   test('parses PR links', () => {

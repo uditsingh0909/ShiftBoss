@@ -27,4 +27,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Shiftboss on http://127.0.0.1:${server.port}`);
+console.log(`ShiftBoss on http://127.0.0.1:${server.port}`);

@@ -114,7 +114,7 @@ export function TaskPage({ id }: { id: string }) {
   const snap = useSnap()!;
   const [d, setD] = useState<{ task: Task; events: TaskEvent[]; slack: SlackMsg[]; promises: PromiseItem[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [src, setSrc] = useState<'All' | 'Slack' | 'GitHub' | 'Session' | 'Shiftboss'>('All');
+  const [src, setSrc] = useState<'All' | 'Slack' | 'GitHub' | 'Session' | 'ShiftBoss'>('All');
   const [note, setNote] = useState('');
   useEffect(() => { api('GET', `/api/tasks/${id}`).then(setD).catch((e) => setErr(e.message)); }, [id, snap.now]);
   if (err) return <div className="page"><Hero eyebrow="Task" title={id} sub={err} /></div>;
@@ -182,7 +182,7 @@ export function TaskPage({ id }: { id: string }) {
 
         <Card span={7}>
           <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}><span className="label">Activity</span><span className="mono faint" style={{ fontSize: 12 }}>{d.events.length} events</span>
-            <span style={{ marginLeft: 'auto' }}><Seg label="Source" value={src} options={['All', 'Slack', 'GitHub', 'Session', 'Shiftboss'] as const} onChange={setSrc} /></span></div>
+            <span style={{ marginLeft: 'auto' }}><Seg label="Source" value={src} options={['All', 'Slack', 'GitHub', 'Session', 'ShiftBoss'] as const} onChange={setSrc} /></span></div>
           <div className="col divide">
             {events.map((e) => (
               <div key={e.id} className="row" style={{ gap: 16, padding: '10px 0' }}>
@@ -194,7 +194,7 @@ export function TaskPage({ id }: { id: string }) {
             ))}
             {!events.length && <Empty text="Nothing yet." />}
           </div>
-          <form className="row" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); if (note.trim()) void act(async () => { await api('POST', `/api/tasks/${t.id}/events`, { src: 'Shiftboss', who: 'you', text: note }); setNote(''); }, 'Noted'); }}>
+          <form className="row" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); if (note.trim()) void act(async () => { await api('POST', `/api/tasks/${t.id}/events`, { src: 'ShiftBoss', who: 'you', text: note }); setNote(''); }, 'Noted'); }}>
             <label htmlFor="tnote" className="faint" style={{ fontSize: 12 }}>Note</label>
             <input id="tnote" className="field" style={{ height: 38 }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log" />
             <button type="submit" className="pill sm" disabled={!note.trim()}>Add</button>

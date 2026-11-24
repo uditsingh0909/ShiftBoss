@@ -27,7 +27,7 @@ function NeedBody({ n, onAnswered }: { n: Need; onAnswered?: () => void }) {
     <>
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
         <span className="eyebrow" style={{ borderColor: kc, color: kc }}>{n.kind}</span>
-        <span className="mono dim" style={{ fontSize: 12 }}>{n.source || n.session || 'Shiftboss'}</span>
+        <span className="mono dim" style={{ fontSize: 12 }}>{n.source || n.session || 'ShiftBoss'}</span>
         <span className="mono faint" style={{ fontSize: 12, marginLeft: 'auto' }}>waiting {ago(n.createdAt)}</span>
       </div>
       <h2 style={{ fontSize: 28, lineHeight: 1.2 }}>{n.title}</h2>
@@ -39,7 +39,7 @@ function NeedBody({ n, onAnswered }: { n: Need; onAnswered?: () => void }) {
         ))}
         {n.taskId && <a className="pill sm" href={href('task', n.taskId)} style={{ marginLeft: 'auto' }}>Task {n.taskId}</a>}
       </div>
-      {n.auto && <span className="faint" style={{ fontSize: 12 }}>This is a permission prompt in {n.session ?? 'a session'}. Shiftboss never approves for you: it only brings the pane forward so you can answer it in herdr.</span>}
+      {n.auto && <span className="faint" style={{ fontSize: 12 }}>This is a permission prompt in {n.session ?? 'a session'}. ShiftBoss never approves for you: it only brings the pane forward so you can answer it in herdr.</span>}
     </>
   );
 }

@@ -21,9 +21,9 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
   return (
     <div className="navwrap">
       <nav aria-label="Main" className="nav row">
-        <a href={href()} className="row" style={{ gap: 8, padding: '0 12px 0 10px' }} aria-label="Shiftboss home">
+        <a href={href()} className="row" style={{ gap: 8, padding: '0 12px 0 10px' }} aria-label="ShiftBoss home">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F4F5" strokeWidth="1.25" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M8 9h8M8 12h5M8 15h7" /></svg>
-          <span style={{ fontWeight: 500 }}>Shiftboss</span>
+          <span style={{ fontWeight: 500 }}>ShiftBoss</span>
           <span className={'dot' + (connected ? ' blink' : '')} title={connected ? 'Live' : 'Reconnecting'} aria-label={connected ? 'Live' : 'Reconnecting'} style={{ background: connected ? C.green : C.red }} />
         </a>
         {NAV.map(([k, label]) => (
@@ -114,7 +114,7 @@ function App() {
   }, []);
   const [top, a1] = route;
   let page;
-  if (!snap) page = <div className="page"><span className="faint">{connected ? 'Loading…' : 'Connecting to Shiftboss…'}</span></div>;
+  if (!snap) page = <div className="page"><span className="faint">{connected ? 'Loading…' : 'Connecting to ShiftBoss…'}</span></div>;
   else if (top === 'session' && a1) page = <SessionPage name={a1} />;
   else if (top === 'roster') page = <Roster />;
   else if (top === 'health') page = <Health />;

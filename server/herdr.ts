@@ -1,4 +1,4 @@
-// Thin wrapper over the herdr CLI. Shiftboss only reads state, focuses panes and
+// Thin wrapper over the herdr CLI. ShiftBoss only reads state, focuses panes and
 // submits prompts the user typed. It never answers a permission prompt.
 
 export interface HerdrAgent {

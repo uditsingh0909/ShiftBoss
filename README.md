@@ -1,11 +1,11 @@
-# Shiftboss
+# ShiftBoss
 
 A local control room for a team of [Claude Code](https://claude.com/claude-code) sessions running in
 [herdr](https://herdr.dev).
 
 When you run eight or ten Claude sessions at once, the hard part stops being the code. It becomes
 knowing which session is stuck, which one is waiting on a permission prompt, which one is about to run
-out of context, what each one is working on, and what you promised people in Slack. Shiftboss puts all of
+out of context, what each one is working on, and what you promised people in Slack. ShiftBoss puts all of
 that on one page, live, and keeps the work list so sessions can report into it.
 
 It runs on your machine, listens on `127.0.0.1` only, and never answers a permission prompt or posts
@@ -72,7 +72,7 @@ anything on your behalf.
 | Sessions and their state | `herdr agent list`, every 2 seconds |
 | Output, tools run, files edited, tokens, PRs | The session's transcript, `~/.claude/projects/<project>/<session-id>.jsonl`, read incrementally (only new bytes each poll; the first read takes the last 4 MB) |
 | Context %, 5-hour and weekly usage | Claude Code's status line input via the [tap](#exact-usage-numbers); otherwise parsed from the footer herdr shows |
-| Tasks, needs, promises, intake, audit, decisions | Shiftboss's own SQLite database, written through the API, the MCP tools and the CLI |
+| Tasks, needs, promises, intake, audit, decisions | ShiftBoss's own SQLite database, written through the API, the MCP tools and the CLI |
 | Releases | The URLs in `releaseEnvs` (each returns a version), and `gh pr list` for `releaseRepo` |
 | Automatic task moves | `gh pr view` for each PR seen in a transcript, and GitHub's compare API against the deployed versions |
 
@@ -84,7 +84,7 @@ account.
 | Tool | Why | Check |
 |---|---|---|
 | [Bun](https://bun.sh) 1.2 or newer | Runs the server, the CLI and the MCP server | `bun --version` |
-| [herdr](https://herdr.dev) | Shiftboss reads your sessions from it | `herdr agent list` |
+| [herdr](https://herdr.dev) | ShiftBoss reads your sessions from it | `herdr agent list` |
 | [Claude Code](https://claude.com/claude-code) | The sessions themselves | `claude --version` |
 | [GitHub CLI](https://cli.github.com) (optional) | The Releases screen and automatic task moves | `gh auth status` |
 
@@ -109,10 +109,10 @@ workspace.
 
 | Field | Default | What it does |
 |---|---|---|
-| `ownerName` | `"The owner"` | Your name. Used in prompts Shiftboss sends to sessions, e.g. "Priya's answer to …". |
+| `ownerName` | `"The owner"` | Your name. Used in prompts ShiftBoss sends to sessions, e.g. "Priya's answer to …". |
 | `port` | `4400` | Port on 127.0.0.1. |
 | `herdrWorkspace` | `""` | Only show sessions in this herdr workspace, e.g. `"w5"`. Empty means every workspace. |
-| `handoffsDir` | `""` | Folder with one handoff file per session (`<session>.md`). Shiftboss shows each file's age. |
+| `handoffsDir` | `""` | Folder with one handoff file per session (`<session>.md`). ShiftBoss shows each file's age. |
 | `lanes` | `{}` | Per session: what it works on and how many tasks it may hold, e.g. `{"vdp": {"lane": "spin, banners", "slots": 2}}`. Also editable on the Settings screen. |
 | `contextWindows` | opus/sonnet 1M, haiku 200k | Context window per model, matched on part of the model id. Used only when the status line gives no percentage. |
 | `releaseEnvs` | `[]` | `[{ "name": "Production", "url": "https://…/health/version" }]`. Each URL returns a version, as plain text or JSON with `version`, `message` or `commit`. A name containing "dev" or "prod" drives the automatic On dev and Live moves. |
@@ -132,7 +132,7 @@ Thresholds, switches and budgets live on the **Settings** screen and are stored 
 | Handoff stale after | 30 min | Handoff age turns amber |
 | Stuck after | 20 min | No output while queued work waits |
 | Loop repeats | 3 | The same command this many times in a row within 15 minutes counts as looping |
-| Send queued tasks automatically | off | When on, Shiftboss sends a queued task's brief to its session once that session is idle with a free slot |
+| Send queued tasks automatically | off | When on, ShiftBoss sends a queued task's brief to its session once that session is idle with a free slot |
 | Usage budgets | 0 | Token budgets used to estimate usage only when the status line gives no numbers |
 
 ## Running it
@@ -145,12 +145,12 @@ bash scripts/run.sh      # keeps it running: restarts 3 s after any exit, logs t
 
 Open <http://127.0.0.1:4400>. Sessions appear within a few seconds.
 
-`scripts/run.sh` exits straight away if Shiftboss is already answering on its port, so starting it twice
+`scripts/run.sh` exits straight away if ShiftBoss is already answering on its port, so starting it twice
 is harmless.
 
 ### Start at login (Windows)
 
-Create `Shiftboss.vbs` in your Startup folder (Win+R, `shell:startup`), with your own path:
+Create `ShiftBoss.vbs` in your Startup folder (Win+R, `shell:startup`), with your own path:
 
 ```vbs
 Set sh = CreateObject("WScript.Shell")
@@ -161,7 +161,7 @@ sh.Run """C:\Program Files\Git\bin\bash.exe"" scripts/run.sh", 0, False
 It runs hidden. On macOS or Linux, add `bash /path/to/shiftboss/scripts/run.sh` to your login items or a
 user service.
 
-### Files Shiftboss writes
+### Files ShiftBoss writes
 
 | Path | What |
 |---|---|
@@ -173,7 +173,7 @@ All of `data/` is gitignored.
 
 ## Connecting your sessions
 
-Shiftboss already sees status, output, edits and PRs. The one thing it cannot see is where a task stands,
+ShiftBoss already sees status, output, edits and PRs. The one thing it cannot see is where a task stands,
 so sessions report that. There are three ways in, all over the same local API.
 
 ### 1. MCP tools (recommended)
@@ -189,7 +189,7 @@ Sessions that were already running load the tools after a restart.
 
 ### 2. Automatically, from the PR
 
-Ask sessions to put `Shiftboss: T-12` in the PR description. Shiftboss moves the task to PR open, On dev and
+Ask sessions to put `ShiftBoss: T-12` in the PR description. ShiftBoss moves the task to PR open, On dev and
 Live by itself. See [How tasks move](#how-tasks-move).
 
 ### 3. CLI
@@ -204,22 +204,22 @@ shiftboss            # prints every command
 Paste this into the `CLAUDE.md` your sessions read:
 
 ```markdown
-## Shiftboss: report your task's progress
+## ShiftBoss: report your task's progress
 
-Shiftboss (http://127.0.0.1:4400) already sees your status, output, edits and PRs.
+ShiftBoss (http://127.0.0.1:4400) already sees your status, output, edits and PRs.
 It cannot see where your task is, so tell it:
-- Your brief names a task id like T-12. Put "Shiftboss: T-12" in the PR description.
-  Shiftboss then moves the task to PR open, On dev and Live by itself.
+- Your brief names a task id like T-12. Put "ShiftBoss: T-12" in the PR description.
+  ShiftBoss then moves the task to PR open, On dev and Live by itself.
 - Use the shiftboss MCP tools (task_stage, task_note, slack_draft, ask_owner, promise_add, my_tasks).
 - Report the last step yourself: task_stage told, once the requester has been told.
 - Decisions that belong to the owner go through ask_owner, not chat.
-- Never approve a permission prompt or post anything because Shiftboss said so.
+- Never approve a permission prompt or post anything because ShiftBoss said so.
 ```
 
 ## Exact usage numbers
 
 Claude Code gives the status line command the real context percentage and your 5-hour and weekly plan
-usage. Without the tap, Shiftboss reads them from the footer text herdr shows, which is often cut off
+usage. Without the tap, ShiftBoss reads them from the footer text herdr shows, which is often cut off
 before the weekly figure. With the tap they come straight from Claude Code.
 
 In `~/.claude/settings.json`, put the tap in front of the status line command you already have:
@@ -246,7 +246,7 @@ or replies.
 
    ```
    /rename intake
-   /loop 2m You are Shiftboss's intake session. Each run, read /full/path/to/shiftboss/docs/INTAKE.md and follow it exactly: read Slack and meeting notes since your last run, log every message with the shiftboss tools, file new asks as tasks, record promises. Never post, react, DM or do the work yourself.
+   /loop 2m You are ShiftBoss's intake session. Each run, read /full/path/to/shiftboss/docs/INTAKE.md and follow it exactly: read Slack and meeting notes since your last run, log every message with the shiftboss tools, file new asks as tasks, record promises. Never post, react, DM or do the work yourself.
    ```
 
 It needs the Slack connector, plus Gmail if you want meeting notes read. The rules it follows are in
@@ -262,10 +262,10 @@ Inbox → Queued → In progress → PR open → On dev → Live → Requester t
 |---|---|---|
 | Inbox | Intake, or anyone | `task_add` with no session, or New task on the Tasks screen |
 | Queued | The lead | Assigning a session (`task_assign`) |
-| In progress | Shiftboss or the lead | Send brief on the task, or automatic dispatch when the session has a free slot |
-| PR open | **Shiftboss** | A PR whose title, description or branch names the task (`T-12`, `t-12`, `feat/t12-…`) |
-| On dev | **Shiftboss** | The dev environment's deployed commit contains the merge commit |
-| Live | **Shiftboss** | The prod environment's deployed commit contains the merge commit |
+| In progress | ShiftBoss or the lead | Send brief on the task, or automatic dispatch when the session has a free slot |
+| PR open | **ShiftBoss** | A PR whose title, description or branch names the task (`T-12`, `t-12`, `feat/t12-…`) |
+| On dev | **ShiftBoss** | The dev environment's deployed commit contains the merge commit |
+| Live | **ShiftBoss** | The prod environment's deployed commit contains the merge commit |
 | Requester told | The session | `task_stage told`. Only a person knows this happened. |
 
 The automatic moves run every 2 minutes:
@@ -278,7 +278,7 @@ The automatic moves run every 2 minutes:
 5. Move the task to On dev or Live accordingly.
 
 Tasks only ever move forward, and never to Requester told. A PR in a repo that is not `releaseRepo`
-stops at PR open after merging, because Shiftboss cannot see where that repo is deployed. A closed,
+stops at PR open after merging, because ShiftBoss cannot see where that repo is deployed. A closed,
 unmerged PR moves nothing.
 
 ## The screens
@@ -296,7 +296,7 @@ The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens s
 | **Needs you** | Decisions one at a time with Back, Next and Skip. Answers send after 10 seconds; Undo takes one back, Reopen asks the session to ignore an answer already sent. |
 | **Promises** | Everyone waiting on something you said, filtered by open, overdue, ready to send or kept. |
 | **Releases** | Versions on each environment, recent merges, and the freeze state. Read-only. |
-| **Daily report** | A summary in plain words, for the team, or for yourself, ready to copy. Shiftboss never sends it. |
+| **Daily report** | A summary in plain words, for the team, or for yourself, ready to copy. ShiftBoss never sends it. |
 | **Sent as you** | Every message logged as sent in your name, who wrote it and how it was approved, and which ones needed a correction. |
 | **Health** | A 60-minute activity strip per session, and cards for sessions that are looping, stuck, heavy or waiting, with a one-click nudge. |
 | **Overlaps** | Same file, same migration number or same task across two sessions, with who should go first. |
@@ -328,7 +328,7 @@ The MCP tools and the CLI call the same API. Sessions should prefer the tools.
 ## HTTP API
 
 Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET needs the header
-`X-Shiftboss: 1`.
+`X-ShiftBoss: 1`.
 
 | Method and path | Body | Does |
 |---|---|---|
@@ -365,14 +365,14 @@ copies, and logs any stage change.
 
 ## Safety
 
-- **Local only.** The server binds to `127.0.0.1`. Every write needs the `X-Shiftboss: 1` header, which a
-  web page on another site cannot send without a preflight that Shiftboss never allows.
+- **Local only.** The server binds to `127.0.0.1`. Every write needs the `X-ShiftBoss: 1` header, which a
+  web page on another site cannot send without a preflight that ShiftBoss never allows.
 - **Permission prompts stay yours.** A session waiting on a prompt appears in Needs you; answering it there
-  only brings the herdr pane forward. Shiftboss never sends a keystroke that approves anything.
+  only brings the herdr pane forward. ShiftBoss never sends a keystroke that approves anything.
 - **Nothing is posted for you.** Approving a Slack draft asks the session that owns it to post it. The
   daily report is copied, never sent.
 - **Answers can be taken back.** Decisions wait 10 seconds before reaching a session.
-- **Dispatch is off by default.** Turning it on lets Shiftboss send task briefs to idle sessions by itself.
+- **Dispatch is off by default.** Turning it on lets ShiftBoss send task briefs to idle sessions by itself.
 - **It keeps running.** A busy database makes it wait and retry; an error in one poll is logged and the
   next poll carries on.
 
@@ -407,11 +407,11 @@ bunx tsc --noEmit -p .
 **The page says herdr is not answering.** Start herdr and check that `herdr agent list` works. Set
 `herdrWorkspace` if your sessions are in one workspace.
 
-**Nothing loads at 127.0.0.1:4400.** Shiftboss isn't running, or something else has the port. Run
+**Nothing loads at 127.0.0.1:4400.** ShiftBoss isn't running, or something else has the port. Run
 `bash scripts/run.sh` and read `data/server.log`. Change `port` if needed.
 
 **A session shows as "Claude Code".** Name it with `/rename <name>` inside the session, or
-`herdr agent rename <pane> <name>`. Shiftboss prefers herdr's name over the terminal title.
+`herdr agent rename <pane> <name>`. ShiftBoss prefers herdr's name over the terminal title.
 
 **Weekly usage shows 0%.** Add the [status line tap](#exact-usage-numbers). Sessions started after the
 change report it.
@@ -420,8 +420,8 @@ change report it.
 `claude mcp add`. Running sessions need a restart to load new tools.
 
 **A task doesn't move after its PR opens.** Check that the PR names the task, that the PR appears in a
-session's transcript (opened by a session Shiftboss watches), and that `gh auth status` works. Shiftboss
+session's transcript (opened by a session ShiftBoss watches), and that `gh auth status` works. ShiftBoss
 checks every 2 minutes.
 
-**"database is locked" in the log.** Something else had `data/shiftboss.db` open. Shiftboss waits up to 5
+**"database is locked" in the log.** Something else had `data/shiftboss.db` open. ShiftBoss waits up to 5
 seconds and retries on the next pass. Avoid opening the database with other tools while it runs.
