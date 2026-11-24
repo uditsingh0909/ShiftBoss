@@ -1,6 +1,6 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
-import { resolveLead, type Session } from '../../shared/types';
+import { resolveLead, type Replacement, type Session } from '../../shared/types';
 import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, safeHref, Seg, toneColor, useSnap } from '../lib';
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
@@ -101,26 +101,191 @@ function Alerts() {
   );
 }
 
-/** Quick action: start a Claude Code session in a new herdr tab, with an optional first prompt. */
+const MODEL_OPTIONS = [{ value: '', label: 'Claude Code default' }, { value: 'opus', label: 'Opus' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'haiku', label: 'Haiku' }];
+type Row = { name: string; cwd: string; model: string; prompt: string };
+
+/** Quick action, several at once: rows of name, folder, model and first prompt; a prefix and count fills them in. */
+function NewSessions({ onDone }: { onDone: () => void }) {
+  const snap = useSnap()!;
+  const folders = [...new Set(snap.sessions.map((s) => s.cwd).filter(Boolean))];
+  const [fill, setFill] = useState({ prefix: '', count: '3', cwd: folders[0] ?? '', model: '' });
+  const [rows, setRows] = useState<Row[]>([]);
+  const make = () => {
+    const n = Math.max(1, Math.min(20, Math.floor(Number(fill.count) || 0)));
+    setRows(Array.from({ length: n }, (_, i) => ({ name: `${fill.prefix.trim()}-${i + 1}`, cwd: fill.cwd, model: fill.model, prompt: rows[i]?.prompt ?? '' })));
+  };
+  const set = (i: number, patch: Partial<Row>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const ready = rows.length > 0 && rows.every((r) => r.name.trim() && r.cwd.trim());
+  const submit = () => act(async () => {
+    await api('POST', '/api/sessions/spawn-many', { sessions: rows.map((r) => ({ name: r.name.trim(), cwd: r.cwd.trim(), model: r.model || null, prompt: r.prompt || null })) });
+    onDone();
+  }, `Starting ${rows.length} sessions one after another · watch the event stream`);
+  return (
+    <form className="col" style={{ gap: 18 }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+      <div className="grid12" style={{ alignItems: 'end' }}>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="nm-prefix" className="label">Name prefix</label>
+          <input id="nm-prefix" className="field mono" value={fill.prefix} onChange={(e) => setFill({ ...fill, prefix: e.target.value })} placeholder="billing" /></div>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 1' }}><label htmlFor="nm-count" className="label">How many</label>
+          <input id="nm-count" className="field mono" type="number" min={1} max={20} value={fill.count} onChange={(e) => setFill({ ...fill, count: e.target.value })} /></div>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 4' }}><label htmlFor="nm-cwd" className="label">Folder for all</label>
+          <Pick id="nm-cwd" free value={fill.cwd} onChange={(v) => setFill({ ...fill, cwd: v })} placeholder="C:/path/to/repo" options={folders.map((d) => ({ value: d }))} /></div>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><label htmlFor="nm-model" className="label">Model for all</label>
+          <Pick id="nm-model" value={fill.model} onChange={(v) => setFill({ ...fill, model: v })} options={MODEL_OPTIONS} /></div>
+        <div className="row" style={{ gridColumn: 'span 2', justifyContent: 'flex-end' }}>
+          <button type="button" className="pill sm" disabled={!fill.prefix.trim() || !fill.cwd.trim()} onClick={make}>{rows.length ? 'Remake rows' : 'Make rows'}</button>
+        </div>
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className="grid12 well" style={{ alignItems: 'end', padding: 14 }} aria-label={`Session ${i + 1}`} role="group">
+          <div className="col" style={{ gap: 6, gridColumn: 'span 3' }}><label htmlFor={`nm-name-${i}`} className="label">Name</label>
+            <input id={`nm-name-${i}`} className="field mono" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,39}" value={r.name} onChange={(e) => set(i, { name: e.target.value })} /></div>
+          <div className="col" style={{ gap: 6, gridColumn: 'span 4' }}><label htmlFor={`nm-cwd-${i}`} className="label">Folder</label>
+            <Pick id={`nm-cwd-${i}`} free value={r.cwd} onChange={(v) => set(i, { cwd: v })} options={folders.map((d) => ({ value: d }))} /></div>
+          <div className="col" style={{ gap: 6, gridColumn: 'span 2' }}><label htmlFor={`nm-model-${i}`} className="label">Model</label>
+            <Pick id={`nm-model-${i}`} value={r.model} onChange={(v) => set(i, { model: v })} options={MODEL_OPTIONS} /></div>
+          <div className="row" style={{ gridColumn: 'span 3', justifyContent: 'flex-end' }}>
+            <button type="button" className="pill sm" aria-label={`Remove ${r.name || 'row ' + (i + 1)}`} onClick={() => setRows(rows.filter((_, k) => k !== i))}>Remove</button>
+          </div>
+          <div className="col" style={{ gap: 6, gridColumn: 'span 12' }}><label htmlFor={`nm-prompt-${i}`} className="label">First prompt (optional)</label>
+            <textarea id={`nm-prompt-${i}`} className="field" rows={2} value={r.prompt} onChange={(e) => set(i, { prompt: e.target.value })} placeholder="What should it start on?" /></div>
+        </div>
+      ))}
+      {!rows.length && <span className="faint" style={{ fontSize: 13 }}>Give a prefix and a count to make rows (billing-1, billing-2 …), then set each one's first prompt. Up to 20.</span>}
+      <div className="row" style={{ gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        {rows.length > 0 && rows.length < 20 && <button type="button" className="pill sm" onClick={() => setRows([...rows, { name: '', cwd: fill.cwd, model: fill.model, prompt: '' }])}>+ Add row</button>}
+        <button type="button" className="pill sm" onClick={onDone}>Cancel</button>
+        <button type="submit" className="pill w" disabled={!ready}>Start {rows.length || ''} session{rows.length === 1 ? '' : 's'}<Arrow dark /></button>
+      </div>
+      <span className="faint" style={{ fontSize: 12 }}>They start one after another. A folder Claude has not opened before asks "trust this folder?" in herdr; only you answer that.</span>
+    </form>
+  );
+}
+
+/** Quick action: start a Claude Code session in a new herdr tab, with an optional first prompt. Or several. */
 function NewSession({ onDone }: { onDone: () => void }) {
+  const [mode, setMode] = useState<'One' | 'Several'>('One');
+  return (
+    <section className="shell rise" aria-label="New session">
+      <div className="core col" style={{ gap: 18 }}>
+        <div className="row"><Seg label="How many sessions" value={mode} options={['One', 'Several'] as const} onChange={setMode} /></div>
+        {mode === 'One' ? <NewOne onDone={onDone} /> : <NewSessions onDone={onDone} />}
+      </div>
+    </section>
+  );
+}
+
+function NewOne({ onDone }: { onDone: () => void }) {
   const snap = useSnap()!;
   const folders = [...new Set(snap.sessions.map((s) => s.cwd).filter(Boolean))];
   const [f, setF] = useState({ name: '', cwd: folders[0] ?? '', model: '', prompt: '' });
   const submit = () => act(async () => { await api('POST', '/api/sessions/spawn', { ...f, model: f.model || null, prompt: f.prompt || null }); onDone(); }, `Starting ${f.name} · it shows up here in a few seconds`);
   return (
-    <section className="shell rise" aria-label="New session">
-      <form className="core" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 16, alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+    <>
+      <form className="grid12" style={{ alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-name" className="label">Name</label>
           <input id="ns-name" className="field mono" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,39}" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="billing-fix" /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="ns-cwd" className="label">Folder</label>
           <Pick id="ns-cwd" free value={f.cwd} onChange={(v) => setF({ ...f, cwd: v })} placeholder="C:/path/to/repo" options={folders.map((d) => ({ value: d }))} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-model" className="label">Model</label>
-          <Pick id="ns-model" value={f.model} onChange={(v) => setF({ ...f, model: v })} options={[{ value: '', label: 'Claude Code default' }, { value: 'opus', label: 'Opus' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'haiku', label: 'Haiku' }]} /></div>
+          <Pick id="ns-model" value={f.model} onChange={(v) => setF({ ...f, model: v })} options={MODEL_OPTIONS} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 9' }}><label htmlFor="ns-prompt" className="label">First prompt (optional)</label>
           <textarea id="ns-prompt" className="field" rows={2} value={f.prompt} onChange={(e) => setF({ ...f, prompt: e.target.value })} placeholder="What should it start on?" /></div>
         <div className="row" style={{ gridColumn: 'span 3', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" className="pill sm" onClick={onDone}>Cancel</button>
           <button type="submit" className="pill w" disabled={!f.name.trim() || !f.cwd.trim()}>Start<Arrow dark /></button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+// ---------- replacing sessions ----------
+const REPL_STEPS = ['Handoff asked', 'Handoff ready', 'Replacement started', 'State moved'] as const;
+/** How many of the four steps are done. */
+const stepsDone = (st: Replacement['state']) => ({ pending: 0, requested: 1, stalled: 1, ready: 2, starting: 2, started: 3, moved: 4, done: 4, failed: -1, cancelled: -1 })[st];
+const cancellable = (st: Replacement['state']) => ['pending', 'requested', 'stalled', 'ready', 'failed'].includes(st);
+export const activeRepl = (st: Replacement['state']) => !['done', 'failed', 'cancelled'].includes(st);
+
+function replNote(r: Replacement): { text: string; tone: string } {
+  switch (r.state) {
+    case 'pending': return { text: r.error ?? 'About to ask for the handoff.', tone: C.amber };
+    case 'requested': return { text: r.missing.length ? 'Handoff still missing: ' + r.missing.join(', ') : `Waiting for ${r.oldName} to write its handoff.`, tone: C.dim };
+    case 'stalled': return { text: `No complete handoff after 20 min${r.missing.length ? ' (missing: ' + r.missing.join(', ') + ')' : ''}. Open ${r.oldName} and check on it, or cancel.`, tone: C.red };
+    case 'ready': case 'starting': return { text: `Starting ${r.newName}…`, tone: C.dim };
+    case 'started': return { text: r.error ?? `${r.newName} is up; moving tasks…`, tone: r.error ? C.amber : C.dim };
+    case 'moved': return { text: r.error ?? `Tasks moved. Waiting for ${r.newName} to be ready for its first prompt.`, tone: C.amber };
+    case 'done': return { text: `${r.newName} took over. ${r.oldName} can be closed when you are ready; ShiftBoss leaves that to you.`, tone: C.green };
+    case 'failed': return { text: r.error ?? 'Failed.', tone: C.red };
+    case 'cancelled': return { text: 'Cancelled.', tone: C.faint };
+  }
+}
+
+/** One replacement's progress: the four steps, what it waits on, and cancel while that is still possible. */
+function ReplacementProgress({ r, compact }: { r: Replacement; compact?: boolean }) {
+  const done = stepsDone(r.state);
+  const note = replNote(r);
+  return (
+    <div className="col" style={{ gap: 12 }}>
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <a className="mono" href={href('session', r.oldName)}>{r.oldName}</a><span className="faint">→</span>
+        {r.state === 'done' || r.state === 'moved' || r.state === 'started' ? <a className="mono" href={href('session', r.newName)}>{r.newName}</a> : <span className="mono dim">{r.newName}</span>}
+        <span className="mono faint" style={{ fontSize: 11, marginLeft: 'auto' }}>{r.state} · {ago(r.updatedAt)}</span>
+      </div>
+      <ol className="row" style={{ gap: 8, flexWrap: 'wrap', listStyle: 'none', margin: 0, padding: 0 }} aria-label="Replacement steps">
+        {REPL_STEPS.map((label, i) => {
+          const ok = done > i;
+          const now = done === i && r.state !== 'failed' && r.state !== 'cancelled';
+          const color = ok ? C.green : now ? (r.state === 'stalled' ? C.red : C.amber) : C.faint;
+          return (
+            <li key={label} className="row" style={{ gap: 6, fontSize: 12, padding: '4px 10px', borderRadius: 999, border: '1px solid ' + (ok || now ? color : 'var(--line)'), color }}>
+              <Dot color={color} blink={now && r.state !== 'stalled'} /><span>{label}</span><span className="sr-only">{ok ? ' (done)' : now ? ' (in progress)' : ''}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, color: note.tone, flex: '1 1 240px', overflowWrap: 'anywhere' }}>{note.text}</span>
+        {cancellable(r.state) && <button type="button" className="pill sm" onClick={() => act(() => api('POST', `/api/replacements/${r.id}/cancel`), r.state === 'failed' ? 'Dismissed' : 'Cancelled')}>{r.state === 'failed' ? 'Dismiss' : 'Cancel'}</button>}
+      </div>
+      {!compact && <span className="mono faint" style={{ fontSize: 11, wordBreak: 'break-all' }}>handoff · {r.handoffPath}</span>}
+    </div>
+  );
+}
+
+/** Quick action: pick sessions to replace; those over the replace threshold come ticked. */
+function ReplaceMany({ onDone }: { onDone: () => void }) {
+  const snap = useSnap()!;
+  const th = snap.settings.thresholds;
+  const busy = new Set(snap.replacements.filter((r) => activeRepl(r.state)).map((r) => r.oldName));
+  const list = [...snap.sessions].sort((a, b) => b.contextPct - a.contextPct);
+  const [picked, setPicked] = useState<Record<string, boolean>>(() => Object.fromEntries(list.filter((s) => s.contextPct >= th.replace && !busy.has(s.name)).map((s) => [s.name, true])));
+  const names = list.filter((s) => picked[s.name] && !busy.has(s.name)).map((s) => s.name);
+  const submit = () => act(async () => {
+    const r = await api<{ results: { name: string; error?: string }[] }>('POST', '/api/sessions/replace', { sessions: names });
+    const bad = r.results.filter((x) => x.error);
+    if (bad.length) throw new Error(`Started ${r.results.length - bad.length}; could not start ${bad.map((x) => `${x.name} (${x.error})`).join(', ')}`);
+    onDone();
+  }, `Asked ${names.length} session${names.length === 1 ? '' : 's'} for a handoff`);
+  return (
+    <section className="shell rise" aria-label="Replace sessions">
+      <form className="core col" style={{ gap: 14 }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+        <span className="label">Replace sessions</span>
+        <span className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>Each one writes a handoff, then a fresh session (name-v2, -v3 …) starts in the same folder, reads it and takes over its tasks. The old sessions stay open for you to close. Ticked: over {th.replace}% context.</span>
+        <fieldset className="col" style={{ gap: 4, border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
+          <legend className="sr-only">Sessions</legend>
+          {list.map((s) => (
+            <label key={s.name} className="row trow" style={{ gap: 12, padding: '8px 10px', cursor: busy.has(s.name) ? 'default' : 'pointer' }}>
+              <input type="checkbox" checked={!!picked[s.name] && !busy.has(s.name)} disabled={busy.has(s.name)} onChange={(e) => setPicked({ ...picked, [s.name]: e.target.checked })} />
+              <span className="mono ellipsis" style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13 }}>{s.name}</span>
+              <span className="mono faint" style={{ fontSize: 11 }}>{busy.has(s.name) ? 'being replaced' : s.status}</span>
+              <span className="mono" style={{ width: 44, textAlign: 'right', fontSize: 13, color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span>
+            </label>
+          ))}
+          {!list.length && <Empty text="No sessions running." />}
+        </fieldset>
+        <div className="row" style={{ gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button type="button" className="pill sm" onClick={onDone}>Cancel</button>
+          <button type="submit" className="pill w" disabled={!names.length}>Replace {names.length || ''}<Arrow dark /></button>
         </div>
       </form>
     </section>
@@ -135,6 +300,7 @@ export function CommandCenter() {
   const near = snap.sessions.filter((s) => s.contextPct >= th.replace);
   // The lead session is always the big card; without one, whoever needs you, then the fullest context.
   const [spawning, setSpawning] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const lead = resolveLead(snap.sessions, snap.settings.leadSession ?? '');
   const hero = lead ?? blocked[0] ?? [...snap.sessions].sort((a, b) => b.contextPct - a.contextPct)[0];
   const need = hero ? snap.needs.find((n) => !n.answer && n.session === hero.name) : null;
@@ -151,13 +317,23 @@ export function CommandCenter() {
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
           <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
-            <button type="button" className="pill sm w" aria-expanded={spawning} onClick={() => setSpawning(!spawning)}>+ New session</button>
+            <button type="button" className={'pill sm' + (near.length ? ' r' : '')} aria-expanded={replacing} onClick={() => { setReplacing(!replacing); setSpawning(false); }}>Replace…</button>
+            <button type="button" className="pill sm w" aria-expanded={spawning} onClick={() => { setSpawning(!spawning); setReplacing(false); }}>+ New session</button>
           </div>
           <Seg label="Filter" value={filter} options={['All', 'Working', 'Needs you', 'Near limit', 'Idle'] as const} onChange={setFilter} />
         </div>
       </section>
       {spawning && <NewSession onDone={() => setSpawning(false)} />}
+      {replacing && <ReplaceMany onDone={() => setReplacing(false)} />}
       <Alerts />
+      {snap.replacements.length > 0 && (
+        <section className="shell rise" aria-label="Replacements">
+          <div className="core col" style={{ gap: 18, padding: 22 }}>
+            <span className="label">Replacements · {snap.replacements.filter((r) => activeRepl(r.state)).length} under way</span>
+            {snap.replacements.slice(0, 8).map((r) => <ReplacementProgress key={r.id} r={r} compact />)}
+          </div>
+        </section>
+      )}
 
       <section className="grid12">
         {hero ? (
@@ -267,7 +443,13 @@ export function SessionPage({ name }: { name: string }) {
   const c = ctxColor(s.contextPct, th.warn, th.replace);
   const post = (path: string, body: unknown, ok: string) => act(() => api('POST', `/api/sessions/${encodeURIComponent(s.name)}/${path}`, body), ok);
   const send = async () => { const t = draft.trim(); if (!t) return; await post('prompt', { text: t }, 'Sent to ' + s.name); setDraft(''); };
-  const replaceText = `Write your handoff now (open work, PRs, promises owed, scheduled jobs, worktrees) to ${s.handoffPath ?? 'your handoff file'}, then stop. A fresh session will continue from it.`;
+  // The newest replacement this session is part of, as the old one or as the successor.
+  const repl = snap.replacements.find((r) => r.oldName === s.name) ?? snap.replacements.find((r) => r.newName === s.name);
+  const replacingNow = !!repl && repl.oldName === s.name && activeRepl(repl.state);
+  const replace = () => act(async () => {
+    const r = await api<{ results: { error?: string }[] }>('POST', '/api/sessions/replace', { sessions: [s.name] });
+    if (r.results[0]?.error) throw new Error(r.results[0].error);
+  }, `Asked ${s.name} for its handoff · the replacement starts once it is written`);
   return (
     <div className="page" style={{ gap: 40 }}>
       <section className="rise row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32 }}>
@@ -285,17 +467,25 @@ export function SessionPage({ name }: { name: string }) {
           <button type="button" className="pill" onClick={() => post('interrupt', {}, 'Interrupted ' + s.name)}>Interrupt</button>
           <button type="button" className="pill" onClick={() => post('focus', {}, 'Opened in herdr')}>Open in herdr</button>
           <button type="button" className="pill" onClick={() => act(async () => setScreen((await api('GET', `/api/sessions/${encodeURIComponent(s.name)}/screen`)).text), 'Screen loaded')}>Raw screen</button>
-          <button type="button" className={'pill tour-replace' + (s.contextPct >= th.replace ? ' r' : '')} onClick={() => post('prompt', { text: replaceText }, 'Asked ' + s.name + ' to write its handoff')}>Prepare replace</button>
+          <button type="button" className={'pill tour-replace' + (s.contextPct >= th.replace && !replacingNow ? ' r' : '')} disabled={replacingNow} onClick={replace}>{replacingNow ? 'Replacing…' : 'Replace'}</button>
         </div>
       </section>
 
-      {s.contextPct >= th.replace && !hideAlert && (
+      {s.contextPct >= th.replace && !hideAlert && !replacingNow && (
         <section role="alert" className="shell rise alert-red">
           <div className="core row" style={{ gap: 24, padding: '22px 26px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 40, fontWeight: 500, letterSpacing: '-0.04em', color: C.red }}>{Math.round(s.contextPct)}%</span>
-            <span style={{ flex: '1 1 480px', lineHeight: 1.55, fontSize: 15 }}>Context is nearly full and the session will start losing track. <span className="dim">Prepare replace asks it to write its handoff; then start a fresh session from that file.</span></span>
+            <span style={{ flex: '1 1 480px', lineHeight: 1.55, fontSize: 15 }}>Context is nearly full and the session will start losing track. <span className="dim">Replace asks it to write its handoff, then starts a fresh session that reads it and takes over its tasks. This one stays open for you to close.</span></span>
             <button type="button" className="pill" onClick={() => setHideAlert(true)}>Later</button>
-            <button type="button" className="pill w" onClick={() => post('prompt', { text: replaceText }, 'Asked for a handoff')}>Prepare replace<Arrow dark /></button>
+            <button type="button" className="pill w" onClick={replace}>Replace<Arrow dark /></button>
+          </div>
+        </section>
+      )}
+      {repl && (
+        <section className={'shell rise' + (repl.state === 'stalled' || repl.state === 'failed' ? ' alert-red' : '')} aria-label="Replacement">
+          <div className="core col" style={{ gap: 14, padding: '20px 24px' }}>
+            <span className="label">{repl.oldName === s.name ? 'Replacing this session' : `Replaces ${repl.oldName}`}</span>
+            <ReplacementProgress r={repl} />
           </div>
         </section>
       )}
