@@ -6,7 +6,7 @@ import { makeApi } from '../server/api';
 import { SnapshotFrames, SnapshotHub } from '../server/stream';
 import { loadConfig } from '../server/config';
 import { nameOf, parseAgentList } from '../server/herdr';
-import { onboardingPrompt } from '../server/onboarding';
+import { onboardingPrompt, ownerRules } from '../server/onboarding';
 import { buildReport } from '../server/report';
 import { contextPercent, parseFooter } from '../server/statusline';
 import { mergeSettings } from '../server/settings';
@@ -705,5 +705,28 @@ describe('modes and approvals (gate)', () => {
     const r4 = await e.act('prompt', { session: 'worker', text: 'mine' }, { ...meta, actor: 'owner' });
     expect(r4.status).toBe('done');
     expect(sent).toEqual(['hello', 'mine']);
+  });
+});
+
+describe('owner instructions and thread checks', () => {
+  test("the owner's way of working ends every prompt; nothing is added when it is empty", () => {
+    expect(ownerRules('Sam', '')).toBe('');
+    expect(ownerRules('Sam', '  ')).toBe('');
+    expect(ownerRules('Sam', 'Review PRs before merge')).toContain("Sam's way of working");
+    const store = mem();
+    store.saveSettings({ ...store.settings(), instructions: 'Ask before any deploy' });
+    const e = new Engine(loadConfig(), store, {} as any);
+    const t = store.addTask({ title: 'Fix it' });
+    expect(e.briefFor(t.id)).toContain('Ask before any deploy');
+  });
+  test('a thread the intake flags shows until dismissed', () => {
+    const s = mem();
+    s.addIntake({ src: '#team', who: 'two sessions', text: 'they contradict each other', verdict: 'check thread', taskId: null, url: 'https://example.slack.com/x' } as any);
+    s.addIntake({ src: '#team', who: 'x', text: 'fyi', verdict: 'dropped', taskId: null, url: null } as any);
+    const open = s.openThreadChecks();
+    expect(open.length).toBe(1);
+    s.resolveIntake(open[0].id);
+    expect(s.openThreadChecks()).toEqual([]);
+    expect(() => s.resolveIntake(99999)).toThrow();
   });
 });

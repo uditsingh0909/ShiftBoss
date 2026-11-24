@@ -141,6 +141,8 @@ export interface Settings {
   autoUpdate?: boolean;
   /** What ShiftBoss may do on its own: dry (Dry run), ask (Ask first), safe (Safe auto), auto (Autopilot). */
   mode?: 'dry' | 'ask' | 'safe' | 'auto';
+  /** The owner's way of working, in their words. Added to everything ShiftBoss tells sessions. */
+  instructions?: string;
 }
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
@@ -204,6 +206,9 @@ export interface ActionItem {
   result: string | null;
 }
 
+/** A Slack thread where Claude sessions seem confused (contradicting, repeating, unanswered), flagged by the intake. */
+export interface ThreadCheck { id: number; at: string; src: string; who: string; text: string; url: string | null }
+
 export interface Snapshot {
   now: string;
   herdrOk: boolean;
@@ -223,6 +228,8 @@ export interface Snapshot {
   onboarding: Onboarding;
   /** Held-back actions: every waiting one, plus recent dry-run and decided ones. */
   actions: ActionItem[];
+  /** Threads to look at, from the intake (verdict 'check thread'), until dismissed. */
+  threadChecks: ThreadCheck[];
   owner: string;
   /** The self-updater: running version, newer one if any, and what it last did. Null when not a git checkout. */
   update: { supported: boolean; current: { sha: string; date: string; subject: string } | null; latest: { sha: string; date: string; subject: string } | null; behind: number; checking: boolean; checkedAt: string | null; state: string; note: string } | null;

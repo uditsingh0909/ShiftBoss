@@ -75,6 +75,8 @@ export class Store {
     // Installs from before modes existed ran everything; keep that (Autopilot) instead of the new-install default.
     const srow: any = this.db.query("SELECT value FROM settings WHERE key = 'settings'").get();
     if (srow) { const v = JSON.parse(srow.value); if (!('mode' in v)) this.db.query("UPDATE settings SET value = ? WHERE key = 'settings'").run(JSON.stringify({ ...v, mode: 'auto' })); }
+    const icols2 = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
+    if (!icols2.some((c) => c.name === 'resolved')) this.db.exec('ALTER TABLE intake ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0');
     if (!cols.some((c) => c.name === 'vetted')) this.db.exec('ALTER TABLE tasks ADD COLUMN vetted INTEGER NOT NULL DEFAULT 0');
     const scols = this.db.query('PRAGMA table_info(slack_msgs)').all() as { name: string }[];
     if (!scols.some((c) => c.name === 'approved_at')) this.db.exec('ALTER TABLE slack_msgs ADD COLUMN approved_at TEXT');
@@ -313,6 +315,14 @@ export class Store {
     const off = `${tzMin >= 0 ? '+' : '-'}${Math.abs(Math.trunc(tzMin))} minutes`;
     return this.db.query(`SELECT date(at, ?) as day, count(*) as read, sum(CASE WHEN verdict LIKE 'filed%' OR verdict LIKE 'linked%' THEN 1 ELSE 0 END) as filed
       FROM intake WHERE at >= ? GROUP BY day ORDER BY day`).all(off, new Date(Date.now() - (days + 1) * 864e5).toISOString()) as any;
+  }
+  /** Threads the intake flagged as Claude sessions being confused, not yet dismissed (last 3 days). */
+  openThreadChecks(): { id: number; at: string; src: string; who: string; text: string; url: string | null }[] {
+    return this.db.query("SELECT id, at, src, who, text, url FROM intake WHERE verdict LIKE 'check%' AND resolved = 0 AND at >= ? ORDER BY id DESC LIMIT 20")
+      .all(new Date(Date.now() - 3 * 864e5).toISOString()) as any;
+  }
+  resolveIntake(id: number) {
+    if (!this.db.query('UPDATE intake SET resolved = 1 WHERE id = ?').run(id).changes) throw new NotFound('No intake item ' + id);
   }
   addDecision(text: string) { this.db.query('INSERT INTO decisions (at, text) VALUES (?, ?)').run(now(), text); }
   listDecisions(limit = 50): Decision[] { return this.db.query('SELECT * FROM decisions ORDER BY id DESC LIMIT ?').all(limit) as Decision[]; }

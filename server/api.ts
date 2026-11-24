@@ -413,7 +413,7 @@ export function makeApi(engine: Engine) {
       if (p === '/api/intake/begin' && write) {
         const st = store.intakeBegin();
         const set = store.settings();
-        return done(json({ ...st, run: !st.paused, readFrom: st.since ?? st.catchUpFrom, owner: engine.cfg.ownerName, watchedChannels: set.watchedChannels ?? [],
+        return done(json({ ...st, run: !st.paused, readFrom: st.since ?? st.catchUpFrom, owner: engine.cfg.ownerName, watchedChannels: set.watchedChannels ?? [], ownerInstructions: set.instructions ?? '',
           note: st.paused ? 'Intake is paused: do nothing this run.' : st.catchUpFrom ? `Catching up: read everything since ${st.since ?? st.catchUpFrom}, oldest first, then checkpoint.` : st.since ? `Read messages newer than ${st.since}.` : 'First run: read the last 2 hours.' }));
       }
       if (p === '/api/intake/checkpoint' && write) {
@@ -426,6 +426,9 @@ export function makeApi(engine: Engine) {
           url: safeUrl(b.url) });
         return done(json({ ok: true }, 201));
       }
+      r = m(/^\/api\/intake\/(\d+)\/resolve$/);
+      if (r && write) { store.resolveIntake(Number(r[1])); return done(json({ ok: true })); }
+      if (p === '/api/owner-instructions' && req.method === 'GET') return json({ owner: engine.cfg.ownerName, instructions: store.settings().instructions ?? '' });
       if (p === '/api/intake/days') { const tz = Number(url.searchParams.get('tz') ?? 0); return json(store.intakeCountsByDay(14, Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? tz : 0)); }
       if (p === '/api/decisions' && write) { const b = await body<any>(req); store.addDecision(str(b.text, 'text', 500)); return done(json({ ok: true }, 201)); }
 

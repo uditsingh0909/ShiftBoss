@@ -195,6 +195,15 @@ export function SettingsPage() {
           <ModePicker />
         </SettingsSection>
 
+        <SettingsSection title="Your way of working" text="How you like work done, in your own words. ShiftBoss adds it to every brief, handoff and prompt it sends, and sessions can read it with the owner_instructions tool.">
+          <div style={{ gridColumn: '1 / -1' }} className="col">
+            <textarea id="owner-instructions" aria-label="Your way of working" className="field" rows={6} maxLength={4000}
+              placeholder={'For example:\n- Always let me review a PR before it is merged, and ask before any deploy.\n- Keep Slack replies to a few lines.\n- Test on dev with real requests before opening a PR.'}
+              value={st.instructions ?? ''} onChange={(e) => setSt({ ...st, instructions: e.target.value })} style={{ height: 'auto', padding: 12, lineHeight: 1.55 }} />
+            <span className="faint" style={{ fontSize: 12, marginTop: 6 }}>{(st.instructions ?? '').length}/4000 · Save at the top to apply.</span>
+          </div>
+        </SettingsSection>
+
         <SettingsSection title="Updates" text="ShiftBoss checks GitHub every 30 minutes and installs new versions by itself, then restarts quietly. A copy with local edits is never touched.">
           <div style={{ gridColumn: '1 / -1', gap: 14 }} className="col">
             <Switch label="Install new versions automatically" on={st.autoUpdate !== false} onChange={(v) => setSt({ ...st, autoUpdate: v })}

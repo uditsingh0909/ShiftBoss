@@ -30,6 +30,8 @@ function Lines({ s, n, height, stamps, grow }: { s: Session; n: number; height: 
 
 
 
+const ext = (to: string) => (/^https?:/.test(to) ? { target: '_blank', rel: 'noreferrer' } : {});
+
 type Alert = { key: string; tone: 'red' | 'amber'; what: string; detail: string; to: string; action?: { label: string; run: () => void } };
 
 /** Everything that needs attention right now, in one strip, worst first, each with its next step. */
@@ -50,6 +52,9 @@ function Alerts() {
   for (const o of snap.overlaps) out.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
   const due = snap.promises.filter((p) => p.state === 'due');
   if (due.length) out.push({ key: 'due', tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
+  for (const c of snap.threadChecks ?? [])
+    out.push({ key: 'thread' + c.id, tone: 'amber', what: `Sessions may be confused in ${c.src}`, detail: (c.who ? c.who + ': ' : '') + c.text, to: c.url ?? href('intake'),
+      action: { label: 'Dismiss', run: () => void act(() => api('POST', `/api/intake/${c.id}/resolve`), 'Dismissed') } });
   const held = snap.actions.filter((a) => a.state === 'waiting');
   if (held.length) out.push({ key: 'approvals', tone: 'amber', what: `${held.length} action${held.length === 1 ? '' : 's'} waiting for your approval`, detail: held.slice(0, 2).map((a) => a.summary).join(' · '), to: href('needs') });
   const silent = !st.paused && (!st.lastBeginAt || Date.now() - Date.parse(st.lastBeginAt) > 10 * 60e3);
@@ -82,13 +87,13 @@ function Alerts() {
           <Dot color={reds ? C.red : C.amber} blink />
           <span className="label">{n} need{n === 1 ? 's' : ''} attention</span>
         </span>
-        <a key={a.key} href={a.to} className="col alert-slide" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }} aria-live="polite">
+        <a key={a.key} href={a.to} {...ext(a.to)} className="col alert-slide" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }} aria-live="polite">
           <span className="row" style={{ gap: 8, fontSize: 14, minWidth: 0 }}><Dot color={a.tone === 'red' ? C.red : C.amber} /><span className="ellipsis">{a.what}</span></span>
           <span className="faint ellipsis" style={{ fontSize: 12, paddingLeft: 16 }}>{a.detail}</span>
         </a>
         <span className="row" style={{ gap: 8, flex: 'none', marginLeft: 'auto' }}>
           {a.action && <button type="button" className="pill sm w" onClick={a.action.run}>{a.action.label}</button>}
-          <a className="pill sm" href={a.to}>Open<Arrow /></a>
+          <a className="pill sm" href={a.to} {...ext(a.to)}>Open<Arrow /></a>
           {n > 1 && <>
             <span className="row hide-sm" style={{ gap: 4, margin: '0 4px' }} aria-hidden="true">
               {out.slice(0, 12).map((x, k) => <span key={x.key} style={{ width: k === i ? 14 : 5, height: 5, borderRadius: 999, background: k === i ? C.fg : x.tone === 'red' ? 'rgba(255,90,79,.5)' : C.ghost, transition: 'width .5s var(--ease)' }} />)}

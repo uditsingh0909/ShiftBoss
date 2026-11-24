@@ -57,4 +57,12 @@ Each run, from `readFrom`:
 6. A question the requester asked in a task's thread goes on that task:
    `shiftboss slack T-n "<text>" --kind ask --who "<name>"`
 
+7. **Claude sessions talking past each other.** In threads you read, messages written by Claude sessions (the
+   owner's or teammates') sometimes go wrong: two sessions contradict each other, repeat the same thing back
+   and forth, answer a question nobody asked, or leave a question to them unanswered for over an hour. Log
+   that thread once with verdict `check thread` and its permalink, and a one-line reason as the text:
+   `shiftboss intake --src "<channel>" --who "<sessions>" --text "<what looks wrong>" --verdict "check thread" --url "<permalink>"`
+   ShiftBoss shows it in Needs attention so a person reads the thread. Do not reply in the thread yourself.
+8. If `intake_begin` returns `ownerInstructions`, follow them (they are the owner's way of working).
+
 Never post, react, or DM. Never file the same message twice.

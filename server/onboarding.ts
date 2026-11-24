@@ -12,3 +12,9 @@ export function onboardingPrompt(owner: string, session: string, repo: string): 
 No shiftboss tools in this session? Use the CLI instead: bun ${repo}/cli/shiftboss.ts help
 Then carry on exactly where you were.`;
 }
+
+/** The owner's own way of working, appended to prompts ShiftBoss sends. Empty when none is set. */
+export function ownerRules(owner: string, instructions: string | undefined): string {
+  const t = (instructions ?? '').trim();
+  return t ? `\n\n${owner}'s way of working (follow it; it overrides ShiftBoss's defaults where they differ):\n${t}` : '';
+}

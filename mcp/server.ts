@@ -117,6 +117,12 @@ server.registerTool('decide', {
   inputSchema: { text: z.string().min(1).max(500) },
 }, wrap(async ({ text }) => { await call('POST', '/api/decisions', { text }); return 'logged'; }));
 
+server.registerTool('owner_instructions', {
+  title: "The owner's way of working",
+  description: "How the person who runs ShiftBoss wants work done (for example: always let them review PRs before merging and deploying). Read it when you start and follow it; it overrides ShiftBoss's defaults where they differ.",
+  inputSchema: {},
+}, wrap(async () => { const r = await call('GET', '/api/owner-instructions'); return r.instructions ? `${r.owner}'s way of working:\n${r.instructions}` : `${r.owner} has not written any instructions; use ShiftBoss's defaults.`; }));
+
 server.registerTool('my_tasks', {
   title: 'List my tasks',
   description: 'List open ShiftBoss tasks for a session (or all open tasks if no session is given).',
