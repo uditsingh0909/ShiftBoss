@@ -199,4 +199,45 @@ server.registerTool('session_replace', {
   return r.results.map((x: any) => (x.error ? `${x.name}: could not start (${x.error})` : `${x.name}: asked for its handoff; ${x.newName} starts once it is written`)).join('\n');
 }));
 
+server.registerTool('monitor_add', {
+  title: 'Watch something you shipped',
+  description: 'After shipping something, have ShiftBoss check on it for a few days: the monitor session runs one check every few hours and reports. Give what was shipped (title), what to check and what "bad" looks like (prompt), and optional links and task.',
+  inputSchema: {
+    title: z.string().min(1).max(200).describe('What was shipped, e.g. "New store: phone numbers and texting registration"'),
+    prompt: z.string().min(1).max(4000).describe('What to check each time, and what counts as bad'),
+    days: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(14)]).describe('How long to watch, in days'),
+    every_hours: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)]).describe('How often to check, in hours'),
+    pr: z.string().url().optional(), ticket: z.string().url().optional(), dashboard: z.string().url().optional(),
+    task: TASK.optional(),
+  },
+}, wrap(async (a) => {
+  const m = await call('POST', '/api/monitors', { title: a.title, prompt: a.prompt, durationDays: a.days, intervalHours: a.every_hours, links: { pr: a.pr, ticket: a.ticket, dashboard: a.dashboard }, taskId: a.task });
+  return `monitor ${m.id} watching "${m.title}" for ${m.durationDays} day(s), every ${m.intervalHours} h; the first check is due now`;
+}));
+
+server.registerTool('monitor_report', {
+  title: 'Report a monitor check',
+  description: 'Monitor session only: report the check ShiftBoss asked for. verdict ok (all fine), warn (worth a look), bad (what the owner called bad is happening), error (you could not check). summary: one line in plain words. details: the numbers you saw and where you looked.',
+  inputSchema: {
+    monitor_id: z.number().int().positive(),
+    verdict: z.enum(['ok', 'warn', 'bad', 'error']),
+    summary: z.string().min(1).max(500),
+    details: z.string().max(4000).optional(),
+    links: z.array(z.string().url()).max(5).optional().describe('Pages you looked at, e.g. a dashboard or log search'),
+  },
+}, wrap(async (a) => {
+  const r = await call('POST', `/api/monitors/${a.monitor_id}/report`, { verdict: a.verdict, summary: a.summary, details: a.details, links: a.links });
+  return `recorded: ${a.verdict}. ${r.monitor.state === 'finished' ? 'That was the last check.' : `${r.monitor.checksLeft} check(s) left; next due ${r.monitor.nextDueAt}.`} Wait for the next prompt.`;
+}));
+
+server.registerTool('monitor_list', {
+  title: 'List monitors',
+  description: 'Monitors being watched (and finished in the last day): state, next check, last verdict and summary.',
+  inputSchema: {},
+}, wrap(async () => {
+  const s = await call('GET', '/api/snapshot');
+  if (!s.monitors.length) return 'No monitors.';
+  return s.monitors.map((m: any) => `${m.id}  ${m.state.padEnd(9)} ${m.title}  next ${m.nextDueAt ?? '-'}  last ${m.lastVerdict ?? '-'}${m.lastSummary ? ': ' + m.lastSummary : ''}`).join('\n');
+}));
+
 await server.connect(new StdioServerTransport());

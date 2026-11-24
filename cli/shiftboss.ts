@@ -19,6 +19,10 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss audit --text "<what was sent>" [--where Slack|Jira|GitHub|Email] [--channel C] [--by SESSION] [--approval TEXT]
   shiftboss decide "<what the lead decided>"
   shiftboss import <tasks.json>     (re-runnable: matched on extId)
+  shiftboss monitor add "<what was shipped>" --prompt "<what to check, what bad looks like>" --days 1|3|7|14 --every 1|3|6|12|24
+                        [--pr URL] [--ticket URL] [--dashboard URL] [--task T-n]
+  shiftboss monitor list
+  shiftboss monitor report <id> ok|warn|bad|error "<one-line summary>" [--details TEXT] [--link URL]
   shiftboss status
   shiftboss update [--check]                       install the newest ShiftBoss (--check: only say if there is one)
 
@@ -99,6 +103,26 @@ async function main() {
     case 'audit': {
       await call('POST', '/api/audit', { where: flags.where, channel: flags.channel, text: flags.text, by: flags.by ?? who, approval: flags.approval });
       return console.log('logged');
+    }
+    case 'monitor': {
+      if (sub === 'add') {
+        if (!a1) throw new Error('usage: shiftboss monitor add "<title>" --prompt TEXT --days N --every H');
+        const m = await call('POST', '/api/monitors', { title: a1, prompt: flags.prompt, durationDays: Number(flags.days), intervalHours: Number(flags.every),
+          links: { pr: flags.pr, ticket: flags.ticket, dashboard: flags.dashboard }, taskId: flags.task });
+        return console.log(`monitor ${m.id}: watching for ${m.durationDays} day(s), every ${m.intervalHours} h; first check due now`);
+      }
+      if (sub === 'list') {
+        const r = await call('GET', '/api/monitors');
+        if (!r.monitors.length) return console.log('No monitors.');
+        for (const m of r.monitors) console.log(`${String(m.id).padStart(3)}  ${m.state.padEnd(9)} ${m.title}\n     next ${m.nextDueAt ?? '-'}  ${m.checksDone} done, ${m.checksLeft} left  last ${m.lastVerdict ?? '-'}${m.lastSummary ? ': ' + m.lastSummary : ''}`);
+        return console.log(r.session ? `\nmonitor session: ${r.session.name} (${r.session.status})` : `\nNo monitor session running: start one named ${r.sessionName} on the Monitors page.`);
+      }
+      if (sub === 'report') {
+        if (!a1 || !a2) throw new Error('usage: shiftboss monitor report <id> ok|warn|bad|error "<summary>" [--details TEXT]');
+        const r = await call('POST', `/api/monitors/${a1}/report`, { verdict: a2, summary: pos[4], details: flags.details, links: flags.link ? [flags.link] : [] });
+        return console.log(`recorded: ${a2}${r.monitor.state === 'finished' ? ' (that was the last check)' : `, ${r.monitor.checksLeft} left`}`);
+      }
+      break;
     }
     case 'decide': { await call('POST', '/api/decisions', { text: sub }); return console.log('logged'); }
     case 'import': {
