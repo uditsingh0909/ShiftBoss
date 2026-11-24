@@ -5,6 +5,7 @@ import { Audit, NeedsYou, Promises } from './pages/decide';
 import { Report, SettingsPage } from './pages/ops';
 import { Welcome } from './pages/welcome';
 import { replayTour, Tour } from './tour';
+import { useNotifications } from './notify';
 import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
@@ -146,6 +147,7 @@ class Boundary extends Component<{ children: ReactNode }, { error: Error | null 
 
 function App() {
   const { snap, connected } = useLiveSnapshot();
+  useNotifications(snap); // browser notifications for new items, and "(2) ShiftBoss" in the tab title
   const route = useRoute();
   const [palette, setPalette] = useState(false);
   useEffect(() => {

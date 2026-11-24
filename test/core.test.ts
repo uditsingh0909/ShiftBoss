@@ -17,7 +17,8 @@ import { tmpdir } from 'node:os';
 import { listOutside, readOutside, suggestName } from '../server/outside';
 import { needsInstall, Updater } from '../server/update';
 import { join } from 'node:path';
-import type { Session } from '../shared/types';
+import { DEFAULT_NOTIFY, type Session } from '../shared/types';
+import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
 
 const mem = () => new Store('', ':memory:');
@@ -582,6 +583,52 @@ describe('source links and direction', () => {
     s.saveSettings(next);
     expect(s.settings().notify!.overlap).toBe(false);
     expect(() => mergeSettings(s.settings(), { notify: { needs: 'yes' } })).toThrow();
+  });
+});
+
+describe('browser notifications', () => {
+  const snapOf = (store: Store, over: Record<string, unknown> = {}) => {
+    const e = new Engine(loadConfig(), store, { prompt: async () => {} } as any);
+    return { ...e.snapshot(), ...over } as any;
+  };
+  test('only items that appear after the page loaded notify, and only enabled kinds', () => {
+    const s = mem();
+    s.addNeed({ kind: 'Decision', title: 'Old question', answers: ['Yes'] });
+    const first = snapOf(s);
+    expect(newNotifications(null, first, undefined)).toEqual([]); // page load: nothing is new
+    s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'w1' });
+    s.addNeed({ kind: 'Permission', title: 'Bash: rm', answers: ['Focus'], session: 'w2', auto: true });
+    s.addPromise({ to: 'Sam', said: 'by Monday', dueAt: new Date(Date.now() - 6e4).toISOString() });
+    const second = snapOf(s);
+    const got = newNotifications(first, second, undefined);
+    expect(got.map((x) => x.kind).sort()).toEqual(['blocked', 'needs', 'promiseDue']);
+    expect(got.find((x) => x.kind === 'needs')).toMatchObject({ title: 'Needs you: Ship it?', route: '#/needs' });
+    expect(newNotifications(first, second, { ...DEFAULT_NOTIFY, blocked: false, promiseDue: false }).map((x) => x.kind)).toEqual(['needs']);
+    expect(newNotifications(second, second, undefined)).toEqual([]); // nothing new the second time
+  });
+  test('stuck sessions, overlaps and monitor alerts (when present) notify; answered items do not', () => {
+    const s = mem();
+    const a = snapOf(s, { monitors: [{ id: 'm1', name: 'API', state: 'up' }] });
+    const b = snapOf(s, {
+      health: [{ session: 'w1', verdict: 'looping', title: 'Same command 4 times', signals: [], loop: [], suggest: 'Interrupt it' }],
+      overlaps: [{ id: 'o1', kind: 'Same file', severity: 'red', where: 'x.ts', title: '', a: { session: 'w1', what: '' }, b: { session: 'w2', what: '' }, fix: '' }],
+      monitors: [{ id: 'm1', name: 'API', state: 'down' }],
+    });
+    const got = newNotifications(a, b, undefined);
+    expect(got.map((x) => x.kind).sort()).toEqual(['monitor', 'overlap', 'stuck']);
+    expect(got.find((x) => x.kind === 'stuck')!.route).toBe('#/session/w1');
+    expect(notifyItems(snapOf(s)).length).toBe(0); // no monitors field: skipped
+    const n = s.addNeed({ kind: 'Decision', title: 'Q', answers: ['Yes'] });
+    s.answerNeed(n.id, 'Yes');
+    expect(notifyItems(snapOf(s))).toEqual([]);
+  });
+  test('the tab title counts unanswered Needs you items', () => {
+    const s = mem();
+    expect(tabTitle(snapOf(s))).toBe('ShiftBoss');
+    s.addNeed({ kind: 'Decision', title: 'A', answers: ['Yes'] });
+    s.addNeed({ kind: 'Decision', title: 'B', answers: ['Yes'] });
+    expect(tabTitle(snapOf(s))).toBe('(2) ShiftBoss');
+    expect(tabTitle(null)).toBe('ShiftBoss');
   });
 });
 

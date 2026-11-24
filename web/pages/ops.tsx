@@ -3,6 +3,7 @@ import type { Settings } from '../../shared/types';
 import { act, ago, api, C, Card, Dot, Empty, Hero, hhmm, Seg, toast, useSnap } from '../lib';
 import { IntakeControl } from '../intake-control';
 import { resetTours } from '../tour';
+import { NotificationSettings } from '../notify';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
@@ -180,7 +181,8 @@ export function SettingsPage() {
   const th = (k: keyof Settings['thresholds']) => (v: number) => setSt({ ...st, thresholds: { ...st.thresholds, [k]: v } });
   const sw = (k: keyof Settings['switches']) => (v: boolean) => setSt({ ...st, switches: { ...st.switches, [k]: v } });
   const bud = (k: keyof Settings['budgets']) => (v: number) => setSt({ ...st, budgets: { ...st.budgets, [k]: v } });
-  const save = () => act(async () => { const next = await api<Settings>('PUT', '/api/settings', st); setSt(next); setBase(JSON.stringify(next)); }, 'Saved');
+  // Notification switches save on their own (NotificationSettings), so Save never sends a stale copy of them.
+  const save = () => act(async () => { const { notify: _own, ...rest } = st; const next = await api<Settings>('PUT', '/api/settings', rest); setSt(next); setBase(JSON.stringify(next)); }, 'Saved');
   const T = st.thresholds;
   const badOrder = T.warn >= T.replace;
   return (
@@ -197,6 +199,8 @@ export function SettingsPage() {
             <UpdateRow />
           </div>
         </SettingsSection>
+
+        <NotificationSettings Section={SettingsSection} Switch={Switch} />
 
         <SettingsSection title="Help" text="Each page shows a short tour the first time you open it.">
           <div style={{ gridColumn: '1 / -1' }} className="row">
