@@ -91,6 +91,18 @@ server.registerTool('ask_owner', {
   },
 }, wrap(async (a) => { const n = await call('POST', '/api/needs', { title: a.question, answers: a.answers, kind: a.kind ?? 'Decision', body: a.detail, session: a.session, taskId: a.task }); return `asked (item ${n.id}); the answer will arrive as a prompt`; }));
 
+server.registerTool('intake_begin', {
+  title: 'Start an intake run',
+  description: 'Intake only: call FIRST on every run. Says whether intake is paused (then do nothing and stop) and from what time to read (readFrom). After a pause with catch-up, readFrom is where reading stopped, so the missed messages are read too.',
+  inputSchema: {},
+}, wrap(async () => JSON.stringify(await call('POST', '/api/intake/begin', {}))));
+
+server.registerTool('intake_checkpoint', {
+  title: 'Finish an intake run',
+  description: 'Intake only: call LAST on every run with readUntil = the time of the newest message you read (or the run start if none). The next run reads from there.',
+  inputSchema: { read_until: z.string().describe('ISO time, e.g. 2026-11-25T03:20:00Z') },
+}, wrap(async ({ read_until }) => { await call('POST', '/api/intake/checkpoint', { readUntil: read_until }); return 'checkpoint saved: ' + read_until; }));
+
 server.registerTool('intake_log', {
   title: 'Log a message the intake read',
   description: 'Intake session only: log one message once, with a verdict (filed T-n, linked T-n, answered, dropped, to lead) and its permalink.',

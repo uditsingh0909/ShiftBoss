@@ -1,3 +1,4 @@
+import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { resolveLead, type Session } from '../../shared/types';
 import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Seg, toneColor, useSnap } from '../lib';
@@ -99,6 +100,9 @@ export function CommandCenter() {
               </div>
             ))}
             <span className="faint" style={{ fontSize: 12 }}>{fmtTok(L.fiveHourTokens)} tokens in the last 5 hours</span>
+          </Card>
+          <Card span={4} delay={200} tone={snap.intakeState.paused ? 'amber' : undefined}>
+            <IntakeControl compact />
           </Card>
         </div>
 

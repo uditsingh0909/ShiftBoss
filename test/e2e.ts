@@ -27,7 +27,7 @@ const routes: [string, string, string][] = [
   ['home', '#/', 'sessions running'], ['roster', '#/roster', 'Every session'], ['health', '#/health', 'Session health'],
   ['overlap', '#/overlap', 'Overlap check'], ['tasks', '#/tasks', 'in flight'], ['intake', '#/intake', 'messages read today'],
   ['needs', '#/needs', 'Needs you'], ['promises', '#/promises', 'waiting on you'], ['audit', '#/audit', 'in your name'],
-  ['releases', '#/releases', 'Production'], ['report', '#/report', 'Copy'], ['settings', '#/settings', 'Save'],
+  ['releases', '#/releases', 'Production'], ['report', '#/report', 'Copy'], ['settings', '#/settings', 'Save'], ['setup', '#/setup', 'Connect your sessions'],
 ];
 if (session) routes.push(['session', '#/session/' + encodeURIComponent(session), session]);
 if (task) routes.push(['task', '#/task/' + task, task]);

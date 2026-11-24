@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { C, Dot, href, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap } from './lib';
 import { Audit, NeedsYou, Promises } from './pages/decide';
 import { Releases, Report, SettingsPage } from './pages/ops';
+import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
 
@@ -17,7 +18,7 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
     promises: snap?.promises.filter((p) => p.state !== 'kept').length ?? 0,
   };
   const top = route[0] ?? '';
-  const section = ['session', 'roster', 'health', 'overlap', 'report', 'audit'].includes(top) ? '' : top === 'task' ? 'tasks' : top;
+  const section = ['session', 'roster', 'health', 'overlap', 'report', 'audit', 'setup'].includes(top) ? '' : top === 'task' ? 'tasks' : top;
   return (
     <div className="navwrap">
       <nav aria-label="Main" className="nav row">
@@ -45,7 +46,7 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
   );
 }
 
-const SHORTCUTS = [['roster', 'All sessions'], ['health', 'Health'], ['overlap', 'Overlaps'], ['report', 'Daily report'], ['audit', 'Sent as you']] as const;
+const SHORTCUTS = [['roster', 'All sessions'], ['health', 'Health'], ['overlap', 'Overlaps'], ['report', 'Daily report'], ['audit', 'Sent as you'], ['setup', 'Connect'], ['settings', 'Settings']] as const;
 
 function Shortcuts({ top }: { top: string }) {
   return (
@@ -75,6 +76,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       { group: 'Go to', label: 'Daily report', meta: 'copy and send', to: href('report') },
       { group: 'Go to', label: 'Sent as you', meta: 'audit log', to: href('audit') },
       { group: 'Go to', label: 'Settings', meta: 'lanes, slots, thresholds', to: href('settings') },
+      { group: 'Go to', label: 'Connect', meta: 'MCP tools, status line, intake setup', to: href('setup') },
       { group: 'Do', label: 'New task', meta: 'into the inbox', to: href('tasks', 'new') },
     ];
     for (const s of snap?.sessions ?? []) all.push({ group: 'Sessions', label: s.name, meta: `${s.status} · ctx ${Math.round(s.contextPct)}%`, to: href('session', s.name) });
@@ -142,6 +144,7 @@ function App() {
   else if (top === 'releases') page = <Releases />;
   else if (top === 'report') page = <Report />;
   else if (top === 'settings') page = <SettingsPage />;
+  else if (top === 'setup') page = <SetupPage />;
   else page = <CommandCenter />;
   return (
     <SnapshotCtx.Provider value={snap}>

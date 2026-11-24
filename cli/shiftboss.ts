@@ -13,6 +13,7 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss slack sent <message-id>
   shiftboss promise "<what was said>" --to NAME [--where CHANNEL] [--when "kept when…"] [--task T-n]
   shiftboss need "<question>" --answers "Yes,Not now" [--kind Decision|"Production write"|"Live customers"|Money|Access] [--body TEXT] [--session NAME] [--task T-n]
+  shiftboss intake begin | checkpoint <ISO time> | pause [--until ISO] | resume [--from-now]
   shiftboss intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" [--who NAME] [--task T-n] [--url PERMALINK]
   shiftboss audit --text "<what was sent>" [--where Slack|Jira|GitHub|Email] [--channel C] [--by SESSION] [--approval TEXT]
   shiftboss decide "<what the lead decided>"
@@ -71,6 +72,10 @@ async function main() {
       return console.log('asked, item ' + n.id);
     }
     case 'intake': {
+      if (sub === 'begin') return console.log(JSON.stringify(await call('POST', '/api/intake/begin', {}), null, 1));
+      if (sub === 'checkpoint') { await call('POST', '/api/intake/checkpoint', { readUntil: a1 }); return console.log('checkpoint saved: ' + a1); }
+      if (sub === 'pause') { const st = await call('POST', '/api/intake/pause', { until: flags.until }); return console.log(st.resumeAt ? 'paused until ' + st.resumeAt : 'paused'); }
+      if (sub === 'resume') { await call('POST', '/api/intake/resume', { catchUp: flags['from-now'] === undefined }); return console.log(flags['from-now'] === undefined ? 'resumed, catching up' : 'resumed from now'); }
       await call('POST', '/api/intake', { src: flags.src, who: flags.who, text: flags.text, verdict: flags.verdict, taskId: flags.task, url: flags.url });
       return console.log('logged');
     }

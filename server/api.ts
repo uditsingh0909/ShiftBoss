@@ -3,6 +3,7 @@
 import type { Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent } from '../shared/types';
 import type { Engine } from './engine';
 import { buildReport, type Audience } from './report';
+import { setupInfo } from './setup';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
@@ -208,6 +209,27 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/audit\/(\d+)\/correct$/);
       if (r && write) { const b = await body<any>(req); store.markCorrected(Number(r[1]), str(b.note, 'note', 500)); return done(json({ ok: true })); }
+      if (p === '/api/intake/pause' && write) {
+        const b = await body<any>(req);
+        const st = store.pauseIntake(optStr(b.until, 40) ?? null);
+        engine.pushFeed('you', st.resumeAt ? 'paused intake until ' + st.resumeAt : 'paused intake');
+        return done(json(st));
+      }
+      if (p === '/api/intake/resume' && write) {
+        const b = await body<any>(req);
+        const st = store.resumeIntake(b.catchUp !== false);
+        engine.pushFeed('you', b.catchUp !== false ? 'resumed intake and asked it to catch up' : 'resumed intake from now');
+        return done(json(st));
+      }
+      if (p === '/api/intake/begin' && write) {
+        const st = store.intakeBegin();
+        return done(json({ ...st, run: !st.paused, readFrom: st.since ?? st.catchUpFrom,
+          note: st.paused ? 'Intake is paused: do nothing this run.' : st.catchUpFrom ? `Catching up: read everything since ${st.since ?? st.catchUpFrom}, oldest first, then checkpoint.` : st.since ? `Read messages newer than ${st.since}.` : 'First run: read the last 2 hours.' }));
+      }
+      if (p === '/api/intake/checkpoint' && write) {
+        const b = await body<any>(req);
+        return done(json(store.intakeCheckpoint(str(b.readUntil, 'readUntil', 40))));
+      }
       if (p === '/api/intake' && write) {
         const b = await body<any>(req);
         store.addIntake({ src: str(b.src, 'src', 200), who: optStr(b.who, 100) ?? '', text: str(b.text, 'text', 2000), verdict: str(b.verdict, 'verdict', 100), taskId: optStr(b.taskId, 20) ?? null,
@@ -243,6 +265,7 @@ export function makeApi(engine: Engine) {
         return json(buildReport(aud, store.listTasks(), store.listNeeds()));
       }
       if (p === '/api/ready') return json(engine.readyToDispatch());
+      if (p === '/api/setup') return json(setupInfo(engine.cfg.port));
       return fail('Not found', 404);
     } catch (e) {
       return fail((e as Error).message, 400);

@@ -1,3 +1,4 @@
+import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
 import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Seg, useSnap } from '../lib';
@@ -257,6 +258,9 @@ export function Intake() {
           {!snap.intake.length && <Empty text="Nothing logged yet. The intake session reports each message it reads with: shiftboss intake --src … --text … --verdict …" />}
         </Card>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
+          <Card span={4} tone={snap.intakeState.paused ? 'amber' : undefined}>
+            <IntakeControl />
+          </Card>
           <Card span={4}>
             <span className="label">Read and filed · 14 days</span>
             <div className="row" style={{ gap: 4, alignItems: 'flex-end', height: 96 }} aria-label="Messages per day">

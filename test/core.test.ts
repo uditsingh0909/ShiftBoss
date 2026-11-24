@@ -10,7 +10,7 @@ import type { Session } from '../shared/types';
 const mem = () => new Store('', ':memory:');
 const session = (over: Partial<Session> = {}): Session => ({
   name: 's1', paneId: 'w5:p1', sessionId: 'x', status: 'working', cwd: 'C:\\work', model: 'claude-opus-5-5', contextTokens: 0, contextWindow: 1e6, contextPct: 20,
-  tokensToday: 0, tokens5h: 0, lastActivity: new Date().toISOString(), lastTool: null, lines: [], heat: [], filesTouched: [], lane: '', slots: 2, handoffPath: null, handoffAgeMin: null, prUrls: [], ...over,
+  tokensToday: 0, tokens5h: 0, lastActivity: new Date().toISOString(), lastTool: null, lines: [], heat: [], filesTouched: [], lane: '', slots: 2, handoffPath: null, handoffAgeMin: null, prUrls: [], usesShiftbossTools: false, exactUsage: false, ...over,
 });
 
 describe('store', () => {
@@ -51,6 +51,24 @@ describe('store', () => {
     expect(s.linkOrphanPromises()).toBe(1);
     expect(s.listPromises()[0].taskId).toBe('T-1');
     expect(s.linkOrphanPromises()).toBe(0);
+  });
+  test('intake pause, catch-up resume and checkpoint', () => {
+    const s = mem();
+    s.intakeCheckpoint('2026-11-25T01:00:00Z');
+    expect(s.intakeState().since).toBe('2026-11-25T01:00:00.000Z');
+    s.pauseIntake(null);
+    expect(s.intakeBegin().paused).toBe(true);
+    const caught = s.resumeIntake(true);
+    expect(caught.paused).toBe(false);
+    expect(caught.since).toBe('2026-11-25T01:00:00.000Z'); // reads the gap
+    expect(caught.catchUpFrom).toBe('2026-11-25T01:00:00.000Z');
+    s.intakeCheckpoint('2026-11-25T03:00:00Z');
+    expect(s.intakeState().catchUpFrom).toBeNull();
+    s.pauseIntake(null);
+    const skipped = s.resumeIntake(false);
+    expect(Date.parse(skipped.since!)).toBeGreaterThan(Date.parse('2026-11-25T03:00:00Z')); // gap skipped
+    expect(() => s.pauseIntake('2000-01-01T00:00:00Z')).toThrow();
+    expect(() => s.intakeCheckpoint('not a time')).toThrow();
   });
   test('stage outside 0-6 is refused', () => {
     const s = mem();

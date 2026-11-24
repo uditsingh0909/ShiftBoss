@@ -30,6 +30,8 @@ export interface Session {
   handoffPath: string | null;
   handoffAgeMin: number | null;
   prUrls: string[];
+  usesShiftbossTools: boolean; // called a shiftboss MCP tool in the last 3 hours
+  exactUsage: boolean; // the status line tap is reporting for this session
 }
 
 export const STAGES = ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'] as const;
@@ -112,6 +114,17 @@ export interface MergedPr { number: number; title: string; author: string; merge
 
 export interface Limits { fiveHourPct: number; weeklyPct: number; fiveHourTokens: number; weeklyTokens: number; estimate: boolean }
 
+/** Where the intake session is: it reads messages newer than `since`, and does nothing while paused. */
+export interface IntakeState {
+  paused: boolean;
+  pausedAt: string | null;
+  resumeAt: string | null; // auto-resume (with catch-up) at this time
+  since: string | null; // the intake has read everything up to here
+  catchUpFrom: string | null; // set on resume-with-catch-up until the intake has read past the gap
+  lastBeginAt: string | null; // the intake's last check-in, to spot a dead intake session
+  lastCheckpointAt: string | null;
+}
+
 export interface Settings {
   thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number };
   switches: { autoDispatch: boolean; quietHours: boolean };
@@ -152,6 +165,7 @@ export interface Snapshot {
   limits: Limits;
   releases: { envs: EnvVersion[]; merged: MergedPr[]; freeze: boolean | null };
   settings: Settings;
+  intakeState: IntakeState;
   owner: string;
   feed: { at: string; who: string; text: string }[];
 }

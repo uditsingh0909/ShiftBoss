@@ -56,6 +56,11 @@ export class Engine {
     this.busy = true;
     try {
       const settings = this.store.settings();
+      const intake = this.store.intakeState();
+      if (intake.paused && intake.resumeAt && Date.parse(intake.resumeAt) <= Date.now()) {
+        this.store.resumeIntake(true);
+        this.pushFeed('intake', 'resumed on schedule; catching up on what came in while paused');
+      }
       let agents: HerdrAgent[] = [];
       try {
         agents = await this.herdr.list(settings.herdrWorkspace || this.cfg.herdrWorkspace);
@@ -119,6 +124,8 @@ export class Engine {
       heat: heatOf(st, loops),
       filesTouched: [...new Set((st?.tools ?? []).flatMap((t) => t.files))],
       lane: meta.lane, slots: meta.slots, handoffPath, handoffAgeMin, prUrls: st?.prUrls ?? [],
+      usesShiftbossTools: (st?.tools ?? []).some((t) => t.name.startsWith('mcp__shiftboss__')),
+      exactUsage: !!tap && Date.now() - tap.at < 15 * 60e3,
     };
   }
 
@@ -301,6 +308,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       limits: this.limits(),
       releases: this.releases,
       settings,
+      intakeState: this.store.intakeState(),
       owner: this.cfg.ownerName,
       feed: this.feed.slice(0, 40),
     };

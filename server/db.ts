@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  AuditEntry, Decision, IntakeItem, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
+  AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -271,6 +271,41 @@ export class Store {
     if (!r) return DEFAULT_SETTINGS;
     const s = JSON.parse(r.value);
     return { ...DEFAULT_SETTINGS, ...s, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...s.thresholds }, switches: { ...DEFAULT_SETTINGS.switches, ...s.switches }, budgets: { ...DEFAULT_SETTINGS.budgets, ...s.budgets } };
+  }
+  // ---------- intake pause / resume / catch-up ----------
+  intakeState(): IntakeState {
+    const r: any = this.db.query("SELECT value FROM settings WHERE key = 'intake'").get();
+    const empty: IntakeState = { paused: false, pausedAt: null, resumeAt: null, since: null, catchUpFrom: null, lastBeginAt: null, lastCheckpointAt: null };
+    return r ? { ...empty, ...JSON.parse(r.value) } : empty;
+  }
+  private saveIntake(s: IntakeState): IntakeState {
+    this.db.query("INSERT INTO settings (key, value) VALUES ('intake', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(s));
+    return s;
+  }
+  pauseIntake(until: string | null): IntakeState {
+    const cur = this.intakeState();
+    if (until !== null && !(Date.parse(until) > Date.now())) throw new Error('Pause until must be a time in the future');
+    return this.saveIntake({ ...cur, paused: true, pausedAt: cur.paused ? cur.pausedAt : now(), resumeAt: until });
+  }
+  /** catchUp: read what came in while paused. Otherwise skip it and start from now. */
+  resumeIntake(catchUp: boolean): IntakeState {
+    const cur = this.intakeState();
+    const from = cur.since ?? cur.pausedAt;
+    return this.saveIntake({ ...cur, paused: false, pausedAt: null, resumeAt: null,
+      since: catchUp ? cur.since : now(), catchUpFrom: catchUp && cur.paused ? from : null });
+  }
+  /** Called by the intake at the start of each run: says whether to run and from when. */
+  intakeBegin(): IntakeState {
+    return this.saveIntake({ ...this.intakeState(), lastBeginAt: now() });
+  }
+  /** Called by the intake at the end of a run: everything up to `readUntil` has been read. */
+  intakeCheckpoint(readUntil: string): IntakeState {
+    const t = Date.parse(readUntil);
+    if (!Number.isFinite(t)) throw new Error('readUntil must be an ISO time');
+    if (t > Date.now() + 60e3) throw new Error('readUntil is in the future');
+    const cur = this.intakeState();
+    const since = cur.since && Date.parse(cur.since) > t ? cur.since : new Date(t).toISOString();
+    return this.saveIntake({ ...cur, since, catchUpFrom: null, lastCheckpointAt: now() });
   }
   saveSettings(s: Settings) {
     this.db.query("INSERT INTO settings (key, value) VALUES ('settings', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(s));
