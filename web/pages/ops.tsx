@@ -6,54 +6,6 @@ import { IntakeControl } from '../intake-control';
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
-// ---------------------------------------------------------------- Releases
-
-export function Releases() {
-  const snap = useSnap()!;
-  const { envs, merged, freeze } = snap.releases;
-  const down = envs.filter((e) => !e.ok).length;
-  return (
-    <div className="page">
-      <Hero eyebrow="Releases · read only" title={envs.length ? `${envs.length} environment${envs.length === 1 ? '' : 's'} checked.` : 'No environments set up.'}
-        sub={envs.length ? (down ? `${down} not answering.` : 'All answering.') : undefined} />
-      {freeze !== null && (
-        <span className="eyebrow" style={{ borderColor: freeze ? C.red : C.dim, color: freeze ? C.red : C.dim, marginTop: -24 }}>
-          {freeze && <Dot color={C.red} />}{freeze ? 'Frozen · nothing ships' : 'Train running'}
-        </span>
-      )}
-      {!envs.length && !merged.length ? (
-        <Card><Empty text="Set releaseEnvs and releaseRepo in shiftboss.config.json (see shiftboss.config.example.json) to see versions and recent merges here." /></Card>
-      ) : (
-        <section className="grid12">
-          {envs.map((e, i) => (
-            <Card key={e.name} span={4} delay={i * 50} tone={e.ok ? undefined : 'red'}>
-              <div className="row" style={{ gap: 10 }}>
-                <Dot color={e.ok ? C.green : C.red} />
-                <span style={{ fontWeight: 500 }}>{e.name}</span>
-                <span className="mono faint ellipsis" style={{ fontSize: 12, marginLeft: 'auto' }}>{host(e.url)}</span>
-              </div>
-              <span className="mono" style={{ fontSize: 30, letterSpacing: '-0.02em', lineHeight: 1.1, wordBreak: 'break-all' }}>{e.version ?? '—'}</span>
-              <span className="faint" style={{ fontSize: 12 }}>{e.ok ? 'answering' : 'not answering'} · checked {e.checkedAt ? hhmm(e.checkedAt) : 'never'}</span>
-            </Card>
-          ))}
-          <Card delay={200}>
-            <span className="label">Merged recently</span>
-            {merged.map((pr) => (
-              <a key={pr.number} href={pr.url} target="_blank" rel="noreferrer" className="trow row" style={{ gap: 16, fontSize: 13 }}>
-                <span className="mono faint" style={{ width: 60, flex: 'none' }}>#{pr.number}</span>
-                <span className="ellipsis" style={{ flex: 1 }}>{pr.title}</span>
-                <span className="mono dim hide-sm" style={{ fontSize: 12 }}>{pr.author}</span>
-                <span className="mono faint" style={{ fontSize: 12, width: 64, textAlign: 'right' }}>{ago(pr.mergedAt)}</span>
-              </a>
-            ))}
-            {!merged.length && <Empty text="No merged pull requests found." />}
-          </Card>
-        </section>
-      )}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------- Report
 
 type Report = { sections: { title: string; tone: 'green' | 'amber' | 'dim'; lines: string[] }[]; text: string };

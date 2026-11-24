@@ -1,7 +1,7 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Seg, useSnap } from '../lib';
+import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Seg, usePage, useSnap } from '../lib';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
@@ -41,6 +41,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
   useEffect(() => { api<string[]>('GET', '/api/ready').then(setReady).catch(() => setReady([])); }, [snap.now]);
   const match = { All: () => true, Inbox: (t: Task) => t.stage === 0, P1: (t: Task) => t.prio === 'P1', Unassigned: (t: Task) => !t.session, 'Mine to ship': (t: Task) => t.stage >= 3 && t.stage <= 5 };
   const list = snap.tasks.filter(match[filter]);
+  const page = usePage(list, 50, filter);
   const move = (id: string, stage: number) => act(() => api('PATCH', `/api/tasks/${id}`, { stage }), `${id} → ${STAGES[stage]}`);
   const inFlight = snap.tasks.filter((t) => t.stage >= 2 && t.stage <= 4).length;
 
@@ -93,8 +94,8 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
           })}
         </section>
       ) : (
-        <section className="shell rise"><div className="core" style={{ padding: 12 }}>
-          {list.map((t) => (
+        <section className="shell rise"><div className="core col" style={{ padding: 12, gap: 0 }}>
+          {page.shown.map((t) => (
             <a key={t.id} href={href('task', t.id)} className="trow" style={{ display: 'grid', gridTemplateColumns: '64px minmax(0,1fr) 170px 110px 90px 70px', gap: 16, alignItems: 'center' }}>
               <span className="mono faint" style={{ fontSize: 12 }}>{t.id}</span>
               <span className="col" style={{ gap: 4, minWidth: 0 }}><span className="ellipsis">{t.title}</span><span className="ellipsis faint" style={{ fontSize: 12 }}>{[t.requester, t.source].filter(Boolean).join(' · ') || '—'}</span></span>
@@ -104,6 +105,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
               <span className="mono faint" style={{ fontSize: 12, textAlign: 'right' }}>{ago(t.updatedAt)}</span>
             </a>
           ))}
+          <More page={page} />
           {!list.length && <Empty text="No tasks yet. Add one, or let the intake session file them with: shiftboss task add" />}
         </div></section>
       )}
@@ -184,7 +186,7 @@ export function TaskPage({ id }: { id: string }) {
         <Card span={7}>
           <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}><span className="label">Activity</span><span className="mono faint" style={{ fontSize: 12 }}>{d.events.length} events</span>
             <span style={{ marginLeft: 'auto' }}><Seg label="Source" value={src} options={['All', 'Slack', 'GitHub', 'Session', 'ShiftBoss'] as const} onChange={setSrc} /></span></div>
-          <div className="col divide">
+          <div className="col divide scrollbox" style={{ maxHeight: 520 }}>
             {events.map((e) => (
               <div key={e.id} className="row" style={{ gap: 16, padding: '10px 0' }}>
                 <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(e.at)}</span>
@@ -203,6 +205,7 @@ export function TaskPage({ id }: { id: string }) {
         </Card>
         <Card span={5}>
           <div className="row" style={{ justifyContent: 'space-between' }}><span className="label">Slack thread</span><span className="mono faint" style={{ fontSize: 12 }}>{sent} sent</span></div>
+          <div className="col scrollbox" style={{ gap: 12, maxHeight: 560 }}>
           {d.slack.map((m) => {
             const us = m.who === 'you' || m.who.toLowerCase().startsWith(snap.owner.toLowerCase());
             const tc = m.kind === 'draft' || m.kind === 'promise' ? C.amber : m.kind === 'sent' ? C.green : C.faint;
@@ -218,6 +221,7 @@ export function TaskPage({ id }: { id: string }) {
               </div>
             );
           })}
+          </div>
           {!d.slack.length && <Empty text="No Slack messages recorded for this task. Sessions add them with: shiftboss slack T-n …" />}
         </Card>
       </section>
@@ -236,6 +240,7 @@ export function Intake() {
   const todays = snap.intake.filter((i) => Date.parse(i.at) >= today.getTime());
   const max = Math.max(1, ...days.map((d) => d.read));
   const intakeSession = snap.sessions.find((s) => /intake/i.test(s.name));
+  const intakePage = usePage(snap.intake.filter((i) => match[filter](i.verdict)), 50, filter);
   return (
     <div className="page">
       <Hero eyebrow={'Intake · ' + (intakeSession ? intakeSession.name + ' · ' + (intakeSession.model ?? '') : 'no intake session running')} live={!!intakeSession}
@@ -245,7 +250,7 @@ export function Intake() {
       </Hero>
       <section className="grid12">
         <Card span={8} pad={12}>
-          {snap.intake.filter((i) => match[filter](i.verdict)).map((m) => (
+          {intakePage.shown.map((m) => (
             <div key={m.id} className="trow row" style={{ gap: 18 }}>
               <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(m.at)}</span>
               <span className="mono dim ellipsis" style={{ width: 180, fontSize: 12, flex: 'none' }}>{m.src}</span>
@@ -255,6 +260,7 @@ export function Intake() {
               {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber, minWidth: 80, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, minWidth: 80, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
             </div>
           ))}
+          <div className="row" style={{ justifyContent: 'center' }}><More page={intakePage} /></div>
           {!snap.intake.length && <Empty text="Nothing logged yet. The intake session reports each message it reads with: shiftboss intake --src … --text … --verdict …" />}
         </Card>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>

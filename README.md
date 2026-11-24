@@ -74,7 +74,6 @@ anything on your behalf.
 | Output, tools run, files edited, tokens, PRs | The session's transcript, `~/.claude/projects/<project>/<session-id>.jsonl`, read incrementally (only new bytes each poll; the first read takes the last 4 MB) |
 | Context %, 5-hour and weekly usage | Claude Code's status line input via the [tap](#exact-usage-numbers); otherwise parsed from the footer herdr shows |
 | Tasks, needs, promises, intake, audit, decisions | ShiftBoss's own SQLite database, written through the API, the MCP tools and the CLI |
-| Releases | The URLs in `releaseEnvs` (each returns a version), and `gh pr list` for `releaseRepo` |
 | Automatic task moves | `gh pr view` for each PR seen in a transcript, and GitHub's compare API against the deployed versions |
 
 Everything is one Bun process: the engine, the API and the web UI. There is no cloud service and no
@@ -87,7 +86,7 @@ account.
 | [Bun](https://bun.sh) 1.2 or newer | Runs the server, the CLI and the MCP server | `bun --version` |
 | [herdr](https://herdr.dev) | ShiftBoss reads your sessions from it | `herdr agent list` |
 | [Claude Code](https://claude.com/claude-code) | The sessions themselves | `claude --version` |
-| [GitHub CLI](https://cli.github.com) (optional) | The Releases screen and automatic task moves | `gh auth status` |
+| [GitHub CLI](https://cli.github.com) (optional) | Automatic task moves (PR open, On dev, Live) | `gh auth status` |
 
 Tested on Windows 11 (Git Bash) with Bun 1.4. It should run on macOS and Linux; the login-startup
 launcher below is Windows-only.
@@ -323,7 +322,6 @@ The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens s
 | **Intake** | Every message the intake read, its verdict, and a link back to Slack or Gmail. |
 | **Needs you** | Decisions one at a time with Back, Next and Skip. Answers send after 10 seconds; Undo takes one back, Reopen asks the session to ignore an answer already sent. |
 | **Promises** | Everyone waiting on something you said, filtered by open, overdue, ready to send or kept. |
-| **Releases** | Versions on each environment, recent merges, and the freeze state. Read-only. |
 | **Daily report** | A summary in plain words, for the team, or for yourself, ready to copy. ShiftBoss never sends it. |
 | **Sent as you** | Every message logged as sent in your name, who wrote it and how it was approved, and which ones needed a correction. |
 | **Health** | A 60-minute activity strip per session, and cards for sessions that are looping, stuck, heavy or waiting, with a one-click nudge. |

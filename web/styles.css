@@ -63,6 +63,7 @@ textarea.field { height: auto; padding: 12px 16px; resize: vertical; line-height
 .scroll { overflow-y: auto; display: flex; flex-direction: column-reverse; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
 .trow { padding: 12px 16px; border-radius: 14px; transition: background .5s var(--ease); }
 .trow:hover { background: rgba(255,255,255,.03); }
+.scrollbox { max-height: 440px; overflow-y: auto; padding-right: 6px; margin-right: -6px; }
 .divide > * + * { border-top: 1px solid rgba(255,255,255,.04); }
 @keyframes rise { from { opacity: 0; transform: translateY(24px); filter: blur(6px) } to { opacity: 1; transform: none; filter: none } }
 .rise { animation: rise .9s var(--ease) both; }

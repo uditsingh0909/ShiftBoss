@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
-import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSnap } from '../lib';
+import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Seg, toast, usePage, useSnap } from '../lib';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
@@ -119,7 +119,8 @@ export function NeedsYou() {
 
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} delay={80}>
-            <span className="label">Your answers today</span>
+            <span className="label">Your answers today{answered.length > 6 ? ` · ${answered.length}` : ''}</span>
+            <div className="col scrollbox" style={{ gap: 14 }}>
             {answered.map((n) => (
               <div key={n.id} className="col" style={{ gap: 4 }}>
                 <span className="ellipsis" style={{ fontSize: 13 }}>{n.title}</span>
@@ -130,6 +131,7 @@ export function NeedsYou() {
                 </span>
               </div>
             ))}
+            </div>
             {!answered.length && <Empty text="None yet today." />}
           </Card>
           <Card span={4} delay={140}>
@@ -163,6 +165,7 @@ export function Promises() {
     Open: (p) => p.state !== 'kept', Overdue: (p) => p.state === 'due', 'Ready to send': (p) => p.state === 'ready', Kept: (p) => p.state === 'kept',
   };
   const list = all.filter(match[filter]);
+  const page = usePage(list, 20, filter);
   const kept = all.filter((p) => p.state === 'kept');
   const onTime = kept.filter((p) => !p.dueAt || !p.keptAt || Date.parse(p.keptAt) <= Date.parse(p.dueAt)).length;
   const pct = all.length ? Math.round((onTime / all.length) * 100) : 0;
@@ -178,8 +181,8 @@ export function Promises() {
       </Hero>
       <section className="grid12">
         <div className="col" style={{ gridColumn: 'span 8', gap: 14 }}>
-          {list.map((p, i) => (
-            <Card key={p.id} span={8} delay={i * 40} tone={p.state === 'due' ? 'red' : undefined}>
+          {page.shown.map((p, i) => (
+            <Card key={p.id} span={8} delay={Math.min(i, 8) * 40} tone={p.state === 'due' ? 'red' : undefined}>
               <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
                 <Dot color={promiseColor(p.state)} />
                 <span style={{ fontWeight: 500 }}>{p.to}</span>
@@ -202,12 +205,9 @@ export function Promises() {
                 })()}
                 <label className="row" style={{ gap: 6 }}>
                   <span className="faint" style={{ fontSize: 11 }}>Move to</span>
-                  <select className="field" style={{ height: 32, width: 120, padding: '0 8px', fontSize: 12 }} value={p.taskId ?? ''}
+                  <input className="field mono" list="sb-task-ids" style={{ height: 32, width: 110, padding: '0 8px', fontSize: 12 }} defaultValue={p.taskId ?? ''} placeholder="T-…"
                     aria-label={`Link the promise to ${p.to} to another task`}
-                    onChange={(e) => e.target.value && act(() => api('PATCH', `/api/promises/${p.id}`, { taskId: e.target.value }), 'Linked to ' + e.target.value)}>
-                    {!p.taskId && <option value="">pick a task</option>}
-                    {snap.tasks.map((t) => <option key={t.id} value={t.id}>{t.id}</option>)}
-                  </select>
+                    onChange={(e) => { const v = e.target.value.trim().toUpperCase(); if (v !== p.taskId && snap.tasks.some((t) => t.id === v)) void act(() => api('PATCH', `/api/promises/${p.id}`, { taskId: v }), 'Linked to ' + v); }} />
                 </label>
                 <span style={{ flex: 1 }} />
                 {p.state === 'open' && <button type="button" className="pill sm" onClick={() => setState(p, 'due', 'Marked overdue')}>Mark overdue</button>}
@@ -216,7 +216,9 @@ export function Promises() {
               </div>
             </Card>
           ))}
+          <More page={page} />
           {!list.length && <Card span={8}><Empty text="Nothing in this list." /></Card>}
+          <datalist id="sb-task-ids">{snap.tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</datalist>
         </div>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} delay={80}>
@@ -227,12 +229,14 @@ export function Promises() {
           </Card>
           <Card span={4} delay={140}>
             <span className="label">Who's waiting longest</span>
+            <div className="col scrollbox" style={{ gap: 12 }}>
             {byPerson.map((x) => (
               <div key={x.to} className="row" style={{ gap: 10, fontSize: 13 }}>
                 <span className="ellipsis" style={{ flex: 1 }}>{x.to}</span>
                 <span className="mono faint" style={{ fontSize: 12 }}>{x.n} · {ago(x.oldest)}</span>
               </div>
             ))}
+            </div>
             {!byPerson.length && <Empty text="Nobody is waiting." />}
           </Card>
         </div>
@@ -257,6 +261,7 @@ export function Audit() {
   }, [snap.now, tick]);
   const today = rows.filter((r) => isToday(r.at));
   const list = rows.filter((r) => (filter === 'All' ? true : filter === 'Corrected' ? r.corrected : r.where === filter));
+  const page = usePage(list, 50, filter);
   const grid = { display: 'grid', gridTemplateColumns: '60px 70px minmax(0,1fr) minmax(0,3fr) minmax(0,1fr) 140px', gap: 16, alignItems: 'center' } as const;
   const correct = async (id: number) => {
     const t = note.trim(); if (!t) return;
@@ -270,7 +275,7 @@ export function Audit() {
       </Hero>
       <section className="shell rise"><div className="core" style={{ padding: 12, overflowX: 'auto' }}>
         <div className="label" style={{ ...grid, padding: '14px 16px 10px', minWidth: 900 }}><span>Time</span><span>Where</span><span>Channel</span><span>Text</span><span>By</span><span>Approval</span></div>
-        {list.map((r) => {
+        {page.shown.map((r) => {
           const expanded = openId === r.id;
           return (
             <div key={r.id} style={{ minWidth: 900 }}>
@@ -299,6 +304,7 @@ export function Audit() {
             </div>
           );
         })}
+        <div className="row" style={{ justifyContent: 'center' }}><More page={page} /></div>
         {!list.length && <Empty text="Nothing recorded here." />}
       </div></section>
     </div>

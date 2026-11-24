@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { C, Dot, href, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap } from './lib';
 import { Audit, NeedsYou, Promises } from './pages/decide';
-import { Releases, Report, SettingsPage } from './pages/ops';
+import { Report, SettingsPage } from './pages/ops';
 import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
 
 const NAV = [
-  ['', 'Sessions'], ['tasks', 'Tasks'], ['intake', 'Intake'], ['promises', 'Promises'], ['releases', 'Releases'], ['needs', 'Needs you'],
+  ['', 'Sessions'], ['tasks', 'Tasks'], ['intake', 'Intake'], ['promises', 'Promises'], ['needs', 'Needs you'],
 ] as const;
 
 function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => void; connected: boolean }) {
@@ -142,7 +142,6 @@ function App() {
   else if (top === 'needs') page = <NeedsYou />;
   else if (top === 'promises') page = <Promises />;
   else if (top === 'audit') page = <Audit />;
-  else if (top === 'releases') page = <Releases />;
   else if (top === 'report') page = <Report />;
   else if (top === 'settings') page = <SettingsPage />;
   else if (top === 'setup') page = <SetupPage />;

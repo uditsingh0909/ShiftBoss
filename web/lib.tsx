@@ -103,3 +103,15 @@ export function Hero({ eyebrow, title, sub, live, children }: { eyebrow: string;
   );
 }
 export const Empty = ({ text }: { text: string }) => <div className="faint" style={{ padding: '24px 4px', fontSize: 13 }}>{text}</div>;
+
+// ---------- long lists ----------
+/** Show a long list a page at a time; resets to the first page when `reset` changes (e.g. a filter). */
+export function usePage<T>(items: T[], size = 25, reset?: unknown) {
+  const [n, setN] = useState(size);
+  useEffect(() => setN(size), [reset, size]);
+  return { shown: items.slice(0, n), left: Math.max(0, items.length - n), more: () => setN((x) => x + size), size };
+}
+export function More({ page }: { page: { left: number; more: () => void; size: number } }) {
+  if (page.left <= 0) return null;
+  return <button type="button" className="pill sm" style={{ alignSelf: 'center', marginTop: 6 }} onClick={page.more}>Show {Math.min(page.left, page.size)} more · {page.left} left</button>;
+}

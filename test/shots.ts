@@ -14,7 +14,7 @@ const session = [...snap.sessions].sort((a: any, b: any) => b.lines.length - a.l
 const task = snap.tasks.find((t: any) => t.stage >= 2 && t.stage <= 4)?.id ?? snap.tasks[0]?.id;
 const shots: [string, string, string][] = [
   ['sessions', '#/', 'sessions running'], ['tasks', '#/tasks', 'in flight'], ['needs', '#/needs', 'Needs you'],
-  ['intake', '#/intake', 'messages read today'], ['health', '#/health', 'Session health'], ['releases', '#/releases', 'Production'],
+  ['intake', '#/intake', 'messages read today'], ['health', '#/health', 'Session health'],
 ];
 if (session) shots.splice(1, 0, ['session', '#/session/' + encodeURIComponent(session), session]);
 if (task) shots.splice(3, 0, ['task', '#/task/' + task, task]);

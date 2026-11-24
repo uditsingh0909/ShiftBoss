@@ -1,5 +1,19 @@
 // Thin wrapper over the herdr CLI. ShiftBoss only reads state, focuses panes and
 // submits prompts the user typed. It never answers a permission prompt.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const RAISE = join(import.meta.dir, '..', 'scripts', 'raise-herdr.ps1');
+
+/** Windows: bring the terminal hosting herdr to the front. Best effort; never throws. */
+async function raiseHerdrWindow(): Promise<void> {
+  if (process.platform !== 'win32' || !existsSync(RAISE)) return;
+  try {
+    const p = Bun.spawn(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', RAISE], { stdout: 'ignore', stderr: 'ignore' });
+    const t = setTimeout(() => p.kill(), 8000);
+    await p.exited; clearTimeout(t);
+  } catch { /* the pane is focused either way */ }
+}
 
 export interface HerdrAgent {
   agent: string;
@@ -46,6 +60,7 @@ export class Herdr {
   }
   async focus(pane: string): Promise<void> {
     await run(this.bin, ['agent', 'focus', pane]);
+    await raiseHerdrWindow();
   }
   /** New tab with a Claude Code session in it. Returns the pane id. Waits until Claude is ready for input. */
   async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string }): Promise<string> {
