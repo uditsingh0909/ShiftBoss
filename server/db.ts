@@ -50,6 +50,28 @@ export class Store {
       CREATE TABLE IF NOT EXISTS session_meta (name TEXT PRIMARY KEY, lane TEXT NOT NULL DEFAULT '', slots INTEGER NOT NULL DEFAULT 2, handoff_path TEXT);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+    const cols = this.db.query('PRAGMA table_info(tasks)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'ext_id')) {
+      this.db.exec('ALTER TABLE tasks ADD COLUMN ext_id TEXT; CREATE UNIQUE INDEX IF NOT EXISTS tasks_ext_id ON tasks(ext_id);');
+    }
+  }
+
+  /**
+   * Create or update a task that lives in another tracker, keyed by its id there.
+   * Safe to run again: a known ext_id updates the task instead of adding a second one.
+   */
+  importTask(t: { extId: string; title: string; ask?: string; requester?: string; source?: string; sourceUrl?: string | null; session?: string | null; stage: Stage; prio?: Task['prio']; held?: boolean; links?: { label: string; url: string }[] }): { id: string; created: boolean } {
+    const row: any = this.db.query('SELECT id, stage FROM tasks WHERE ext_id = ?').get(t.extId);
+    if (row) {
+      this.db.query('UPDATE tasks SET title=?, ask=?, stage=?, held=?, source_url=COALESCE(?, source_url), updated_at=? WHERE id=?')
+        .run(t.title, t.ask ?? '', t.stage, t.held ? 1 : 0, t.sourceUrl ?? null, now(), row.id);
+      if (row.stage !== t.stage) this.addEvent(row.id, 'Foreman', 'import', 'Tracker moved it to ' + ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'][t.stage]);
+      return { id: row.id, created: false };
+    }
+    const task = this.addTask({ title: t.title, ask: t.ask, requester: t.requester, source: t.source, sourceUrl: t.sourceUrl, session: t.session, prio: t.prio, stage: t.stage });
+    this.db.query('UPDATE tasks SET ext_id = ?, held = ? WHERE id = ?').run(t.extId, t.held ? 1 : 0, task.id);
+    for (const l of t.links ?? []) this.addEvent(task.id, /github/i.test(l.url) ? 'GitHub' : /slack/i.test(l.url) ? 'Slack' : 'Foreman', 'import', `${l.label}: ${l.url}`);
+    return { id: task.id, created: true };
   }
 
   // ---------- tasks ----------

@@ -25,6 +25,16 @@ describe('store', () => {
     s.updateTask('T-1', { stage: 3 });
     expect(s.events('T-1')[0].text).toContain('PR open');
   });
+  test('import is keyed on extId, so running it twice updates instead of duplicating', () => {
+    const s = mem();
+    const a = s.importTask({ extId: 'board:x', title: 'First', stage: 2 });
+    const b = s.importTask({ extId: 'board:x', title: 'First, renamed', stage: 5 });
+    expect(a.created).toBe(true);
+    expect(b).toEqual({ id: a.id, created: false });
+    expect(s.listTasks().length).toBe(1);
+    expect(s.getTask(a.id)!.stage).toBe(5);
+    expect(s.events(a.id)[0].text).toContain('Live');
+  });
   test('stage outside 0-6 is refused', () => {
     const s = mem();
     s.addTask({ title: 'x' });

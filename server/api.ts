@@ -121,6 +121,25 @@ export function makeApi(engine: Engine) {
         return done(json({ ok: true }));
       }
 
+      if (p === '/api/import' && write) {
+        const b = await body<{ tasks: any[] }>(req);
+        if (!Array.isArray(b.tasks) || b.tasks.length > 2000) throw new Error('tasks must be an array of at most 2000');
+        let created = 0, updated = 0;
+        const tx = store.db.transaction(() => {
+          for (const t of b.tasks) {
+            const stage = Number(t.stage);
+            if (!Number.isInteger(stage) || stage < 0 || stage > 6) throw new Error(`stage for ${t.extId} must be 0-6`);
+            const r = store.importTask({ extId: str(t.extId, 'extId', 200), title: str(t.title, 'title', 300), ask: optStr(t.ask), requester: optStr(t.requester, 100), source: optStr(t.source, 200),
+              sourceUrl: optStr(t.sourceUrl, 500) ?? null, session: optStr(t.session, 100) ?? null, stage: stage as Stage, prio: ['P1', 'P2', 'P3'].includes(t.prio) ? t.prio : 'P2', held: !!t.held,
+              links: Array.isArray(t.links) ? t.links.filter((l: any) => typeof l?.url === 'string').slice(0, 10) : [] });
+            r.created ? created++ : updated++;
+          }
+        });
+        tx();
+        engine.pushFeed('import', `${created} tasks added, ${updated} updated`);
+        return done(json({ created, updated }));
+      }
+
       // ----- promises -----
       if (p === '/api/promises' && write) {
         const b = await body<any>(req);

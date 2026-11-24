@@ -16,6 +16,7 @@ const HELP = `foreman: tell Foreman what happened
   foreman intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" [--who NAME] [--task T-n]
   foreman audit --text "<what was sent>" [--where Slack|Jira|GitHub|Email] [--channel C] [--by SESSION] [--approval TEXT]
   foreman decide "<what the lead decided>"
+  foreman import <tasks.json>     (re-runnable: matched on extId)
   foreman status
 `;
 
@@ -78,6 +79,12 @@ async function main() {
       return console.log('logged');
     }
     case 'decide': { await call('POST', '/api/decisions', { text: sub }); return console.log('logged'); }
+    case 'import': {
+      // foreman import tasks.json  — [{ extId, title, stage 0-6, ask?, session?, sourceUrl?, links? }]
+      const tasks = JSON.parse(await Bun.file(sub).text());
+      const r = await call('POST', '/api/import', { tasks });
+      return console.log(`${r.created} added, ${r.updated} updated`);
+    }
     case 'status': {
       const s = await call('GET', '/api/snapshot');
       for (const x of s.sessions) console.log(`${x.name.padEnd(36)} ${x.status.padEnd(8)} ctx ${Math.round(x.contextPct)}%`);
