@@ -1,7 +1,7 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Seg, usePage, useSnap } from '../lib';
+import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, usePage, useSnap } from '../lib';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
@@ -23,7 +23,7 @@ function NewTask({ onDone }: { onDone: () => void }) {
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="nt-ask" className="label">The ask, in their words</label><textarea id="nt-ask" className="field" rows={2} value={f.ask} onChange={(e) => setF({ ...f, ask: e.target.value })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><span className="label">Priority</span><Seg label="Priority" value={f.prio} options={['P1', 'P2', 'P3'] as const} onChange={(p) => setF({ ...f, prio: p })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><label htmlFor="nt-s" className="label">Session</label>
-          <select id="nt-s" className="field" value={f.session} onChange={(e) => setF({ ...f, session: e.target.value })}><option value="">Inbox (triage later)</option>{snap.sessions.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select></div>
+          <Pick id="nt-s" value={f.session} onChange={(v) => setF({ ...f, session: v })} options={[{ value: '', label: 'Inbox (triage later)' }, ...snap.sessions.map((s) => ({ value: s.name, hint: s.lane || undefined }))]} /></div>
         <div style={{ gridColumn: 'span 2' }}><button type="submit" className="pill w" disabled={!f.title.trim()}>Add<Arrow dark /></button></div>
       </form>
     </section>
@@ -138,10 +138,9 @@ export function TaskPage({ id }: { id: string }) {
         </div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="pill" onClick={() => patch({ held: !t.held }, t.held ? 'Resumed' : 'On hold')}>{t.held ? 'Resume' : 'Hold'}</button>
-          <label className="row" style={{ gap: 8 }}><span className="faint" style={{ fontSize: 12 }}>Session</span>
-            <select className="field" style={{ width: 200, height: 40 }} value={t.session ?? ''} onChange={(e) => patch({ session: e.target.value || null }, 'Reassigned')}>
-              <option value="">unassigned</option>{snap.sessions.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
-            </select></label>
+          <Pick pill width={240} label="Session" value={t.session ?? ''} onChange={(v) => patch({ session: v || null }, v ? 'Assigned to ' + v : 'Unassigned')}
+            prefix="Session"
+            options={[{ value: '', label: 'Unassigned' }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} placeholder="Session" />
           {t.session && t.stage <= 1 && <button type="button" className="pill w" onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Brief sent')}>Send brief<Arrow dark /></button>}
         </div>
       </section>

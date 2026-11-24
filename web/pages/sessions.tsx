@@ -1,7 +1,7 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { resolveLead, type Session } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Seg, toneColor, useSnap } from '../lib';
+import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, Seg, toneColor, useSnap } from '../lib';
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
 const lineColor = (k: string) => (k === 'tool' ? C.fg : k === 'out' ? C.faint : k === 'you' ? C.amber : k === 'sys' ? C.red : C.dim);
@@ -113,12 +113,9 @@ function NewSession({ onDone }: { onDone: () => void }) {
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-name" className="label">Name</label>
           <input id="ns-name" className="field mono" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,39}" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="billing-fix" /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="ns-cwd" className="label">Folder</label>
-          <input id="ns-cwd" className="field mono" required list="ns-folders" value={f.cwd} onChange={(e) => setF({ ...f, cwd: e.target.value })} placeholder="C:/path/to/repo" />
-          <datalist id="ns-folders">{folders.map((d) => <option key={d} value={d} />)}</datalist></div>
+          <Pick id="ns-cwd" free value={f.cwd} onChange={(v) => setF({ ...f, cwd: v })} placeholder="C:/path/to/repo" options={folders.map((d) => ({ value: d }))} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-model" className="label">Model</label>
-          <select id="ns-model" className="field" value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })}>
-            <option value="">Claude Code default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option>
-          </select></div>
+          <Pick id="ns-model" value={f.model} onChange={(v) => setF({ ...f, model: v })} options={[{ value: '', label: 'Claude Code default' }, { value: 'opus', label: 'Opus' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'haiku', label: 'Haiku' }]} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 9' }}><label htmlFor="ns-prompt" className="label">First prompt (optional)</label>
           <textarea id="ns-prompt" className="field" rows={2} value={f.prompt} onChange={(e) => setF({ ...f, prompt: e.target.value })} placeholder="What should it start on?" /></div>
         <div className="row" style={{ gridColumn: 'span 3', gap: 8, justifyContent: 'flex-end' }}>

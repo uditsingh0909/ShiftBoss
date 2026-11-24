@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { Snapshot } from '../shared/types';
 
 export const SnapshotCtx = createContext<Snapshot | null>(null);
@@ -114,4 +115,84 @@ export function usePage<T>(items: T[], size = 25, reset?: unknown) {
 export function More({ page }: { page: { left: number; more: () => void; size: number } }) {
   if (page.left <= 0) return null;
   return <button type="button" className="pill sm" style={{ alignSelf: 'center', marginTop: 6 }} onClick={page.more}>Show {Math.min(page.left, page.size)} more · {page.left} left</button>;
+}
+
+// ---------- dropdowns ----------
+// The browser draws <select> and <datalist> popups itself (white border, blue highlight), so they
+// cannot match the UI. Pick is our own: a button (or a text box, with `free`) and a dark list.
+export type PickOption = { value: string; label?: string; hint?: string };
+
+export function Pick({ id, value, options, onChange, placeholder, free, width, label, pill, prefix }: {
+  id?: string; value: string; options: PickOption[]; onChange: (v: string) => void;
+  placeholder?: string; free?: boolean; width?: number | string; label?: string; pill?: boolean;
+  /** Shown before the chosen value on the button only, e.g. "Session". */ prefix?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [typed, setTyped] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listId = useId();
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: MouseEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !listRef.current?.contains(t)) { setOpen(false); setTyped(null); } };
+    // The list lives on <body> (cards are their own layers and would paint over it), so it follows the field.
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = innerHeight - r.bottom - 12, above = r.top - 12;
+      const up = below < 220 && above > below;
+      setPos({ left: r.left, width: Math.min(Math.max(r.width, 300), innerWidth - r.left - 12), maxHeight: Math.min(300, up ? above : below), ...(up ? { bottom: innerHeight - r.top + 6 } : { top: r.bottom + 6 }) });
+    };
+    place();
+    addEventListener('mousedown', off);
+    addEventListener('scroll', place, true);
+    addEventListener('resize', place);
+    return () => { removeEventListener('mousedown', off); removeEventListener('scroll', place, true); removeEventListener('resize', place); };
+  }, [open]);
+  const q = (typed ?? '').toLowerCase();
+  const list = free && typed ? options.filter((o) => (o.value + ' ' + (o.label ?? '')).toLowerCase().includes(q)) : options;
+  const current = options.find((o) => o.value === value);
+  const choose = (v: string) => { onChange(v); setOpen(false); setTyped(null); };
+  const openAt = () => { setOpen(true); setHi(Math.max(0, list.findIndex((o) => o.value === value))); };
+  const key = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) return openAt();
+      setHi((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % Math.max(1, list.length));
+    } else if (e.key === 'Enter') {
+      if (open && list[hi]) { e.preventDefault(); choose(list[hi].value); }
+      else if (free && typed !== null) { e.preventDefault(); choose(typed); }
+      else if (!free) { e.preventDefault(); openAt(); }
+    } else if (e.key === 'Escape') { setOpen(false); setTyped(null); }
+    else if (e.key === 'Tab') { if (free && typed !== null) onChange(typed); setOpen(false); setTyped(null); }
+  };
+  const common = { id, role: 'combobox', 'aria-expanded': open, 'aria-controls': listId, 'aria-label': label, onKeyDown: key } as const;
+  return (
+    <div ref={ref} className={'pick' + (pill ? ' pick-pill' : '')} style={{ width: width ?? '100%' }}>
+      {free ? (
+        <input {...common} className="field mono pick-field" value={typed ?? value} placeholder={placeholder} autoComplete="off"
+          onFocus={openAt} onChange={(e) => { setTyped(e.target.value); setOpen(true); setHi(0); }}
+          onBlur={() => { if (typed !== null) onChange(typed); }} />
+      ) : (
+        <button {...common} type="button" className="field pick-field" onClick={() => (open ? setOpen(false) : openAt())}>
+          <span className="ellipsis" style={{ color: current ? undefined : C.faint }}>{current ? (prefix && current.value ? prefix + ' · ' : '') + (current.label ?? current.value) : placeholder ?? 'Choose…'}</span>
+        </button>
+      )}
+      {open && pos && list.length > 0 && createPortal(
+        <ul ref={listRef} id={listId} role="listbox" className="pick-list" style={{ position: 'fixed', left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight }}>
+          {list.map((o, i) => (
+            <li key={o.value} role="option" aria-selected={o.value === value} className={i === hi ? 'hi' : ''}
+              onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); choose(o.value); }}>
+              <span className="ellipsis" style={{ flex: '1 1 auto', minWidth: 0 }}>{o.label ?? o.value}</span>
+              {o.hint && <span className="faint ellipsis" style={{ fontSize: 12, flex: 'none', maxWidth: '45%' }}>{o.hint}</span>}
+              <span aria-hidden="true" style={{ width: 14, flex: 'none', color: C.green }}>{o.value === value ? '✓' : ''}</span>
+            </li>
+          ))}
+        </ul>,
+        document.body,
+      )}
+    </div>
+  );
 }

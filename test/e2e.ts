@@ -50,6 +50,25 @@ for (const width of [1920, 390]) {
     if (overflow && width === 390) failures.push(`${width}px ${name}: page scrolls sideways`);
     for (const e of errs) failures.push(`${width}px ${name}: ${e}`);
     await page.screenshot({ path: join(OUT, `${name}-${width}.png`), fullPage: false });
+    // Dropdowns: the open list must be on top of everything (cards are their own layers).
+    if (name === 'task') {
+      const box = page.locator('[role="combobox"]').first();
+      if (await box.count()) {
+        await box.click();
+        const list = page.locator('[role="listbox"]');
+        try {
+          await list.waitFor({ timeout: 3000 });
+          await page.waitForTimeout(400);
+          const onTop = await list.evaluate((el) => {
+            const r = el.getBoundingClientRect();
+            return [[0.5, 0.25], [0.5, 0.75], [0.2, 0.5], [0.8, 0.5]].every(([x, y]) => el.contains(document.elementFromPoint(r.left + r.width * x, r.top + r.height * y)));
+          });
+          if (!onTop) failures.push(`${width}px task: something paints over the open dropdown`);
+          await page.screenshot({ path: join(OUT, `dropdown-${width}.png`), fullPage: false });
+        } catch { failures.push(`${width}px task: dropdown did not open`); }
+        await page.keyboard.press('Escape');
+      }
+    }
   }
   await page.close();
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveLead } from '../../shared/types';
-import { act, ago, api, Arrow, C, Card, Empty, Hero, hhmm, href, Seg, useSnap } from '../lib';
+import { act, ago, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, useSnap } from '../lib';
 import { Cmd, Step, type SetupInfo } from './setup';
 
 const IMPORT_SHAPE = `[
@@ -63,10 +63,10 @@ export function Welcome() {
         <Step n={2} title="Your lead session and workspace" state={leadRunning && basicsSaved ? 'ok' : 'todo'}>
           <span className="dim" style={{ fontSize: 14 }}>The lead is the session that coordinates the others; it always gets the big card on Sessions. A replacement named <code className="mono">name-v2</code> takes over automatically.</span>
           <form className="settings-controls" onSubmit={(e) => { e.preventDefault(); void saveBasics(); }}>
-            <label className="col" style={{ gap: 6 }}><span style={{ fontSize: 13 }}>Lead session</span>
-              <input className="field mono" list="wl-sessions" value={lead} onChange={(e) => setLead(e.target.value)} placeholder="lead-manager" />
-              <datalist id="wl-sessions">{snap.sessions.map((s) => <option key={s.name} value={s.name.replace(/-v\d+$/, '')} />)}</datalist>
-            </label>
+            <div className="col" style={{ gap: 6 }}><label htmlFor="wl-lead" style={{ fontSize: 13 }}>Lead session</label>
+              <Pick id="wl-lead" free value={lead} onChange={setLead} placeholder="lead-manager"
+                options={[...new Set(snap.sessions.map((s) => s.name.replace(/-v\d+$/, '')))].map((n) => ({ value: n }))} />
+            </div>
             <label className="col" style={{ gap: 6 }}><span style={{ fontSize: 13 }}>herdr workspace</span>
               <input className="field mono" value={ws} onChange={(e) => setWs(e.target.value)} placeholder="empty = every workspace" />
             </label>

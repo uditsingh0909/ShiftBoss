@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
-import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Seg, toast, usePage, useSnap } from '../lib';
+import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
@@ -166,6 +166,7 @@ export function Promises() {
   };
   const list = all.filter(match[filter]);
   const page = usePage(list, 20, filter);
+  const taskOpts = snap.tasks.map((t) => ({ value: t.id, hint: t.title }));
   const kept = all.filter((p) => p.state === 'kept');
   const onTime = kept.filter((p) => !p.dueAt || !p.keptAt || Date.parse(p.keptAt) <= Date.parse(p.dueAt)).length;
   const pct = all.length ? Math.round((onTime / all.length) * 100) : 0;
@@ -203,12 +204,9 @@ export function Promises() {
                     </a>
                   ) : <span className="mono amber" style={{ fontSize: 12 }}>no task</span>;
                 })()}
-                <label className="row" style={{ gap: 6 }}>
-                  <span className="faint" style={{ fontSize: 11 }}>Move to</span>
-                  <input className="field mono" list="sb-task-ids" style={{ height: 32, width: 110, padding: '0 8px', fontSize: 12 }} defaultValue={p.taskId ?? ''} placeholder="T-…"
-                    aria-label={`Link the promise to ${p.to} to another task`}
-                    onChange={(e) => { const v = e.target.value.trim().toUpperCase(); if (v !== p.taskId && snap.tasks.some((t) => t.id === v)) void act(() => api('PATCH', `/api/promises/${p.id}`, { taskId: v }), 'Linked to ' + v); }} />
-                </label>
+                <Pick pill free width={190} label={`Move the promise to ${p.to} to another task`} placeholder="Move to T-…" value={p.taskId ?? ''}
+                  options={taskOpts}
+                  onChange={(v) => { const id = v.trim().toUpperCase(); if (id && id !== p.taskId && snap.tasks.some((t) => t.id === id)) void act(() => api('PATCH', `/api/promises/${p.id}`, { taskId: id }), 'Moved to ' + id); }} />
                 <span style={{ flex: 1 }} />
                 {p.state === 'open' && <button type="button" className="pill sm" onClick={() => setState(p, 'due', 'Marked overdue')}>Mark overdue</button>}
                 {p.state !== 'kept' && <button type="button" className="pill sm w" onClick={() => setState(p, 'kept', 'Marked kept')}>Mark kept</button>}
@@ -218,7 +216,6 @@ export function Promises() {
           ))}
           <More page={page} />
           {!list.length && <Card span={8}><Empty text="Nothing in this list." /></Card>}
-          <datalist id="sb-task-ids">{snap.tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</datalist>
         </div>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} delay={80}>
