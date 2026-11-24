@@ -21,6 +21,7 @@ anything on your behalf.
 - [Connecting your sessions](#connecting-your-sessions)
 - [Exact usage numbers](#exact-usage-numbers)
 - [The intake session](#the-intake-session)
+- [Monitors](#monitors)
 - [How tasks move](#how-tasks-move)
 - [The screens](#the-screens)
 - [MCP tools and CLI reference](#mcp-tools-and-cli-reference)
@@ -51,6 +52,7 @@ anything on your behalf.
 
 - **Session health**: a session that is looping on the same failing command, silent while work waits for it, or close to its context limit.
 - **Overlaps**: two sessions editing the same file, adding the same migration number, or working the same task.
+- **Monitors**: something you shipped, checked every few hours for a few days by a `monitor` session; a bad check shows up under Needs attention.
 
 **Moves work along:**
 
@@ -288,7 +290,7 @@ user service.
 
 | Path | What |
 |---|---|
-| `data/shiftboss.db` | The database: tasks, needs, promises, intake, audit, settings |
+| `data/shiftboss.db` | The database: tasks, needs, promises, intake, audit, monitors and their checks, settings |
 | `data/status/<session-id>.json` | Latest status line numbers per session (from the tap) |
 | `data/server.log` | Server output and restarts |
 
@@ -426,6 +428,34 @@ Controlling it, from the Intake card on Sessions or the Intake screen:
 It needs the Slack connector, plus Gmail for meeting notes. The rules it follows are in
 [`docs/INTAKE.md`](docs/INTAKE.md); it re-reads them every run, so edits apply on the next pass.
 
+## Monitors
+
+After you ship something (a new location with its phone numbers and messaging registration, a fix, a
+feature), a monitor keeps an eye on it for a few days so you don't have to remember to look.
+
+A monitor is: what was shipped, what to check and what "bad" looks like (in your words), optional links
+(pull request, ticket, dashboard) and a task, how long to watch (1, 3, 7 or 14 days) and how often to
+check (every 1, 3, 6, 12 or 24 hours). Add one on the **Monitors** screen, with `monitor_add`, or with
+`shiftboss monitor add`.
+
+One Sonnet session named `monitor` does the checks. **Start the monitor session** on the Monitors screen
+starts it in the lead session's folder (Claude already trusts it; otherwise you pick a folder), with a
+first prompt pointing at [`docs/MONITOR.md`](docs/MONITOR.md). Then:
+
+- The first check is due straight away (a baseline); after that, one every interval until the time is up.
+- When a check is due and the monitor session is idle, ShiftBoss sends it one prompt: what was shipped,
+  what to check, the links, how many checks are left and what the last one found. It checks with
+  read-only tools and answers with `monitor_report`: **ok**, **warn** (worth a look), **bad**, or
+  **error** (could not check), a one-line summary and details.
+- One check at a time. Nothing is sent while the session is working or waiting on a prompt in herdr.
+  A check with no report after 30 minutes is recorded as an error and the schedule moves on.
+- A **bad** check, or two **errors** in a row, makes the monitor *alerting*: it joins the *Needs
+  attention* strip on Sessions. The next good check clears it.
+
+Each monitor shows its state (watching, alerting, paused, finished), the next check, the last result and
+every check so far. **Check now**, **Pause** / **Resume**, **Stop** and **Edit** act on it. A paused
+monitor runs a missed check once on resume, not one per missed interval.
+
 ## How tasks move
 
 ```
@@ -475,6 +505,7 @@ The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens s
 | **Health** | A 60-minute activity strip per session, and cards for sessions that are looping, stuck, heavy or waiting, with a one-click nudge. |
 | **Overlaps** | Same file, same migration number or same task across two sessions, with who should go first. |
 | **Connect** | Checks MCP, the status line tap and the intake, with the exact commands for this install. |
+| **Monitors** | What is watched after it shipped: state, next check, last result and every check so far; New monitor, Check now, Pause, Stop, Edit, and starting the monitor session. |
 | **Settings** | General, warnings, automation, intake, usage budgets, and each session's lane and slots. |
 
 The pages work at phone width too.
@@ -508,6 +539,9 @@ The MCP tools and the CLI call the same API. Sessions should prefer the tools.
 | `session_spawn` | `shiftboss session spawn <name> --cwd DIR [--model …] [--prompt …]` | Start Claude Code in a new herdr tab |
 | | `shiftboss session spawn-many <file.json>` | Start up to 20 sessions one after another |
 | `session_replace` | `shiftboss session replace <name…>` | Replace sessions through a handoff (see below) |
+| `monitor_add` | `shiftboss monitor add "<title>" --prompt … --days 1\|3\|7\|14 --every 1\|3\|6\|12\|24 [--pr URL] [--ticket URL] [--dashboard URL] [--task T-12]` | Watch something you shipped for a few days |
+| `monitor_report` | `shiftboss monitor report <id> ok\|warn\|bad\|error "<summary>" [--details …] [--link URL]` | Monitor session only: answer a check |
+| `monitor_list` | `shiftboss monitor list` | Monitors, their state, next check and last result |
 
 **Replacing a session.** ShiftBoss asks it to write a handoff (its handoff path, else
 `<handoffs folder>/<name>.md`, else `HANDOFF-<name>.md` in its folder) with fixed sections (Open tasks,
@@ -550,6 +584,11 @@ Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET 
 | `POST /api/onboarding/ask` | `{sessions: [...]}` | Ask running sessions to register their tasks |
 | `POST /api/onboarding/backfill` | `{days}` | Send the intake back 1, 2, 3, 7 or 14 days |
 | `POST /api/onboarding/done` | `{done}` | Mark setup finished |
+| `GET /api/monitors` | | Every monitor with its checks, the monitor session, and its start prompt |
+| `POST /api/monitors` | `{title, prompt, durationDays, intervalHours, links?: {pr, ticket, dashboard}, taskId?}` | Start watching something |
+| `PATCH /api/monitors/:id` | `{title?, prompt?, links?, taskId?, durationDays?, intervalHours?, action?: pause\|resume\|stop}` | Edit, pause, resume or stop |
+| `POST /api/monitors/:id/check-now` | | Make a check due now (409 with no monitor session running) |
+| `POST /api/monitors/:id/report` | `{verdict: ok\|warn\|bad\|error, summary, details?, links?}` | Record a check result |
 | `GET /api/setup` | | What is connected, and the commands for this install |
 | `PUT /api/settings` | | Save settings |
 
