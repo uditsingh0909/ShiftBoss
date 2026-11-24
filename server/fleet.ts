@@ -87,10 +87,16 @@ export function handoffPathFor(name: string, cwd: string, known: string | null):
 }
 
 /** What the old session is asked. Composed by ShiftBoss; it never answers a prompt in the pane. */
-export function handoffRequest(owner: string, name: string, path: string): string {
+/**
+ * The request sent to the old session. `existing`: the file already holds a handoff in the team's own format,
+ * so it is updated in place (structure kept) and only the missing headings are added.
+ */
+export function handoffRequest(owner: string, name: string, path: string, existing = false): string {
   return `${owner} is replacing this session with a fresh one through ShiftBoss, because its context is filling up. Do not stop mid-change: finish the step you are on, then write the handoff.
 
-Write the whole handoff to ${path} (replace whatever is there). Use exactly these headings, each as a markdown "## " heading, and write "none" under a heading that has nothing:
+${existing
+    ? `Update your handoff at ${path} so it is complete as of now. Keep its existing structure, headings and content: other sessions read it in that format. Then make sure it also has each heading below as a markdown "## " heading; add the ones it lacks. Under a heading that your own sections already cover, write "see <your section> above"; write "none" where there is nothing:`
+    : `Write the whole handoff to ${path}. Use exactly these headings, each as a markdown "## " heading, and write "none" under a heading that has nothing:`}
 
 ## Open tasks
 Every task you own, with its ShiftBoss task id (T-n), where it stands, and what is left.

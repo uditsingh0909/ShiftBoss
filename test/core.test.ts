@@ -632,3 +632,14 @@ describe('self-update', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 });
+
+describe('handoff request', () => {
+  test('an existing handoff keeps its own format; a missing one gets the template', () => {
+    const fresh = handoffRequest('Sam', 'billing', 'C:/h/billing.md', false);
+    const kept = handoffRequest('Sam', 'billing', 'C:/h/billing.md', true);
+    expect(kept).toContain('Keep its existing structure');
+    expect(kept).not.toContain('replace whatever is there');
+    expect(fresh).not.toContain('Keep its existing structure');
+    for (const t of [fresh, kept]) { expect(t).toContain('## Open tasks'); expect(t).toContain(HANDOFF_MARKER); }
+  });
+});

@@ -445,7 +445,8 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     }
     if (!this.store.claimReplacement(r.id, ['pending'], 'requested')) return;
     try {
-      await this.herdr.prompt(s.paneId, handoffRequest(this.cfg.ownerName, r.oldName, r.handoffPath));
+      const existing = (() => { try { return statSync(r.handoffPath).size > 0; } catch { return false; } })();
+      await this.herdr.prompt(s.paneId, handoffRequest(this.cfg.ownerName, r.oldName, r.handoffPath, existing));
       this.store.updateReplacement(r.id, { requestedAt: new Date().toISOString(), error: null });
       this.pushFeed('shiftboss', `asked ${r.oldName} for its handoff (${r.handoffPath})`);
     } catch (e) {
