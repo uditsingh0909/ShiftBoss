@@ -143,3 +143,22 @@ describe('overlap ignore list', () => {
     ], []).length).toBe(0);
   });
 });
+
+import { parsePrUrl, targetStage, taskIdsIn } from '../server/github';
+describe('github auto-advance', () => {
+  test('finds task ids in title, body and branch', () => {
+    expect(taskIdsIn('fix(analytics): name screens (T-74)\nForeman: t-75\nfeat/t76-chat')).toEqual(['T-74', 'T-75', 'T-76']);
+    expect(taskIdsIn('UTF-8 and DT-12 are not tasks')).toEqual([]);
+  });
+  test('parses PR links', () => {
+    expect(parsePrUrl('https://github.com/ditra-ai/capture-service/pull/3376')).toEqual({ repo: 'ditra-ai/capture-service', number: 3376 });
+    expect(parsePrUrl('https://example.com/x')).toBeNull();
+  });
+  test('stage from PR state and deploys, never told', () => {
+    expect(targetStage({ state: 'OPEN' }, false, false)).toBe(3);
+    expect(targetStage({ state: 'MERGED' }, false, false)).toBe(3);
+    expect(targetStage({ state: 'MERGED' }, true, false)).toBe(4);
+    expect(targetStage({ state: 'MERGED' }, true, true)).toBe(5);
+    expect(targetStage({ state: 'CLOSED' }, false, false)).toBeNull();
+  });
+});

@@ -51,6 +51,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
     const cols = this.db.query('PRAGMA table_info(tasks)').all() as { name: string }[];
+    this.db.exec(`CREATE TABLE IF NOT EXISTS pr_links (url TEXT PRIMARY KEY, task_ids TEXT NOT NULL DEFAULT '[]', state TEXT NOT NULL DEFAULT 'OPEN',
+      merge_sha TEXT, repo TEXT NOT NULL DEFAULT '', number INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, checked_at TEXT)`);
     const ncols = this.db.query('PRAGMA table_info(needs)').all() as { name: string }[];
     if (!ncols.some((c) => c.name === 'sent_at')) this.db.exec('ALTER TABLE needs ADD COLUMN sent_at TEXT');
     const icols = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
@@ -135,6 +137,17 @@ export class Store {
   }
   setSlackKind(id: number, kind: SlackMsg['kind']) {
     this.db.query('UPDATE slack_msgs SET kind = ? WHERE id = ?').run(kind, id);
+  }
+
+  // ---------- PR links (GitHub auto-advance) ----------
+  prLink(url: string): { url: string; taskIds: string[]; state: string; mergeSha: string | null; repo: string; number: number; done: boolean } | null {
+    const r: any = this.db.query('SELECT * FROM pr_links WHERE url = ?').get(url);
+    return r ? { url: r.url, taskIds: JSON.parse(r.task_ids), state: r.state, mergeSha: r.merge_sha, repo: r.repo, number: r.number, done: !!r.done } : null;
+  }
+  savePrLink(l: { url: string; taskIds: string[]; state: string; mergeSha: string | null; repo: string; number: number; done: boolean }) {
+    this.db.query(`INSERT INTO pr_links (url, task_ids, state, merge_sha, repo, number, done, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET task_ids=excluded.task_ids, state=excluded.state, merge_sha=excluded.merge_sha, done=excluded.done, checked_at=excluded.checked_at`)
+      .run(l.url, JSON.stringify(l.taskIds), l.state, l.mergeSha, l.repo, l.number, l.done ? 1 : 0, now());
   }
 
   // ---------- promises ----------

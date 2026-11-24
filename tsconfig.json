@@ -11,5 +11,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true
   },
-  "include": ["server", "web", "cli", "shared", "test"]
+  "include": ["server", "web", "cli", "shared", "test", "mcp"]
 }

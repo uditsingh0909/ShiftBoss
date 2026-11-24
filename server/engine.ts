@@ -8,6 +8,7 @@ import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
 import { parseFooter, readTap, type StatusInfo } from './statusline';
+import { contains, fetchPr, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
 
 type Listener = () => void;
@@ -25,6 +26,8 @@ export class Engine {
   private transcripts: Transcripts;
   private timer: ReturnType<typeof setInterval> | null = null;
   private relTimer: ReturnType<typeof setInterval> | null = null;
+  private ghTimer: ReturnType<typeof setInterval> | null = null;
+  private ghBusy = false;
   private busy = false;
 
   constructor(public cfg: Config, public store: Store, public herdr: Herdr) {
@@ -43,8 +46,10 @@ export class Engine {
     this.timer = setInterval(() => void this.tick(), this.cfg.pollMs);
     void this.pollReleases();
     this.relTimer = setInterval(() => void this.pollReleases(), 5 * 60e3);
+    setTimeout(() => void this.pollGitHub(), 15e3);
+    this.ghTimer = setInterval(() => void this.pollGitHub(), 2 * 60e3);
   }
-  stop() { if (this.timer) clearInterval(this.timer); if (this.relTimer) clearInterval(this.relTimer); }
+  stop() { for (const t of [this.timer, this.relTimer, this.ghTimer]) if (t) clearInterval(t); }
 
   async tick() {
     if (this.busy) return;
@@ -149,7 +154,8 @@ export class Engine {
     const t = this.store.getTask(taskId);
     if (!t) throw new Error('No task ' + taskId);
     return [`Foreman task ${t.id} (${t.prio}): ${t.title}`, t.ask ? 'Ask: ' + t.ask : '', t.requester || t.source ? `From: ${t.requester} ${t.source} ${t.sourceUrl ?? ''}`.trim() : '',
-      `Done means merged, live on dev and checked, and the requester told. Report progress with: foreman task stage ${t.id} pr|dev|live|told`].filter(Boolean).join('\n');
+      `Put "Foreman: ${t.id}" in your PR description: Foreman then moves this task to PR open, On dev and Live by itself.`,
+      `Done means merged, live on dev and checked, and the requester told. When you have told them, use the foreman task_stage tool with stage "told" (or run: foreman task stage ${t.id} told).`].filter(Boolean).join('\n');
   }
 
   /** Send a queued task to its session now. */
@@ -222,6 +228,53 @@ export class Engine {
     }
     this.releases = { envs, merged, freeze };
     this.emit();
+  }
+
+  /**
+   * Move tasks forward from the PRs sessions opened (seen in their transcripts) and from which
+   * environments already run the merge. See server/github.ts for the rules.
+   */
+  async pollGitHub() {
+    if (this.ghBusy) return;
+    this.ghBusy = true;
+    try {
+      const urls = [...new Set(this.sessions.flatMap((s) => s.prUrls))];
+      const devSha = this.releases.envs.find((e) => /dev/i.test(e.name))?.version ?? null;
+      const prodSha = this.releases.envs.find((e) => /prod/i.test(e.name))?.version ?? null;
+      for (const url of urls) {
+        const known = this.store.prLink(url);
+        if (known?.done) continue;
+        let pr;
+        try { pr = await fetchPr(url); } catch { continue; }
+        if (!pr) continue;
+        const ids = taskIdsIn(`${pr.title}
+${pr.body}
+${pr.branch}`).filter((id) => this.store.getTask(id));
+        let onDev = false, onProd = false;
+        const shipsHere = pr.repo === this.cfg.releaseRepo;
+        if (pr.state === 'MERGED' && pr.mergeSha && shipsHere) {
+          try { if (prodSha) onProd = await contains(pr.repo, pr.mergeSha, prodSha); } catch { /* compare failed */ }
+          try { if (!onProd && devSha) onDev = await contains(pr.repo, pr.mergeSha, devSha); } catch { /* compare failed */ }
+        }
+        const target = targetStage(pr, onDev || onProd, onProd);
+        for (const id of ids) {
+          const t = this.store.getTask(id)!;
+          const label = `${pr.repo.split('/')[1]} #${pr.number}`;
+          if (!known || !known.taskIds.includes(id)) this.store.addEvent(id, 'GitHub', 'github', `${label} ${pr.state === 'OPEN' ? 'opened' : pr.state.toLowerCase()}: ${pr.title}`);
+          if (known && known.state !== pr.state && pr.state === 'MERGED') this.store.addEvent(id, 'GitHub', 'github', `${label} merged`);
+          if (target !== null && t.stage < target) {
+            this.store.updateTask(id, { stage: target as 0 | 1 | 2 | 3 | 4 | 5 | 6 }, 'github');
+            this.pushFeed('github', `${id} → ${['', '', '', 'PR open', 'On dev', 'Live'][target]} (${label})`);
+          }
+        }
+        // Finished with this PR once it is closed, live on prod, or merged in a repo Foreman cannot see deploys for.
+        const done = pr.state === 'CLOSED' || onProd || (pr.state === 'MERGED' && !shipsHere);
+        this.store.savePrLink({ url, taskIds: ids, state: pr.state, mergeSha: pr.mergeSha, repo: pr.repo, number: pr.number, done });
+      }
+    } finally {
+      this.ghBusy = false;
+      this.emit();
+    }
   }
 
   snapshot(): Snapshot {

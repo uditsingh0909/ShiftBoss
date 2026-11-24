@@ -42,6 +42,16 @@ the terminal does not change.
 
 ## How sessions talk to Foreman
 
+Three ways, all over the same local API:
+
+1. **Automatically.** A PR whose title, body or branch names `T-12` moves T-12 to PR open; once dev or prod
+   runs the merge commit (checked with GitHub's compare against `releaseEnvs` versions for `releaseRepo`) it
+   moves to On dev or Live. Tasks only move forward, and never to "Requester told".
+2. **MCP tools.** `claude mcp add --scope user foreman -- bun <path>/mcp/server.ts` gives every session
+   `task_stage`, `task_note`, `task_add`, `task_get`, `my_tasks`, `slack_draft`, `slack_sent`,
+   `promise_add`, `ask_udit`, `intake_log`, `decide`.
+3. **CLI**, below.
+
 Every session can run the CLI (`bun D:/Ditra/foreman/cli/foreman.ts …`, or link it as `foreman`):
 
 ```
