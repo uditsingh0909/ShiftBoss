@@ -9,7 +9,10 @@ import { buildReport } from '../server/report';
 import { contextPercent, parseFooter } from '../server/statusline';
 import { mergeSettings } from '../server/settings';
 import { checkRequest, safeUrl } from '../server/guard';
-import { applyLine, type TranscriptState } from '../server/transcripts';
+import { applyLine, splitLines, Transcripts, type TranscriptState } from '../server/transcripts';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Session } from '../shared/types';
 
 const mem = () => new Store('', ':memory:');
@@ -161,7 +164,30 @@ describe('status line footer', () => {
 });
 
 describe('transcripts', () => {
-  const blank = (): TranscriptState => ({ path: '', offset: 0, partial: '', model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] });
+  const blank = (): TranscriptState => ({ path: '', offset: 0, partial: Buffer.alloc(0), model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] });
+  test('a character cut across two reads is decoded whole', () => {
+    const all = Buffer.from('héllo wörld ✓ done\nnext ✓\npart', 'utf8');
+    const cut = all.indexOf(Buffer.from('✓', 'utf8')) + 1; // inside the 3-byte check mark
+    const a = splitLines(Buffer.alloc(0), all.subarray(0, cut));
+    expect(a.lines).toEqual([]);
+    const b = splitLines(a.rest, all.subarray(cut));
+    expect(b.lines).toEqual(['héllo wörld ✓ done', 'next ✓']);
+    expect(b.rest.toString('utf8')).toBe('part');
+  });
+  test('the reader keeps a cut character for the next poll', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-tx-'));
+    mkdirSync(join(dir, 'proj'));
+    const file = join(dir, 'proj', 'sid.jsonl');
+    const line = Buffer.from(JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: 'héllo wörld ✓ done' }] } }) + '\n', 'utf8');
+    const cut = line.indexOf(Buffer.from('✓', 'utf8')) + 2;
+    const tx = new Transcripts(dir);
+    try {
+      writeFileSync(file, line.subarray(0, cut));
+      expect(tx.read('sid')!.lines).toEqual([]);
+      appendFileSync(file, line.subarray(cut));
+      expect(tx.read('sid')!.lines.map((l) => l.text)).toEqual(['héllo wörld ✓ done']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   test('usage, tools, files and output lines', () => {
     const st = blank();
     const ts = new Date().toISOString();
