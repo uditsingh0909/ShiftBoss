@@ -16,6 +16,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from 'node:os';
 import { listOutside, readOutside, suggestName } from '../server/outside';
 import { needsInstall, Updater } from '../server/update';
+import { actionKey, decide } from '../server/gate';
 import { join } from 'node:path';
 import type { Session } from '../shared/types';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
@@ -641,5 +642,68 @@ describe('handoff request', () => {
     expect(kept).not.toContain('replace whatever is there');
     expect(fresh).not.toContain('Keep its existing structure');
     for (const t of [fresh, kept]) { expect(t).toContain('## Open tasks'); expect(t).toContain(HANDOFF_MARKER); }
+  });
+});
+
+describe('modes and approvals (gate)', () => {
+  test('who decides: the owner always runs; Dry run records; Ask first waits; Safe auto waits only for risky', () => {
+    expect(decide('dry', 'owner', 'spawn')).toBe('run');
+    expect(decide('dry', 'session', 'dispatch')).toBe('record');
+    expect(decide('ask', 'auto', 'dispatch')).toBe('ask');
+    expect(decide('safe', 'auto', 'dispatch')).toBe('run');
+    expect(decide('safe', 'session', 'spawn')).toBe('ask');
+    expect(decide('safe', 'session', 'prompt')).toBe('ask');
+    expect(decide('auto', 'session', 'replace')).toBe('run');
+  });
+  test('one approval per repeated action; a decision happens once; leaving Dry run reviews or drops', () => {
+    const s = mem();
+    const a = s.holdAction({ kind: 'dispatch', key: actionKey('dispatch', { taskId: 'T-1' }), params: { taskId: 'T-1' }, summary: 'send T-1', actor: 'auto', by: 'dispatcher', state: 'waiting' });
+    const again = s.holdAction({ kind: 'dispatch', key: actionKey('dispatch', { taskId: 'T-1' }), params: { taskId: 'T-1' }, summary: 'send T-1', actor: 'auto', by: 'dispatcher', state: 'waiting' });
+    expect(again.fresh).toBe(false);
+    expect(again.item.id).toBe(a.item.id);
+    expect(s.hasOpenAction(actionKey('dispatch', { taskId: 'T-1' }))).toBe(true);
+    expect(s.setActionState(a.item.id, ['waiting'], 'approved')).toBe(true);
+    expect(s.setActionState(a.item.id, ['waiting'], 'approved')).toBe(false); // a second click does nothing
+    s.holdAction({ kind: 'spawn', key: 'k1', params: {}, summary: 'x', actor: 'session', by: 's', state: 'dry' });
+    s.holdAction({ kind: 'spawn', key: 'k2', params: {}, summary: 'y', actor: 'session', by: 's', state: 'dry' });
+    expect(s.settleDryActions(true)).toBe(2);
+    expect(s.listActions().filter((x) => x.state === 'waiting').length).toBe(2);
+  });
+  test('a new install starts in Dry run; an install from before modes keeps Autopilot', () => {
+    expect(mem().settings().mode).toBe('dry');
+    const dir = mkdtempSync(join(tmpdir(), 'sb-mode-'));
+    try {
+      const old = new Store(dir);
+      old.db.query("INSERT INTO settings (key, value) VALUES ('settings', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify({ leadSession: 'lead' }));
+      old.db.close();
+      const reopened = new Store(dir);
+      expect(reopened.settings().mode).toBe('auto');
+      reopened.db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  test('through the engine: Dry run records, Ask first waits, Approve runs it once, Reject runs nothing', async () => {
+    const store = mem();
+    const sent: string[] = [];
+    const e = new Engine(loadConfig(), store, { prompt: async (_p: string, t: string) => { sent.push(t); } } as any);
+    e.sessions = [session({ name: 'worker', status: 'idle' })];
+    const meta = { actor: 'session' as const, by: 'lead', summary: 'send a prompt to worker' };
+    const r1 = await e.act('prompt', { session: 'worker', text: 'hello' }, meta);
+    expect(r1.status).toBe('dry');
+    expect(sent).toEqual([]);
+    store.saveSettings({ ...store.settings(), mode: 'ask' });
+    store.settleDryActions(false);
+    const r2 = await e.act('prompt', { session: 'worker', text: 'hello' }, meta);
+    expect(r2.status).toBe('waiting');
+    expect(sent).toEqual([]);
+    await e.approveAction((r2 as any).id);
+    expect(sent).toEqual(['hello']);
+    await expect(e.approveAction((r2 as any).id)).rejects.toThrow();
+    expect(sent).toEqual(['hello']);
+    const r3 = await e.act('prompt', { session: 'worker', text: 'other' }, meta);
+    e.rejectAction((r3 as any).id);
+    expect(sent).toEqual(['hello']);
+    const r4 = await e.act('prompt', { session: 'worker', text: 'mine' }, { ...meta, actor: 'owner' });
+    expect(r4.status).toBe('done');
+    expect(sent).toEqual(['hello', 'mine']);
   });
 });

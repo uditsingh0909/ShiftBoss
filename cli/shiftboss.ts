@@ -48,14 +48,20 @@ function parse(argv: string[]) {
   return { pos, flags };
 }
 
+// Setup commands are run with the owner's consent (SETUP.md asks them first), so they act as the owner.
+// Everything else a session runs goes through the gate (Dry run / Ask first / Safe auto / Autopilot).
+let asOwner = false;
 async function call(method: string, path: string, body?: unknown) {
   let res: Response;
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-shiftboss': '1', ...(asOwner ? { 'x-shiftboss-actor': 'owner' } : {}) };
+  const withBy = body && typeof body === 'object' && !Array.isArray(body) ? { by: process.env.SHIFTBOSS_SESSION || undefined, ...body } : body;
   try {
-    res = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1' }, body: body ? JSON.stringify(body) : undefined });
+    res = await fetch(BASE + path, { method, headers, body: withBy ? JSON.stringify(withBy) : undefined });
   } catch {
     throw new Error(`ShiftBoss is not running on ${BASE}. Start it with: bun run start (in the shiftboss folder)`);
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 202 && (data as any)?.held) { console.log((data as any).message); process.exit(0); }
   if (!res.ok) throw new Error((data as any).error ?? `HTTP ${res.status}`);
   return data as any;
 }
@@ -108,6 +114,7 @@ async function main() {
       return console.log(`${r.created} added, ${r.updated} updated`);
     }
     case 'setup': {
+      asOwner = true;
       const o = await call('GET', '/api/onboarding');
       if (sub === 'status' || !sub) {
         if ('json' in flags || pos.includes('--json')) return console.log(JSON.stringify(o, null, 2));
@@ -152,6 +159,7 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
         return console.log('\nBring one in: shiftboss session bring-in <session-id> [--name N]   (close its old window first)');
       }
       if (sub === 'bring-in') {
+        asOwner = true; // used during setup, with the owner's consent
         const r = await call('POST', '/api/sessions/bring-in', { sessions: pos.slice(2).map((id) => ({ sessionId: id, name: pos.length === 3 ? flags.name : undefined })) });
         return console.log(`opening in herdr: ${r.starting.join(', ')} (a new folder may ask "trust this folder?" there first)`);
       }

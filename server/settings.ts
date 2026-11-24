@@ -15,6 +15,7 @@ const Patch = z.object({
   leadSession: z.string().max(100).optional(),
   watchedChannels: z.array(z.string().min(1).max(100)).max(100).optional(),
   autoUpdate: z.boolean().optional(),
+  mode: z.enum(['dry', 'ask', 'safe', 'auto']).optional(),
 }).strip();
 
 export function mergeSettings(cur: Settings, input: unknown): Settings {

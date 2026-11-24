@@ -3,6 +3,7 @@ import type { Settings } from '../../shared/types';
 import { act, ago, api, C, Card, Dot, Empty, Hero, hhmm, Seg, toast, useSnap } from '../lib';
 import { IntakeControl } from '../intake-control';
 import { resetTours } from '../tour';
+import { ModePicker } from '../mode';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
@@ -190,6 +191,10 @@ export function SettingsPage() {
         <button type="button" className="pill w" disabled={!dirty || badOrder} onClick={() => void save()}>Save</button>
       </Hero>
       <div className="col" style={{ gap: 16 }}>
+        <SettingsSection title="Mode" text="How much ShiftBoss may do on its own. Start with Dry run to watch it safely; switch any time.">
+          <ModePicker />
+        </SettingsSection>
+
         <SettingsSection title="Updates" text="ShiftBoss checks GitHub every 30 minutes and installs new versions by itself, then restarts quietly. A copy with local edits is never touched.">
           <div style={{ gridColumn: '1 / -1', gap: 14 }} className="col">
             <Switch label="Install new versions automatically" on={st.autoUpdate !== false} onChange={(v) => setSt({ ...st, autoUpdate: v })}

@@ -6,6 +6,7 @@ import { existsSync, statSync } from 'node:fs';
 import { buildReport, type Audience } from './report';
 import { setupInfo } from './setup';
 import { safeUrl } from './guard';
+import { isMode, MODE_LABEL, type Actor, type Mode } from './gate';
 import { HerdrError } from './herdr';
 import { NotFound } from './db';
 import { mergeSettings } from './settings';
@@ -43,6 +44,14 @@ export function makeApi(engine: Engine) {
 
   const outsideNow = (days: number) => listOutside(engine.cfg.transcriptsDir,
     new Set(engine.sessions.map((x) => x.sessionId).filter((x): x is string => !!x)), new Set(engine.takenNames()), days);
+
+  // The owner's own clicks (the UI, and setup run with their consent) carry this header and always run.
+  // Sessions (MCP, CLI) and ShiftBoss itself go through the gate (server/gate.ts).
+  const actorOf = (req: Request): Actor => (req.headers.get('x-shiftboss-actor') === 'owner' ? 'owner' : 'session');
+  const byOf = (req: Request, b: any) => (typeof b?.by === 'string' && b.by.trim() ? b.by.trim().slice(0, 100) : 'a session');
+  const gated = (r: Awaited<ReturnType<Engine['act']>>, ok: (result: any) => Response) =>
+    r.status === 'done' ? ok(r.result)
+      : json({ held: r.status, id: r.id, message: r.status === 'dry' ? `Dry run: recorded "${r.summary}", nothing was done` : `Waiting for the owner's approval in Needs you: ${r.summary}` }, 202);
 
   return async function handle(req: Request, url: URL): Promise<Response | null> {
     const p = url.pathname;
@@ -98,7 +107,15 @@ export function makeApi(engine: Engine) {
         return done(json(updated));
       }
       r = m(/^\/api\/tasks\/(T-\d+)\/dispatch$/);
-      if (r && write) { store.vetTask(r[1]); await engine.dispatchTask(r[1]); return done(json({ ok: true })); }
+      if (r && write) {
+        const b = await body<any>(req).catch(() => ({}));
+        const actor = actorOf(req);
+        if (actor === 'owner') store.vetTask(r[1]);
+        const t = store.getTask(r[1]);
+        if (!t) throw new NotFound('No task ' + r[1]);
+        const g = await engine.act('dispatch', { taskId: r[1] }, { actor, by: byOf(req, b), summary: `send ${r[1]}'s brief to ${t.session ?? 'its session'}`, detail: t.title });
+        return done(gated(g, () => json({ ok: true })));
+      }
       r = m(/^\/api\/tasks\/(T-\d+)\/brief$/);
       if (r) return json({ brief: engine.briefFor(r[1]) });
       r = m(/^\/api\/tasks\/(T-\d+)\/events$/);
@@ -253,31 +270,63 @@ export function makeApi(engine: Engine) {
         const model = optStr(b.model, 20);
         if (model && !['sonnet', 'opus', 'haiku', 'fable'].includes(model)) return json({ error: 'Unknown model.' }, 400);
         const first = optStr(b.prompt, 8000)?.trim();
-        engine.pushFeed('you', `starting session ${name}`);
         // herdr waits for Claude to be ready (several seconds); answer now and report the result in the feed.
         // A folder Claude has not seen before asks "trust this folder?": ShiftBoss never answers it (see spawnOne).
-        void engine.spawnOne({ name, cwd, model: model ?? null, prompt: first ?? null });
-        return done(json({ ok: true, name }, 202));
+        const spec = { name, cwd, model: model ?? null, prompt: first ?? null };
+        const g = await engine.act('spawn', { spec }, { actor: actorOf(req), by: byOf(req, b), summary: `start a new session ${name} in ${cwd}`, detail: first ?? '' });
+        if (g.status === 'done') engine.pushFeed('you', `starting session ${name}`);
+        return done(gated(g, () => json({ ok: true, name }, 202)));
       }
       if (p === '/api/sessions/spawn-many' && write) {
         // Start up to SPAWN_MANY_CAP sessions, one after another. Every row is checked like a single
         // spawn before any starts, so a typo never leaves half a batch running.
         const b = await body<any>(req);
         const specs = checkSpawnMany(b.sessions, engine.sessions.map((x) => x.name));
-        engine.spawnMany(specs);
-        return done(json({ ok: true, names: specs.map((x) => x.name) }, 202));
+        const g = await engine.act('spawn-many', { specs }, { actor: actorOf(req), by: byOf(req, b), summary: `start ${specs.length} new sessions: ${specs.map((x) => x.name).join(', ')}` });
+        return done(gated(g, () => json({ ok: true, names: specs.map((x) => x.name) }, 202)));
       }
       if (p === '/api/sessions/replace' && write) {
         const b = await body<any>(req);
         const names: string[] = Array.isArray(b.sessions) ? [...new Set<string>(b.sessions.filter((x: unknown) => typeof x === 'string' && x.trim()).map((x: string) => x.trim()))] : [];
         if (!names.length) return json({ error: 'Pick at least one session.' }, 400);
         if (names.length > SPAWN_MANY_CAP) return json({ error: `At most ${SPAWN_MANY_CAP} sessions at once.` }, 400);
-        const results = await engine.startReplacements(names);
-        if (!results.some((x) => x.id)) return done(json({ error: results.map((x) => x.error).join('; '), results }, 400));
-        return done(json({ results }, 202));
+        for (const n of names) if (!engine.sessions.some((x) => x.name === n)) return json({ error: n + ' is not running in herdr' }, 400);
+        const g = await engine.act('replace', { names }, { actor: actorOf(req), by: byOf(req, b), summary: `replace ${names.join(', ')} with fresh sessions through a handoff` });
+        return done(gated(g, (res) => {
+          const results = res.results as { id?: number; error?: string }[];
+          return results.some((x) => x.id) ? json({ results }, 202) : json({ error: results.map((x) => x.error).join('; '), results }, 400);
+        }));
       }
       r = m(/^\/api\/replacements\/(\d+)\/cancel$/);
       if (r && write) { engine.cancelReplacement(Number(r[1])); return done(json({ ok: true })); }
+      // ----- approvals and mode (server/gate.ts) -----
+      r = m(/^\/api\/actions\/(\d+)\/(approve|reject)$/);
+      if (r && write) {
+        if (actorOf(req) !== 'owner') return fail('Only the owner can approve or reject, from ShiftBoss itself', 403);
+        if (r[2] === 'reject') { engine.rejectAction(Number(r[1])); return done(json({ ok: true })); }
+        return done(json({ ok: true, result: await engine.approveAction(Number(r[1])) }));
+      }
+      if (p === '/api/actions/decide-all' && write) {
+        if (actorOf(req) !== 'owner') return fail('Only the owner can approve or reject, from ShiftBoss itself', 403);
+        const b = await body<any>(req);
+        const ids = store.listActions().filter((a) => a.state === 'waiting').map((a) => a.id);
+        let ok = 0; const failed: string[] = [];
+        for (const id of ids) {
+          try { if (b.approve) await engine.approveAction(id); else engine.rejectAction(id); ok++; } catch (e) { failed.push((e as Error).message.slice(0, 120)); }
+        }
+        return done(json({ ok, failed }));
+      }
+      if (p === '/api/mode' && write) {
+        // Switching modes. Leaving Dry run, what it recorded is either reviewed (it becomes approvals) or dropped.
+        if (actorOf(req) !== 'owner') return fail('Only the owner can change the mode, from ShiftBoss itself', 403);
+        const b = await body<any>(req);
+        if (!isMode(b.mode)) return fail('mode must be dry, ask, safe or auto');
+        const was = store.settings().mode ?? 'auto';
+        store.saveSettings(mergeSettings(store.settings(), { mode: b.mode }));
+        const settled = was === 'dry' && b.mode !== 'dry' ? store.settleDryActions(b.dryRun === 'review') : 0;
+        engine.pushFeed('you', `switched to ${MODE_LABEL[b.mode as Mode]}` + (settled ? `; ${settled} dry-run action${settled === 1 ? '' : 's'} ${b.dryRun === 'review' ? 'moved to Needs you' : 'dropped'}` : ''));
+        return done(json({ mode: b.mode, settled }));
+      }
       // ----- self-update -----
       if (p === '/api/update' && req.method === 'GET') return json(engine.updateStatus() ?? { supported: false });
       if (p === '/api/update/check' && write) {
@@ -306,9 +355,8 @@ export function makeApi(engine: Engine) {
           if (!o.cwdExists) throw new Error(`${o.suggestedName}: its folder ${o.cwd} no longer exists.`);
           return { name: typeof r.name === 'string' && r.name.trim() ? r.name : o.suggestedName, cwd: o.cwd, model: null, prompt: null };
         }), engine.takenNames()).map((spec, i) => ({ ...spec, resume: rows[i].sessionId }));
-        engine.pushFeed('you', `bringing ${specs.length} session${specs.length === 1 ? '' : 's'} into herdr: ${specs.map((x) => x.name).join(', ')}`);
-        specs.forEach((spec, i) => void engine.spawnOne(spec, `${i + 1}/${specs.length} `));
-        return done(json({ ok: true, starting: specs.map((x) => x.name) }, 202));
+        const g = await engine.act('bring-in', { specs }, { actor: actorOf(req), by: byOf(req, b), summary: `reopen ${specs.length} session${specs.length === 1 ? '' : 's'} in herdr: ${specs.map((x) => x.name).join(', ')}` });
+        return done(gated(g, () => json({ ok: true, starting: specs.map((x) => x.name) }, 202)));
       }
       // ----- first-run onboarding -----
       if (p === '/api/onboarding' && req.method === 'GET') {
@@ -330,20 +378,8 @@ export function makeApi(engine: Engine) {
         const b = await body<any>(req);
         const names: string[] = Array.isArray(b.sessions) ? b.sessions.filter((x: any) => typeof x === 'string').slice(0, 50) : [];
         if (!names.length) return json({ error: 'Pick at least one session.' }, 400);
-        const repo = setupInfo(engine.cfg.port).repoPath;
-        const asked = { ...store.onboarding().asked };
-        const failed: string[] = [];
-        for (const name of names) {
-          const s = engine.snapshot().sessions.find((x) => x.name === name);
-          if (!s) { failed.push(name); continue; }
-          try {
-            await engine.herdr.prompt(s.paneId, onboardingPrompt(engine.cfg.ownerName, name, repo));
-            asked[name] = new Date().toISOString();
-          } catch { failed.push(name); }
-        }
-        store.saveOnboarding({ asked });
-        engine.pushFeed('you', `asked ${names.length - failed.length} session(s) to register their tasks`);
-        return done(json({ asked: names.length - failed.length, failed }));
+        const g = await engine.act('onboarding-ask', { sessions: names }, { actor: actorOf(req), by: byOf(req, b), summary: `ask ${names.length} session(s) to put their work on the board: ${names.join(', ')}` });
+        return done(gated(g, (res) => json(res)));
       }
       if (p === '/api/onboarding/backfill' && write) {
         const b = await body<any>(req);
@@ -370,10 +406,9 @@ export function makeApi(engine: Engine) {
         if (store.intakeState().paused) return json({ error: 'Intake is paused. Resume it first.' }, 409);
         const s = engine.snapshot().sessions.find((x) => /intake/i.test(x.name));
         if (!s) return json({ error: 'No intake session is running in herdr.' }, 404);
-        const repo = setupInfo(engine.cfg.port).repoPath;
-        await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} asked for an intake check now. Run one pass immediately, exactly as ${repo}/docs/INTAKE.md says: intake_begin, then Slack, then Gmail (meeting notes and emails with asks), then intake_checkpoint. Then carry on with your normal loop.`);
-        engine.pushFeed('you', 'asked the intake for a check now');
-        return done(json({ ok: true, session: s.name, busy: s.status === 'working' }));
+        const b = await body<any>(req).catch(() => ({}));
+        const g = await engine.act('intake-run', {}, { actor: actorOf(req), by: byOf(req, b), summary: 'ask the intake for a pass now' });
+        return done(gated(g, (res) => json(res)));
       }
       if (p === '/api/intake/begin' && write) {
         const st = store.intakeBegin();
@@ -400,15 +435,24 @@ export function makeApi(engine: Engine) {
         const name = decodeURIComponent(r[1]);
         if (r[2] === 'screen') return json({ text: await engine.herdr.read(session(name).paneId, 80) });
         if (!write) return fail('Use POST', 405);
-        if (r[2] === 'prompt') { const b = await body<any>(req); await engine.herdr.prompt(session(name).paneId, str(b.text, 'text', 8000)); engine.pushFeed('you', '→ ' + name); }
+        if (r[2] === 'prompt') {
+          const b = await body<any>(req);
+          session(name);
+          const text = str(b.text, 'text', 8000);
+          const g = await engine.act('prompt', { session: name, text }, { actor: actorOf(req), by: byOf(req, b), summary: `send a prompt to ${name}`, detail: text.slice(0, 1000) });
+          if (g.status !== 'done') return done(gated(g, () => json({ ok: true })));
+        }
         if (r[2] === 'focus') await engine.herdr.focus(session(name).paneId);
         // Esc on a permission prompt denies it. ShiftBoss never answers a permission prompt, so no interrupt then.
         // The last poll is checked here and herdr's live status again in Herdr.interrupt.
         if (r[2] === 'interrupt') {
           const blocked = () => fail(`${name} is waiting on a permission prompt: answer it in herdr`, 409);
           if (session(name).status === 'blocked') return blocked();
-          try { await engine.herdr.interrupt(session(name).paneId); } catch (e) { if (e instanceof PaneBlockedError) return blocked(); throw e; }
-          engine.pushFeed('you', 'interrupted ' + name);
+          const b = await body<any>(req).catch(() => ({}));
+          let g;
+          try { g = await engine.act('interrupt', { session: name }, { actor: actorOf(req), by: byOf(req, b), summary: `stop what ${name} is doing (Esc)` }); }
+          catch (e) { if (e instanceof PaneBlockedError || /permission prompt/.test((e as Error).message)) return blocked(); throw e; }
+          if (g.status !== 'done') return done(gated(g, () => json({ ok: true })));
         }
         if (r[2] === 'meta') { const b = await body<any>(req); store.setMeta(name, { lane: typeof b.lane === 'string' ? b.lane.trim().slice(0, 300) : undefined, slots: b.slots === undefined ? undefined : Number(b.slots), handoffPath: b.handoffPath === undefined ? undefined : optStr(b.handoffPath, 500) ?? null }); }
         return done(json({ ok: true }));

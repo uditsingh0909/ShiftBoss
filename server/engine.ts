@@ -12,6 +12,8 @@ import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
 import { HANDOFF_TIMEOUT_MS, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
 import { setupInfo } from './setup';
+import { actionKey, decide, type ActionKind, type Actor } from './gate';
+import { onboardingPrompt } from './onboarding';
 import { UNDO_MS } from './api';
 
 type Listener = () => void;
@@ -238,7 +240,8 @@ export class Engine {
     for (const s of this.sessions) {
       if (s.status !== 'idle' && s.status !== 'done') continue;
       const active = tasks.filter((t) => t.session === s.name && t.stage >= 2 && t.stage <= 4 && !t.held).length;
-      const next = tasks.filter((t) => t.session === s.name && t.stage === 1 && !t.held && t.vetted && !this.dispatching.has(t.id)).at(-1); // oldest (list is newest first)
+      const next = tasks.filter((t) => t.session === s.name && t.stage === 1 && !t.held && t.vetted && !this.dispatching.has(t.id)
+        && !this.store.hasOpenAction(actionKey('dispatch', { taskId: t.id }))).at(-1); // oldest (list is newest first)
       if (next && active < s.slots) out.push(next.id);
     }
     return out;
@@ -246,7 +249,102 @@ export class Engine {
 
   private dispatch(auto: boolean) {
     if (!auto) return;
-    for (const id of this.readyToDispatch()) void this.dispatchTask(id, 'dispatcher').catch((e) => this.pushFeed('dispatcher', 'could not send ' + id + ': ' + e.message));
+    for (const id of this.readyToDispatch()) {
+      const t = this.store.getTask(id);
+      void this.act('dispatch', { taskId: id }, { actor: 'auto', by: 'dispatcher', summary: `send ${id}'s brief to ${t?.session}`, detail: t?.title ?? '' })
+        .catch((e) => this.pushFeed('dispatcher', 'could not send ' + id + ': ' + e.message));
+    }
+  }
+
+  // ---------- the gate (server/gate.ts) ----------
+  /**
+   * Run an action ShiftBoss takes on its own (actor 'auto') or because a session asked (actor 'session'),
+   * or hold it back: recorded only in Dry run, waiting for approval in Ask first (and in Safe auto when risky).
+   * The owner's own clicks pass actor 'owner' and always run.
+   */
+  async act(kind: ActionKind, params: any, meta: { actor: Actor; by: string; summary: string; detail?: string }):
+    Promise<{ status: 'done'; result: any } | { status: 'waiting' | 'dry'; id: number; summary: string }> {
+    const d = decide(this.store.settings().mode ?? 'auto', meta.actor, kind);
+    if (d === 'run') return { status: 'done', result: await this.execute(kind, params, meta.actor === 'owner' ? 'you' : meta.by) };
+    const { item, fresh } = this.store.holdAction({ kind, key: actionKey(kind, params), params, summary: meta.summary, detail: meta.detail,
+      actor: meta.actor === 'owner' ? 'session' : meta.actor, by: meta.by, state: d === 'record' ? 'dry' : 'waiting' });
+    if (fresh) { this.pushFeed(meta.by, (d === 'record' ? 'Dry run, would: ' : 'waiting for your approval: ') + meta.summary); this.emit(); }
+    return { status: item.state as 'waiting' | 'dry', id: item.id, summary: item.summary };
+  }
+
+  /** Approve a held action: it runs now, exactly as it was asked. */
+  async approveAction(id: number): Promise<string> {
+    const a = this.store.action(id);
+    if (!a) throw new Error('No such action');
+    if (!this.store.setActionState(id, ['waiting'], 'approved')) throw new Error(`That action is already ${a.state}`);
+    try {
+      const r = await this.execute(a.kind as ActionKind, a.params, 'you');
+      const note = typeof r === 'string' ? r : r ? JSON.stringify(r).slice(0, 300) : 'done';
+      this.store.setActionState(id, ['approved'], 'done', note);
+      this.pushFeed('you', 'approved: ' + a.summary);
+      return note;
+    } catch (e) {
+      this.store.setActionState(id, ['approved'], 'failed', (e as Error).message.slice(0, 300));
+      this.pushFeed('shiftboss', `approved, but it failed: ${a.summary}: ${(e as Error).message.slice(0, 160)}`);
+      throw e;
+    } finally { this.emit(); }
+  }
+  rejectAction(id: number) {
+    const a = this.store.action(id);
+    if (!a) throw new Error('No such action');
+    if (!this.store.setActionState(id, ['waiting'], 'rejected')) throw new Error(`That action is already ${a.state}`);
+    this.pushFeed('you', 'rejected: ' + a.summary);
+    this.emit();
+  }
+
+  /** What each action does. Everything a session or the dispatcher can ask for goes through here. */
+  async execute(kind: ActionKind, p: any, who: string): Promise<any> {
+    const pane = (name: string) => { const s = this.sessions.find((x) => x.name === name); if (!s) throw new Error(name + ' is not running in herdr'); return s; };
+    switch (kind) {
+      case 'dispatch': await this.dispatchTask(p.taskId, who); return `sent ${p.taskId}`;
+      case 'spawn': void this.spawnOne(p.spec); return `starting ${p.spec.name}`;
+      case 'spawn-many': this.spawnMany(p.specs); return `starting ${p.specs.length} sessions`;
+      case 'bring-in':
+        this.pushFeed(who, `bringing ${p.specs.length} session${p.specs.length === 1 ? '' : 's'} into herdr: ${p.specs.map((x: SpawnSpec) => x.name).join(', ')}`);
+        p.specs.forEach((spec: SpawnSpec, i: number) => void this.spawnOne(spec, `${i + 1}/${p.specs.length} `));
+        return { starting: p.specs.map((x: SpawnSpec) => x.name) };
+      case 'replace': return { results: await this.startReplacements(p.names) };
+      case 'onboarding-ask': return this.onboardingAsk(p.sessions);
+      case 'intake-run': {
+        const s = this.sessions.find((x) => /intake/i.test(x.name));
+        if (!s) throw new Error('No intake session is running in herdr.');
+        const repo = setupInfo(this.cfg.port).repoPath;
+        await this.herdr.prompt(s.paneId, `${this.cfg.ownerName} asked for an intake check now. Run one pass immediately, exactly as ${repo}/docs/INTAKE.md says: intake_begin, then Slack, then Gmail (meeting notes and emails with asks), then intake_checkpoint. Then carry on with your normal loop.`);
+        this.pushFeed(who, 'asked the intake for a check now');
+        return { ok: true, session: s.name, busy: s.status === 'working' };
+      }
+      case 'prompt': await this.herdr.prompt(pane(p.session).paneId, p.text); this.pushFeed(who, '→ ' + p.session); return 'sent';
+      case 'interrupt': {
+        if (pane(p.session).status === 'blocked') throw new Error(`${p.session} is waiting on a permission prompt: answer it in herdr`);
+        await this.herdr.interrupt(pane(p.session).paneId); this.pushFeed(who, 'interrupted ' + p.session); return 'interrupted';
+      }
+      case 'monitor-check': {
+        const f = (this as any).sendMonitorCheck;
+        if (typeof f !== 'function') throw new Error('Monitors are not available in this version');
+        return f.call(this, p.monitorId);
+      }
+    }
+  }
+
+  /** Ask running sessions to put their current work on the board (Get started, setup ask). */
+  async onboardingAsk(names: string[]): Promise<{ asked: number; failed: string[] }> {
+    const repo = setupInfo(this.cfg.port).repoPath;
+    const asked = { ...this.store.onboarding().asked };
+    const failed: string[] = [];
+    for (const name of names) {
+      const s = this.sessions.find((x) => x.name === name);
+      if (!s) { failed.push(name); continue; }
+      try { await this.herdr.prompt(s.paneId, onboardingPrompt(this.cfg.ownerName, name, repo)); asked[name] = new Date().toISOString(); }
+      catch { failed.push(name); }
+    }
+    this.store.saveOnboarding({ asked });
+    this.pushFeed('you', `asked ${names.length - failed.length} session(s) to register their tasks`);
+    return { asked: names.length - failed.length, failed };
   }
 
   limits(): Limits {
@@ -591,6 +689,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       update: this.updateStatus(),
       feed: this.feed.slice(0, 40),
       replacements: this.store.listReplacements(),
+      actions: this.store.listActions(),
     };
   }
 }

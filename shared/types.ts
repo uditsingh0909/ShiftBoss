@@ -139,6 +139,8 @@ export interface Settings {
   watchedChannels: string[];
   /** Install new versions of ShiftBoss by itself (a git checkout with no local edits). */
   autoUpdate?: boolean;
+  /** What ShiftBoss may do on its own: dry (Dry run), ask (Ask first), safe (Safe auto), auto (Autopilot). */
+  mode?: 'dry' | 'ask' | 'safe' | 'auto';
 }
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
@@ -188,6 +190,20 @@ export interface Replacement {
   missing: string[];
 }
 
+/** An action ShiftBoss held back: waiting for approval, or recorded in Dry run. */
+export interface ActionItem {
+  id: number;
+  at: string;
+  kind: string;
+  summary: string;
+  detail: string;
+  actor: 'session' | 'auto';
+  by: string; // the session that asked, or 'shiftboss'
+  state: 'waiting' | 'dry' | 'approved' | 'done' | 'failed' | 'rejected' | 'discarded';
+  decidedAt: string | null;
+  result: string | null;
+}
+
 export interface Snapshot {
   now: string;
   herdrOk: boolean;
@@ -205,6 +221,8 @@ export interface Snapshot {
   settings: Settings;
   intakeState: IntakeState;
   onboarding: Onboarding;
+  /** Held-back actions: every waiting one, plus recent dry-run and decided ones. */
+  actions: ActionItem[];
   owner: string;
   /** The self-updater: running version, newer one if any, and what it last did. Null when not a git checkout. */
   update: { supported: boolean; current: { sha: string; date: string; subject: string } | null; latest: { sha: string; date: string; subject: string } | null; behind: number; checking: boolean; checkedAt: string | null; state: string; note: string } | null;

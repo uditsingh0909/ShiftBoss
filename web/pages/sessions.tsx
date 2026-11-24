@@ -50,6 +50,8 @@ function Alerts() {
   for (const o of snap.overlaps) out.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
   const due = snap.promises.filter((p) => p.state === 'due');
   if (due.length) out.push({ key: 'due', tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
+  const held = snap.actions.filter((a) => a.state === 'waiting');
+  if (held.length) out.push({ key: 'approvals', tone: 'amber', what: `${held.length} action${held.length === 1 ? '' : 's'} waiting for your approval`, detail: held.slice(0, 2).map((a) => a.summary).join(' · '), to: href('needs') });
   const silent = !st.paused && (!st.lastBeginAt || Date.now() - Date.parse(st.lastBeginAt) > 10 * 60e3);
   if (silent) out.push({ key: 'intake', tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
     action: snap.sessions.some((x) => /intake/i.test(x.name)) ? { label: 'Check now', run: () => void act(() => api('POST', '/api/intake/run'), 'Intake is checking now') } : undefined });

@@ -13,6 +13,7 @@
 //   --intake-cwd D  the folder to start it in: the folder the setting-up Claude session runs in (already trusted).
 //                   Without it: the lead session's folder, and only then the ShiftBoss folder (which asks "trust this folder?")
 // Other flags: --owner NAME  --workspace W  --lead SESSION  --port N  --json
+//   --mode dry|ask|safe|auto   what ShiftBoss may do on its own (new installs start in dry: Dry run)
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -68,7 +69,8 @@ log('config', !!cfg.ownerName && cfg.ownerName !== 'The owner', `owner ${cfg.own
 // ---------- 4. start
 async function up(): Promise<boolean> { try { return (await fetch(BASE + '/api/onboarding', { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } }
 async function api(method: string, path: string, body?: unknown) {
-  const r = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  // Setup runs with the owner's consent, so its actions are the owner's (not held by the gate).
+  const r = await fetch(BASE + path, { method, headers: { 'content-type': 'application/json', 'x-shiftboss': '1', 'x-shiftboss-actor': 'owner' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const d: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
   return d;
@@ -139,6 +141,12 @@ if (running) {
     const snap = await api('GET', '/api/snapshot');
     await api('PUT', '/api/settings', { ...snap.settings, leadSession: opt('lead'), ...(opt('workspace') !== undefined ? { herdrWorkspace: opt('workspace') } : {}) });
   }
+  const MODE_NAMES: Record<string, string> = { dry: 'Dry run (records what it would do, does nothing)', ask: 'Ask first (every action waits for approval)', safe: 'Safe auto (routine actions run, risky ones wait)', auto: 'Autopilot (everything runs)' };
+  if (opt('mode')) {
+    try { await api('POST', '/api/mode', { mode: opt('mode'), dryRun: 'review' }); } catch (e) { log('mode', false, (e as Error).message); }
+  }
+  const mode = (await api('GET', '/api/snapshot')).settings.mode ?? 'auto';
+  log('mode', true, MODE_NAMES[mode] ?? mode);
   let o = await api('GET', '/api/onboarding');
   log('lead session', !!o.settings.leadSession && o.sessions.some((s: any) => s.name === o.settings.leadSession || s.name.startsWith(o.settings.leadSession + '-v')),
     o.settings.leadSession ? `${o.settings.leadSession}${o.sessions.some((s: any) => s.name.startsWith(o.settings.leadSession)) ? '' : ' (not running yet)'}` : 'not set (use --lead)');

@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Onboarding, Replacement, ReplacementState,
+import type { ActionItem, Onboarding, Replacement, ReplacementState,
   AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
 
@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   leadSession: '',
   watchedChannels: [],
   autoUpdate: true,
+  mode: 'dry', // a new install watches first; installs from before modes keep Autopilot (see migrate)
 };
 
 const now = () => new Date().toISOString();
@@ -67,6 +68,13 @@ export class Store {
     // so text from Slack (filed by the intake) never reaches a session as a prompt without a person.
     const pcols = this.db.query('PRAGMA table_info(promises)').all() as { name: string }[];
     if (!pcols.some((c) => c.name === 'kept_by_task')) this.db.exec('ALTER TABLE promises ADD COLUMN kept_by_task INTEGER NOT NULL DEFAULT 0');
+    // Held-back actions (gate.ts): waiting for approval, or recorded in Dry run. params is the JSON the executor needs.
+    this.db.exec(`CREATE TABLE IF NOT EXISTS actions (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL,
+      params TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL, by_who TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL, decided_at TEXT, result TEXT)`);
+    // Installs from before modes existed ran everything; keep that (Autopilot) instead of the new-install default.
+    const srow: any = this.db.query("SELECT value FROM settings WHERE key = 'settings'").get();
+    if (srow) { const v = JSON.parse(srow.value); if (!('mode' in v)) this.db.query("UPDATE settings SET value = ? WHERE key = 'settings'").run(JSON.stringify({ ...v, mode: 'auto' })); }
     if (!cols.some((c) => c.name === 'vetted')) this.db.exec('ALTER TABLE tasks ADD COLUMN vetted INTEGER NOT NULL DEFAULT 0');
     const scols = this.db.query('PRAGMA table_info(slack_msgs)').all() as { name: string }[];
     if (!scols.some((c) => c.name === 'approved_at')) this.db.exec('ALTER TABLE slack_msgs ADD COLUMN approved_at TEXT');
@@ -393,6 +401,37 @@ export class Store {
     const s = JSON.parse(r.value);
     return { ...DEFAULT_SETTINGS, ...s, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...s.thresholds }, switches: { ...DEFAULT_SETTINGS.switches, ...s.switches }, budgets: { ...DEFAULT_SETTINGS.budgets, ...s.budgets } };
   }
+  // ---------- held-back actions (gate.ts) ----------
+  private rowAction = (r: any): ActionItem => ({ id: r.id, at: r.at, kind: r.kind, summary: r.summary, detail: r.detail, actor: r.actor, by: r.by_who,
+    state: r.state, decidedAt: r.decided_at, result: r.result });
+  /** Record an action as waiting or dry. The same action already open is returned instead of a second copy. */
+  holdAction(a: { kind: string; key: string; params: unknown; summary: string; detail?: string; actor: 'session' | 'auto'; by: string; state: 'waiting' | 'dry' }): { item: ActionItem; fresh: boolean } {
+    const open: any = this.db.query("SELECT * FROM actions WHERE key = ? AND state IN ('waiting', 'dry') ORDER BY id DESC LIMIT 1").get(a.key);
+    if (open) return { item: this.rowAction(open), fresh: false };
+    const r = this.db.query('INSERT INTO actions (at, kind, key, params, summary, detail, actor, by_who, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(now(), a.kind, a.key, JSON.stringify(a.params ?? null), a.summary, a.detail ?? '', a.actor, a.by, a.state);
+    return { item: this.rowAction(this.db.query('SELECT * FROM actions WHERE id = ?').get(Number(r.lastInsertRowid))), fresh: true };
+  }
+  action(id: number): (ActionItem & { params: any }) | null {
+    const r: any = this.db.query('SELECT * FROM actions WHERE id = ?').get(id);
+    return r ? { ...this.rowAction(r), params: JSON.parse(r.params) } : null;
+  }
+  /** Move an action on, only from the state the caller saw (so two clicks can't run it twice). */
+  setActionState(id: number, from: ActionItem['state'][], to: ActionItem['state'], result: string | null = null): boolean {
+    const marks = from.map(() => '?').join(', ');
+    return this.db.query(`UPDATE actions SET state = ?, decided_at = COALESCE(decided_at, ?), result = COALESCE(?, result) WHERE id = ? AND state IN (${marks})`)
+      .run(to, now(), result, id, ...from).changes > 0;
+  }
+  hasOpenAction(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state IN ('waiting', 'dry', 'approved')").get(key); }
+  listActions(): ActionItem[] {
+    const since = new Date(Date.now() - 864e5).toISOString();
+    return (this.db.query("SELECT * FROM actions WHERE state = 'waiting' OR at >= ? ORDER BY id DESC LIMIT 200").all(since) as any[]).map(this.rowAction);
+  }
+  /** Leaving Dry run: what it recorded becomes approvals to review, or is dropped. */
+  settleDryActions(review: boolean): number {
+    return this.db.query(`UPDATE actions SET state = ?, decided_at = ? WHERE state = 'dry'`).run(review ? 'waiting' : 'discarded', review ? null : now()).changes;
+  }
+
   // ---------- first-run onboarding ----------
   onboarding(): Onboarding {
     const r: any = this.db.query("SELECT value FROM settings WHERE key = 'onboarding'").get();

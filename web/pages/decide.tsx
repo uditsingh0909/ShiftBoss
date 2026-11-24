@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Approvals } from '../approvals';
 import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
 import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
 
@@ -71,6 +72,7 @@ export function NeedsYou() {
         sub={open.length ? `Oldest waiting ${ago([...open].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0].createdAt)}.` : 'Sessions will ask here when they need a decision.'}>
         <Seg label="View" value={view} options={['Focus', 'List'] as const} onChange={setView} />
       </Hero>
+      <Approvals />
       {open.length > cap && <span className="amber" style={{ fontSize: 13, marginTop: -24 }}>{open.length} open, more than your cap of {cap}. Sessions are piling up behind you; clear a few or raise the cap in Settings.</span>}
 
       <section className="grid12">

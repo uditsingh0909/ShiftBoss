@@ -56,6 +56,15 @@ h2 { margin: 0; font-weight: 500; letter-spacing: -0.02em; }
 .field { height: 44px; padding: 0 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,.08); background: var(--well); color: var(--fg); font-size: 14px; width: 100%; }
 textarea.field { height: auto; padding: 12px 16px; resize: vertical; line-height: 1.5; }
 .field:focus { outline: none; border-color: rgba(255,255,255,.25); }
+/* mode picker */
+.mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.mode-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,.08); background: var(--well); color: inherit; cursor: pointer; transition: border-color .4s var(--ease); }
+.mode-card:hover { border-color: rgba(255,255,255,.2); }
+.mode-card.on { border-color: rgba(255,255,255,.55); background: rgba(255,255,255,.04); }
+.mode-dot { width: 12px; height: 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.35); flex: none; }
+.mode-card.on .mode-dot { background: var(--fg); border-color: var(--fg); }
+@media (max-width: 1100px) { .mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .mode-grid { grid-template-columns: minmax(0, 1fr); } }
 /* guided tour */
 .tour { position: fixed; inset: 0; z-index: 70; }
 .tour-hole { position: fixed; border-radius: 22px; box-shadow: 0 0 0 9999px rgba(0,0,0,.66); border: 1px solid rgba(255,255,255,.35); transition: all .6s var(--ease); pointer-events: none; }

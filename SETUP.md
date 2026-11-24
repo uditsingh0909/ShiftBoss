@@ -50,12 +50,19 @@ Read `checks`. Fix or report anything not ok before going on:
    - Intake session. Reads Slack and Gmail for them; it needs the Slack connector, plus Gmail for meeting notes.
 3. **Their lead session**: the session that coordinates the others. Offer the names from
    `herdr agent list` (or "none yet").
-4. **Only if they have several herdr workspaces:** which one to show.
+4. **How much ShiftBoss may do on its own** (`--mode`). Recommend **Dry run** for the first hours: it only
+   records what it would do (start sessions, send briefs, run checks), so they can see it is safe before going live.
+   - `dry` Dry run: nothing happens, everything is recorded
+   - `ask` Ask first: every action waits for their approval in Needs you
+   - `safe` Safe auto: routine actions (sending a brief, a monitor check) run; risky ones (new sessions, prompting another session) wait
+   - `auto` Autopilot: everything runs
+   They switch any time in Settings → Mode. Their own clicks in ShiftBoss always run.
+5. **Only if they have several herdr workspaces:** which one to show.
 
 ## 4. Run setup with their answers
 
 ```bash
-bun scripts/setup.ts --owner "<name>" --lead <session> --start [--workspace <id>] [--mcp] [--status-line] [--startup] [--intake --intake-cwd "<folder you were started in>"]
+bun scripts/setup.ts --owner "<name>" --lead <session> --mode <dry|ask|safe|auto> --start [--workspace <id>] [--mcp] [--status-line] [--startup] [--intake --intake-cwd "<folder you were started in>"]
 ```
 
 Include only the extras they picked. It prints what it did and what is left. Then tell them to open
