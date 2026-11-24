@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { healthOf, loopKeys, overlapsOf } from '../server/analysis';
 import { Store } from '../server/db';
 import { Engine } from '../server/engine';
+import { makeApi } from '../server/api';
 import { loadConfig } from '../server/config';
 import { nameOf, parseAgentList } from '../server/herdr';
 import { onboardingPrompt } from '../server/onboarding';
@@ -323,6 +324,48 @@ describe('audit fixes', () => {
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).toBeNull();
     s.approveSlack(id);
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).not.toBeNull();
+  });
+  test('an answer is claimed once, and not at all after an undo', () => {
+    const s = mem();
+    const n = s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'worker' });
+    const a = s.answerNeed(n.id, 'Yes');
+    const claimed = s.claimSend(a);
+    expect(claimed).not.toBeNull();
+    expect(s.claimSend(a)).toBeNull(); // already claimed
+    s.releaseSend(n.id, claimed!); // the send failed: retry next tick
+    expect(s.claimSend(a)).not.toBeNull();
+    // Undo after the claim: the store reports it as sent, so the caller tells the session.
+    expect(s.undoAnswer(n.id).was.sentAt).not.toBeNull();
+    expect(s.claimSend(a)).toBeNull(); // the old answer is gone
+    const b = s.answerNeed(n.id, 'No');
+    expect(s.claimSend(b)).not.toBeNull(); // a new answer still goes out
+  });
+  test('an undo during the send waits for it, then takes the answer back', async () => {
+    const store = mem();
+    const sent: string[] = [];
+    let finish!: () => void;
+    const herdr = { prompt: async (_p: string, text: string) => { sent.push(text); if (sent.length === 1) await new Promise<void>((r) => (finish = r)); } };
+    const e = new Engine(loadConfig(), store, herdr as any);
+    e.herdrOk = true;
+    e.sessions = [session({ name: 'worker', status: 'idle' })];
+    const n = store.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'worker' });
+    store.answerNeed(n.id, 'Yes');
+    store.db.query('UPDATE needs SET answered_at = ? WHERE id = ?').run(new Date(Date.now() - 60e3).toISOString(), n.id);
+    const flushing = (e as any).flushAnswers();
+    await Bun.sleep(0);
+    expect(e.sendingAnswers.has(n.id)).toBe(true);
+    const handle = makeApi(e);
+    const undoing = handle(new Request(`http://x/api/needs/${n.id}/undo`, { method: 'POST', headers: { 'x-shiftboss': '1' } }), new URL(`http://x/api/needs/${n.id}/undo`));
+    await Bun.sleep(0);
+    expect(sent.length).toBe(1); // the take-back waits for the answer to land
+    finish();
+    await flushing;
+    const res = await undoing;
+    expect(await res!.json()).toEqual({ ok: true, wasSent: true });
+    expect(sent[1]).toContain('took back');
+    const after = store.listNeeds().find((x) => x.id === n.id)!;
+    expect(after.answer).toBeNull();
+    expect(after.sentAt).toBeNull(); // open again, so the next answer is sent
   });
   test('auto-dispatch sends only vetted tasks, and never one that is already being sent', () => {
     const store = mem();

@@ -222,7 +222,21 @@ export class Store {
     const cutoff = new Date(Date.now() - graceMs).toISOString();
     return this.db.query('SELECT * FROM needs WHERE answer IS NOT NULL AND sent_at IS NULL AND auto = 0 AND answered_at <= ?').all(cutoff).map(this.rowNeed);
   }
-  markSent(id: number) { this.db.query('UPDATE needs SET sent_at = ? WHERE id = ?').run(now(), id); }
+  /**
+   * Claim an answer for sending: stamps `sent_at` only if this exact answer is still there and unsent.
+   * Returns the stamp, or null when it was undone, re-answered or already claimed. Claiming before the
+   * send means an undo that lands mid-send sees `sentAt` and takes the reopen path (tells the session).
+   */
+  claimSend(n: Pick<Need, 'id' | 'answer' | 'answeredAt'>): string | null {
+    if (!n.answer || !n.answeredAt) return null;
+    const at = now();
+    const r = this.db.query('UPDATE needs SET sent_at = ? WHERE id = ? AND sent_at IS NULL AND answer = ? AND answered_at = ?').run(at, n.id, n.answer, n.answeredAt);
+    return r.changes === 1 ? at : null;
+  }
+  /** The send failed: put the claim back so the next tick retries, unless the answer changed meanwhile. */
+  releaseSend(id: number, claimedAt: string) {
+    this.db.query('UPDATE needs SET sent_at = NULL WHERE id = ? AND sent_at = ?').run(id, claimedAt);
+  }
   /** Take an answer back: the item is open again. Returns what it was, so the caller can tell the session if it was already sent. */
   undoAnswer(id: number): { was: Need } {
     const r = this.db.query('SELECT * FROM needs WHERE id = ?').get(id);

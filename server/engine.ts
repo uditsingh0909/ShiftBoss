@@ -10,6 +10,7 @@ import { Herdr, nameOf, type HerdrAgent } from './herdr';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
+import { UNDO_MS } from './api';
 
 type Listener = () => void;
 
@@ -153,12 +154,13 @@ export class Engine {
 
   /** Deliver answers whose undo window has passed. */
   private waitingAnswers = new Set<number>();
+  /** Answers being typed into a pane right now. An undo waits for these, so it never races the send. */
+  sendingAnswers = new Map<number, Promise<void>>();
   private async flushAnswers() {
-    for (const n of this.store.pendingAnswers(10_000)) {
+    for (const n of this.store.pendingAnswers(UNDO_MS)) {
       // No session asked: there is nobody to send it to, so record it and say so.
       if (!n.session) {
-        this.store.markSent(n.id);
-        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', 'Answer recorded; no session asked, so nobody was prompted');
+        if (this.store.claimSend(n) && n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', 'Answer recorded; no session asked, so nobody was prompted');
         continue;
       }
       const s = this.sessions.find((x) => x.name === n.session);
@@ -167,14 +169,21 @@ export class Engine {
         if (!this.waitingAnswers.has(n.id)) { this.waitingAnswers.add(n.id); this.pushFeed('shiftboss', `holding your answer for ${n.session} until it is running again`); }
         continue;
       }
-      try {
-        await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
-        this.store.markSent(n.id);
-        this.waitingAnswers.delete(n.id);
-        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', `Sent the answer to ${s.name}`);
-      } catch (e) {
-        this.pushFeed('shiftboss', `could not send answer to ${n.session}: ${(e as Error).message}`);
-      }
+      // Claim first: if it was undone (or re-answered) since pendingAnswers ran, there is nothing to send.
+      const claimed = this.store.claimSend(n);
+      if (!claimed) continue;
+      const send = (async () => {
+        try {
+          await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
+          this.waitingAnswers.delete(n.id);
+          if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', `Sent the answer to ${s.name}`);
+        } catch (e) {
+          this.store.releaseSend(n.id, claimed); // retried next tick
+          this.pushFeed('shiftboss', `could not send answer to ${n.session}: ${(e as Error).message}`);
+        }
+      })();
+      this.sendingAnswers.set(n.id, send);
+      try { await send; } finally { this.sendingAnswers.delete(n.id); }
     }
   }
 

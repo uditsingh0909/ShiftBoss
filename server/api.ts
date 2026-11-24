@@ -199,6 +199,9 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/needs\/(\d+)\/undo$/);
       if (r && write) {
+        // If the engine is typing this answer into the pane right now, let it finish first: the undo then
+        // sees it as sent and tells the session to disregard it, instead of racing the send.
+        await engine.sendingAnswers.get(Number(r[1]));
         const { was } = store.undoAnswer(Number(r[1]));
         if (was.sentAt) {
           const s = was.session ? engine.sessions.find((x) => x.name === was.session) : null;
