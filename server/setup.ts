@@ -36,7 +36,7 @@ export function setupInfo(port: number): SetupInfo {
       statusLine: statusCmd && !statusCmd.includes('statusline-tap')
         ? `node ${repo}/cli/statusline-tap.cjs ${statusCmd}`
         : `node ${repo}/cli/statusline-tap.cjs`,
-      intakeLoop: `/loop 2m You are ShiftBoss's intake session. Each run, read ${repo}/docs/INTAKE.md and follow it exactly: start with intake_begin, read Slack and meeting notes from readFrom, log every message with the shiftboss tools, file new asks as tasks, record promises, end with intake_checkpoint. Never post, react, DM or do the work yourself.`,
+      intakeLoop: `/loop 2m You are ShiftBoss's intake session. Each run, read ${repo}/docs/INTAKE.md and follow it exactly: start with intake_begin, read Slack, then Gmail (meeting notes and emails with asks) from readFrom, log every message with the shiftboss tools, file new asks as tasks, record promises, end with intake_checkpoint. Never post, react, DM or do the work yourself.`,
     },
   };
 }

@@ -221,6 +221,16 @@ export function makeApi(engine: Engine) {
         engine.pushFeed('you', b.catchUp !== false ? 'resumed intake and asked it to catch up' : 'resumed intake from now');
         return done(json(st));
       }
+      if (p === '/api/intake/run' && write) {
+        // "Check now": ask the intake session for one pass right away instead of waiting for its loop.
+        if (store.intakeState().paused) return json({ error: 'Intake is paused. Resume it first.' }, 409);
+        const s = engine.snapshot().sessions.find((x) => /intake/i.test(x.name));
+        if (!s) return json({ error: 'No intake session is running in herdr.' }, 404);
+        const repo = setupInfo(engine.cfg.port).repoPath;
+        await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} asked for an intake check now. Run one pass immediately, exactly as ${repo}/docs/INTAKE.md says: intake_begin, then Slack, then Gmail (meeting notes and emails with asks), then intake_checkpoint. Then carry on with your normal loop.`);
+        engine.pushFeed('you', 'asked the intake for a check now');
+        return done(json({ ok: true, session: s.name, busy: s.status === 'working' }));
+      }
       if (p === '/api/intake/begin' && write) {
         const st = store.intakeBegin();
         return done(json({ ...st, run: !st.paused, readFrom: st.since ?? st.catchUpFrom,

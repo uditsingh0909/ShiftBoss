@@ -1,7 +1,7 @@
 # Intake session prompt
 
 Start a Sonnet session in herdr named `intake` and give it this prompt. Run it on a
-2-minute loop (`/loop 2m …`).
+2-minute loop (`/loop 2m …`). The **Check now** button in ShiftBoss asks it for one extra pass at any time.
 
 ---
 
@@ -22,22 +22,30 @@ Without them, `shiftboss` below means `bun <path-to-shiftboss>/cli/shiftboss.ts`
 
 Each run, from `readFrom`:
 
-1. Read new messages that mention the owner, DMs to them, replies in threads they posted in during
-   the last 3 days, and new top-level messages in the watched channels (see ShiftBoss →
-   Settings). Read every thread's replies before deciding anything is open. Read new Gemini
-   meeting notes in Gmail.
-2. For each message, log it once:
+1. **Slack.** Read new messages that mention the owner, DMs to them, replies in threads they posted
+   in during the last 3 days, and new top-level messages in the watched channels (see ShiftBoss →
+   Settings). Read every thread's replies before deciding anything is open.
+2. **Gmail.** Search the owner's mail newer than `readFrom` for:
+   - **Meeting notes** (for example Gemini "Notes by Gemini", or any meeting-notes service). Open the
+     notes, and the linked doc if the email only links to it. Every action item or "next step" that
+     names the owner, or that the owner agreed to, is an ask: file it as a task (`--source "Gmail"`,
+     `--from` = whoever asked for it in the meeting, `--url` = the Gmail link). A line where the owner
+     said they would do or tell something is a promise.
+   - **Emails that ask the owner for something** (a request, a question waiting on them, a deadline).
+     Skip newsletters, notifications, receipts and automated alerts.
+   Log each email you read once, with `--src "Gmail"`, like a Slack message.
+3. For each message or email, log it once:
    `shiftboss intake --src "<channel>" --who "<name>" --text "<short quote>" --verdict "<verdict>" --url "<Slack permalink or Gmail link>"`
    Always pass `--url`: it is the "Open in Slack" link on the Intake screen.
    Verdicts: `filed T-n` (new task), `linked T-n` (adds to an existing task), `answered`
    (already handled in the thread), `dropped` (FYI, nothing to do), `to lead` (production,
    money, live customers, access, or anything you are unsure about).
-3. A new ask that is ours becomes a task, in the asker's words:
+4. A new ask that is ours becomes a task, in the asker's words:
    `shiftboss task add "<title>" --ask "<their words>" --from "<name>" --source "<channel>" --url "<permalink>" --prio P1|P2|P3`
    Leave it in the inbox (no `--session`) unless the lane is obvious.
-4. Every line sent from the owner's account that says what we will do or tell someone becomes a promise:
+5. Every line sent from the owner's account that says what we will do or tell someone becomes a promise:
    `shiftboss promise "<what was said>" --to "<name>" --where "<channel>" --when "<what keeps it>" --task T-n`
-5. A question the requester asked in a task's thread goes on that task:
+6. A question the requester asked in a task's thread goes on that task:
    `shiftboss slack T-n "<text>" --kind ask --who "<name>"`
 
 Never post, react, or DM. Never file the same message twice.

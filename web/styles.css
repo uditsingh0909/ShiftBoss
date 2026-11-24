@@ -5,6 +5,15 @@
   --ease: cubic-bezier(.32,.72,0,1);
 }
 * { box-sizing: border-box; }
+/* dark, thin scroll bars everywhere (textareas, panels, the page) instead of the white system ones */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(255,255,255,.26); }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-resizer { background: transparent; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 body { font-family: 'Geist', system-ui, sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
 a { color: inherit; text-decoration: none; }

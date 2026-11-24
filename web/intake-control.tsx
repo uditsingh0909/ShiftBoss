@@ -34,6 +34,11 @@ export function IntakeControl({ compact }: { compact?: boolean }) {
   const pause = (u: string | null) => act(() => api('POST', '/api/intake/pause', { until: u ? new Date(u).toISOString() : null }), u ? 'Intake paused until ' + new Date(u).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'Intake paused').then(() => setPicking(false));
   const resume = (catchUp: boolean) => act(() => api('POST', '/api/intake/resume', { catchUp }), catchUp ? 'Resumed · it will read what it missed' : 'Resumed from now · missed messages skipped');
 
+  const checkNow = () => act(async () => {
+    const r = await api<{ busy: boolean }>('POST', '/api/intake/run');
+    return r;
+  }, intakeSession?.status === 'working' ? 'Queued · the intake runs it after its current step' : 'Intake is checking Slack and Gmail now');
+
   return (
     <div className="col" style={{ gap: 12 }}>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
@@ -57,6 +62,7 @@ export function IntakeControl({ compact }: { compact?: boolean }) {
         </form>
       ) : (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="pill sm w" onClick={checkNow} disabled={!intakeSession} title={intakeSession ? 'Ask the intake session to read Slack and Gmail now' : 'No intake session is running'}>Check now</button>
           <button type="button" className="pill sm" onClick={() => setPicking(true)}>Pause until…</button>
           <button type="button" className="pill sm" onClick={() => void pause(null)}>Pause</button>
           {!compact && <a className="pill sm" href={href('intake')}>Open intake</a>}
