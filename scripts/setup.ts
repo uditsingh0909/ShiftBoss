@@ -110,8 +110,11 @@ if (!tapped && flag('status-line')) {
   if (existsSync(settingsPath)) copyFileSync(settingsPath, settingsPath + '.shiftboss-backup');
   else mkdirSync(join(homedir(), '.claude'), { recursive: true });
   // Another install's tap: replace it, keeping the user's own command that follows it.
-  const own = tappedElsewhere ? current!.replace(/^node\s+\S*statusline-tap\.cjs\s*/, '') : current;
-  settings.statusLine = { type: 'command', ...(settings.statusLine ?? {}), command: `node ${REPO}/cli/statusline-tap.cjs${own ? ' ' + own : ''}` };
+  const own = tappedElsewhere ? current!.replace(/^node\s+\S*statusline-tap\.cjs\s*("--data-dir=[^"]*"\s*|--data-dir=\S*\s*)?/, '') : current;
+  // The tap runs without this process's environment: pass a custom data folder to it explicitly.
+  const dd = process.env.SHIFTBOSS_DATA_DIR?.replace(/\\/g, '/');
+  const tapArg = dd ? ' ' + (/\s/.test(dd) ? `"--data-dir=${dd}"` : `--data-dir=${dd}`) : '';
+  settings.statusLine = { type: 'command', ...(settings.statusLine ?? {}), command: `node ${REPO}/cli/statusline-tap.cjs${tapArg}${own ? ' ' + own : ''}` };
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   log('status line tap', true, `added in front of ${current ? 'your status line' : 'an empty status line'}; backup at settings.json.shiftboss-backup`);
 } else log('status line tap', tapped, tapped ? 'on' : tappedElsewhere ? 'points at another install (add --status-line to point it here)' : 'off (optional: add --status-line)');

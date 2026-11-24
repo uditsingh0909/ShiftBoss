@@ -24,6 +24,10 @@ export function setupInfo(port: number): SetupInfo {
   const mcpCommand = mcpEntry ? [mcpEntry.command, ...(mcpEntry.args ?? [])].join(' ') : null;
   const statusCmd: string | null = settings?.statusLine?.command ?? null;
   const portEnv = port === 4400 ? '' : ` --env SHIFTBOSS_PORT=${port}`;
+  // Claude Code runs the tap without the server's environment, so an install that keeps its data outside
+  // the repo (SHIFTBOSS_DATA_DIR, as the desktop app does) passes the folder to the tap explicitly.
+  const dataDir = process.env.SHIFTBOSS_DATA_DIR?.replace(/\\/g, '/');
+  const tapArg = dataDir ? ' ' + (/\s/.test(dataDir) ? `"--data-dir=${dataDir}"` : `--data-dir=${dataDir}`) : '';
   return {
     repoPath: repo,
     port,
@@ -34,8 +38,8 @@ export function setupInfo(port: number): SetupInfo {
       mcpCheck: 'claude mcp get shiftboss',
       cli: `bun ${repo}/cli/shiftboss.ts status`,
       statusLine: statusCmd && !statusCmd.includes('statusline-tap')
-        ? `node ${repo}/cli/statusline-tap.cjs ${statusCmd}`
-        : `node ${repo}/cli/statusline-tap.cjs`,
+        ? `node ${repo}/cli/statusline-tap.cjs${tapArg} ${statusCmd}`
+        : `node ${repo}/cli/statusline-tap.cjs${tapArg}`,
       intakeLoop: `/loop 2m You are ShiftBoss's intake session. Each run, read ${repo}/docs/INTAKE.md and follow it exactly: start with intake_begin, read Slack (mentions, DMs, watched channels, and new replies in threads the owner is in), then Gmail (meeting notes and emails with asks) from readFrom, log every message with the shiftboss tools, file new asks as tasks, record promises, end with intake_checkpoint. Never post, react, DM or do the work yourself.`,
     },
   };
