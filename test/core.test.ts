@@ -433,7 +433,7 @@ describe('audit fixes', () => {
     await Bun.sleep(0);
     expect(e.sendingAnswers.has(n.id)).toBe(true);
     const handle = makeApi(e);
-    const undoing = handle(new Request(`http://x/api/needs/${n.id}/undo`, { method: 'POST', headers: { 'x-shiftboss': '1' } }), new URL(`http://x/api/needs/${n.id}/undo`));
+    const undoing = handle(new Request(`http://x/api/needs/${n.id}/undo`, { method: 'POST', headers: { 'x-shiftboss': '1', 'x-shiftboss-actor': 'owner' } }), new URL(`http://x/api/needs/${n.id}/undo`));
     await Bun.sleep(0);
     expect(sent.length).toBe(1); // the take-back waits for the answer to land
     finish();

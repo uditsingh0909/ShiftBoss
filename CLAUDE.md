@@ -34,7 +34,7 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `web/notify.tsx` | Browser notifications (one leader tab, no service worker) and the Notifications settings section |
 | `web/source.tsx` | "Open in Slack" button, ↓/↑ direction chip, "No source link" marker and the "Add link" field |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
-| `mcp/server.ts` | MCP server (`shiftboss`), 26 tools over the HTTP API |
+| `mcp/server.ts` | MCP server (`shiftboss`), 55 tools over the HTTP API: every action in the UI, so Claude can do it too |
 | `server/monitors.ts` | Pure rules for monitors (schedule, alerting, due-check selection, prompts); the engine sends checks only through `Engine.sendMonitorCheck` |
 | `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
 | `server/update.ts` | Self-update: fetch, fast-forward only, reinstall packages if needed, build check, roll back, exit 75 for run.sh |

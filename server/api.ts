@@ -60,6 +60,9 @@ export function makeApi(engine: Engine) {
     const write = req.method !== 'GET';
     if (write && req.headers.get('x-shiftboss') !== '1') return fail('Missing X-ShiftBoss header', 403);
     const m = (re: RegExp) => p.match(re);
+    // A session acting on the owner's behalf (CLI --as-owner, MCP owner_asked) names itself: the feed says so.
+    const onBehalf = write && actorOf(req) === 'owner' ? req.headers.get('x-shiftboss-by') : null;
+    if (onBehalf) engine.pushFeed(onBehalf.slice(0, 60), `on your behalf: ${req.method} ${p.replace('/api/', '')}`);
     try {
       if (p === '/api/snapshot' && req.method === 'GET') return json(engine.snapshot());
 
@@ -141,6 +144,7 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/slack\/(\d+)\/approve$/);
       if (r && write) {
+        if (actorOf(req) !== 'owner') return fail("This is the owner's decision: from ShiftBoss itself, or with --as-owner / owner_asked when they asked you to", 403);
         const id = Number(r[1]);
         const msg: any = store.db.query('SELECT * FROM slack_msgs WHERE id = ?').get(id);
         if (!msg || msg.kind !== 'draft') return fail('Not a draft', 404);
@@ -217,6 +221,7 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/needs\/(\d+)\/answer$/);
       if (r && write) {
+        if (actorOf(req) !== 'owner') return fail("This is the owner's decision: from ShiftBoss itself, or with --as-owner / owner_asked when they asked you to", 403);
         const b = await body<any>(req);
         const n = store.listNeeds().find((x) => x.id === Number(r![1]));
         if (!n) return fail('No item ' + r[1], 404);
@@ -236,6 +241,7 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/needs\/(\d+)\/undo$/);
       if (r && write) {
+        if (actorOf(req) !== 'owner') return fail("This is the owner's decision: from ShiftBoss itself, or with --as-owner / owner_asked when they asked you to", 403);
         // If the engine is typing this answer into the pane right now, let it finish first: the undo then
         // sees it as sent and tells the session to disregard it, instead of racing the send.
         await engine.sendingAnswers.get(Number(r[1]));
@@ -530,6 +536,7 @@ export function makeApi(engine: Engine) {
 
       // ----- settings, report, dispatcher -----
       if (p === '/api/settings' && req.method === 'PUT') {
+        if (actorOf(req) !== 'owner') return fail("Settings are the owner's: change them in ShiftBoss, or with --as-owner / owner_asked when they asked you to", 403);
         const cur = store.settings();
         const next = mergeSettings(cur, await body<unknown>(req));
         if ((next.instructions ?? '') !== (cur.instructions ?? '')) { next.instructionsPrev = cur.instructions ?? ''; engine.pushFeed('you', 'changed your way of working'); }

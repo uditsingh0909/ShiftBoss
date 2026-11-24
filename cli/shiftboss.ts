@@ -48,14 +48,54 @@ Setup and onboarding (the same steps as the Get started screen, which updates li
   shiftboss session replace <name...>            handoff, then a fresh <name>-vN takes over its tasks
                                                  (the old sessions stay open for you to close)
   shiftboss session replacements                 progress of replacements under way
+
+Everything you can do in ShiftBoss, from the command line:
+  shiftboss task show <T-n>                       the task, its log and Slack thread
+  shiftboss task update <T-n> [--prio P1|P2|P3] [--title T] [--ask T] [--hold | --resume] [--direction D]
+  shiftboss task send <T-n>                       send its brief to its session (goes through the mode)
+  shiftboss tasks [--stage inbox|queued|progress|pr|dev|live|told] [--session NAME]
+  shiftboss promise list [--open]                 promises and who waits on them
+  shiftboss promise state <id> open|due|kept
+  shiftboss needs                                 what waits on the owner
+  shiftboss need answer <id> "<answer>" --as-owner     answer one (only when the owner told you the answer)
+  shiftboss need undo <id> --as-owner
+  shiftboss approvals                             actions held for approval (and the dry-run log)
+  shiftboss approve <id> | --all  --as-owner     reject <id> | --all  --as-owner
+  shiftboss mode [dry|ask|safe|auto] [--review | --drop] [--as-owner]   show, or change (owner)
+  shiftboss settings                              show all settings as JSON
+  shiftboss settings set key=value… --as-owner    e.g. thresholds.warn=70 switches.autoDispatch=true
+                                                  watchedChannels=#a,#b leadSession=lead autoUpdate=false
+  shiftboss sessions                              every session: status, context, task
+  shiftboss session prompt <name> "<text>"        send a prompt (goes through the mode)
+  shiftboss session interrupt <name>              Esc (refused while it waits on a permission prompt)
+  shiftboss session screen <name>                 what its terminal shows now
+  shiftboss session lane <name> "<lane>" [--slots N]
+  shiftboss session cancel-replace <id>
+  shiftboss monitor pause|resume|stop|check <id>
+  shiftboss monitor edit <id> [--title T] [--prompt T] [--days N] [--every N]
+  shiftboss intake run                            ask the intake for a pass now
+  shiftboss intake resolve <id>                   dismiss a flagged thread
+  shiftboss slack approve <message-id> --as-owner      ask the owning session to post an approved draft
+  shiftboss audit correct <id> "<note>"
+  shiftboss report [plain|team|me]                the daily report
+  shiftboss health                                health cards and overlaps
+
+  --as-owner: only for things the owner asked you to do in this conversation. The feed shows that you
+  did it on their behalf. Without it, the owner's decisions are refused.
 `;
+
+const BOOL = new Set(['as-owner', 'all', 'check', 'json', 'review', 'drop', 'hold', 'resume', 'open', 'from-now']);
 
 function parse(argv: string[]) {
   const pos: string[] = [];
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { flags[a.slice(2)] = argv[i + 1] ?? ''; i++; } else pos.push(a);
+    if (a.startsWith('--')) {
+      const k = a.slice(2);
+      if (BOOL.has(k) || i + 1 >= argv.length || argv[i + 1].startsWith('--')) flags[k] = 'true';
+      else { flags[k] = argv[i + 1]; i++; }
+    } else pos.push(a);
   }
   return { pos, flags };
 }
@@ -63,9 +103,11 @@ function parse(argv: string[]) {
 // Setup commands are run with the owner's consent (SETUP.md asks them first), so they act as the owner.
 // Everything else a session runs goes through the gate (Dry run / Ask first / Safe auto / Autopilot).
 let asOwner = false;
+let onBehalf = false; // --as-owner: a session doing what the owner asked; the feed names it
 async function call(method: string, path: string, body?: unknown) {
   let res: Response;
-  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-shiftboss': '1', ...(asOwner ? { 'x-shiftboss-actor': 'owner' } : {}) };
+  const by = process.env.SHIFTBOSS_SESSION || 'a session';
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-shiftboss': '1', ...(asOwner ? { 'x-shiftboss-actor': 'owner', ...(onBehalf ? { 'x-shiftboss-by': by } : {}) } : {}) };
   const withBy = body && typeof body === 'object' && !Array.isArray(body) ? { by: process.env.SHIFTBOSS_SESSION || undefined, ...body } : body;
   try {
     res = await fetch(BASE + path, { method, headers, body: withBy ? JSON.stringify(withBy) : undefined });
@@ -82,13 +124,87 @@ async function main() {
   const { pos, flags } = parse(process.argv.slice(2));
   const [cmd, sub, a1, a2] = pos;
   const who = flags.who ?? process.env.SHIFTBOSS_SESSION ?? 'session';
+  if (flags['as-owner']) { asOwner = true; onBehalf = true; }
+  const STAGE_N: Record<string, number> = { inbox: 0, queued: 1, progress: 2, pr: 3, dev: 4, live: 5, told: 6 };
+  const STAGE_W = ['inbox', 'queued', 'progress', 'pr', 'dev', 'live', 'told'];
   switch (cmd) {
+    case 'tasks': {
+      const s = await call('GET', '/api/snapshot');
+      const rows = s.tasks.filter((t: any) => (flags.stage ? t.stage === STAGE_N[flags.stage] : t.stage < 6) && (!flags.session || t.session === flags.session));
+      for (const t of rows) console.log(`${t.id.padEnd(6)} ${STAGE_W[t.stage].padEnd(8)} ${t.prio} ${(t.session ?? 'unassigned').padEnd(28)} ${t.title}`);
+      return console.log(`\n${rows.length} task${rows.length === 1 ? '' : 's'}`);
+    }
+    case 'needs': {
+      const s = await call('GET', '/api/snapshot');
+      const open = s.needs.filter((n: any) => !n.answer);
+      for (const n of open) console.log(`${String(n.id).padEnd(5)} ${n.kind.padEnd(16)} ${(n.session ?? '').padEnd(24)} ${n.title}  [${n.answers.join(' | ')}]`);
+      return console.log(open.length ? '' : 'Nothing waits on the owner.');
+    }
+    case 'approvals': {
+      const s = await call('GET', '/api/snapshot');
+      console.log('Mode: ' + ({ dry: 'Dry run', ask: 'Ask first', safe: 'Safe auto', auto: 'Autopilot' } as any)[s.settings.mode ?? 'auto']);
+      for (const a of s.actions) console.log(`${String(a.id).padEnd(5)} ${a.state.padEnd(9)} ${a.by.padEnd(20)} ${a.summary}`);
+      return console.log(s.actions.length ? '' : 'Nothing held.');
+    }
+    case 'approve': case 'reject': {
+      if (flags.all) { const r = await call('POST', '/api/actions/decide-all', { approve: cmd === 'approve' }); return console.log(`${cmd === 'approve' ? 'approved' : 'rejected'} ${r.ok}${r.failed.length ? `; failed: ${r.failed.join('; ')}` : ''}`); }
+      const r = await call('POST', `/api/actions/${sub}/${cmd}`, {});
+      return console.log(cmd === 'approve' ? 'approved: ' + (r.result ?? 'done') : 'rejected');
+    }
+    case 'mode': {
+      if (!sub) { const s = await call('GET', '/api/snapshot'); return console.log(s.settings.mode ?? 'auto'); }
+      const r = await call('POST', '/api/mode', { mode: sub, dryRun: flags.drop ? 'discard' : 'review' });
+      return console.log(`mode: ${r.mode}${r.settled ? ` (${r.settled} dry-run action${r.settled === 1 ? '' : 's'} ${flags.drop ? 'dropped' : 'moved to approvals'})` : ''}`);
+    }
+    case 'settings': {
+      const s = await call('GET', '/api/snapshot');
+      if (sub !== 'set') return console.log(JSON.stringify(s.settings, null, 2));
+      const next: any = structuredClone(s.settings);
+      for (const kv of pos.slice(2)) {
+        const i = kv.indexOf('=');
+        if (i < 1) throw new Error('Use key=value, e.g. thresholds.warn=70');
+        const path = kv.slice(0, i).split('.'), raw = kv.slice(i + 1);
+        const val = raw === 'true' ? true : raw === 'false' ? false : /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : path[0] === 'watchedChannels' ? raw.split(',').map((x) => x.trim()).filter(Boolean) : raw;
+        let o = next; for (const k of path.slice(0, -1)) o = o[k] ??= {};
+        o[path.at(-1)!] = val;
+      }
+      await call('PUT', '/api/settings', next);
+      return console.log('saved');
+    }
+    case 'sessions': {
+      const s = await call('GET', '/api/snapshot');
+      for (const x of s.sessions) {
+        const t = s.tasks.find((t: any) => t.session === x.name && t.stage >= 2 && t.stage <= 4);
+        console.log(`${x.name.padEnd(36)} ${x.status.padEnd(8)} ctx ${String(Math.round(x.contextPct)).padStart(3)}%  ${t ? t.id + ' ' + t.title : ''}`);
+      }
+      return;
+    }
+    case 'report': { const r = await call('GET', '/api/report?aud=' + (sub ?? 'plain')); return console.log(typeof r === 'string' ? r : r.text ?? JSON.stringify(r, null, 2)); }
+    case 'health': {
+      const s = await call('GET', '/api/snapshot');
+      for (const h of s.health.filter((h: any) => !['healthy'].includes(h.verdict))) console.log(`${h.session.padEnd(36)} ${h.verdict.padEnd(8)} ${h.title}  → ${h.suggest}`);
+      for (const o of s.overlaps) console.log(`overlap: ${o.title} (${o.a.session} and ${o.b.session}) → ${o.fix}`);
+      return;
+    }
     case 'task': {
       if (sub === 'add') {
         const t = await call('POST', '/api/tasks', { title: a1, ask: flags.ask, requester: flags.from, source: flags.source, sourceUrl: flags.url, direction: flags.direction, session: flags.session, prio: flags.prio });
         return console.log(t.id);
       }
       if (sub === 'link') { await call('PATCH', `/api/tasks/${a1}`, { sourceUrl: a2, direction: flags.direction, who }); return console.log(`${a1} linked`); }
+      if (sub === 'show') { const d = await call('GET', `/api/tasks/${a1}`); return console.log(JSON.stringify(d, null, 2)); }
+      if (sub === 'send') { await call('POST', `/api/tasks/${a1}/dispatch`, {}); return console.log(`${a1}: brief sent`); }
+      if (sub === 'update') {
+        const patch: any = { who };
+        if (flags.prio) patch.prio = flags.prio;
+        if (flags.title) patch.title = flags.title;
+        if (flags.ask) patch.ask = flags.ask;
+        if (flags.direction) patch.direction = flags.direction;
+        if (flags.hold) patch.held = true;
+        if (flags.resume) patch.held = false;
+        await call('PATCH', `/api/tasks/${a1}`, patch);
+        return console.log(`${a1} updated`);
+      }
       if (sub === 'stage') { await call('PATCH', `/api/tasks/${a1}`, { stage: a2, who }); return console.log(`${a1} → ${a2}`); }
       if (sub === 'assign') { await call('PATCH', `/api/tasks/${a1}`, { session: a2, who }); return console.log(`${a1} → ${a2}`); }
       if (sub === 'note') { await call('POST', `/api/tasks/${a1}/events`, { src: flags.src ?? 'Session', who, text: a2 }); return console.log('noted'); }
@@ -96,20 +212,31 @@ async function main() {
     }
     case 'slack': {
       if (sub === 'sent') { await call('POST', `/api/slack/${a1}/sent`, {}); return console.log('marked sent'); }
+      if (sub === 'approve') { await call('POST', `/api/slack/${a1}/approve`, {}); return console.log('approved; the owning session will post it'); }
       await call('POST', `/api/tasks/${sub}/slack`, { who, text: a1, kind: flags.kind ?? 'sent', url: flags.url });
       return console.log('saved');
     }
     case 'promise': {
       if (sub === 'link') { await call('PATCH', `/api/promises/${a1}`, { url: a2, direction: flags.direction, who }); return console.log(`promise ${a1} linked`); }
+      if (sub === 'list') {
+        const s = await call('GET', '/api/snapshot');
+        for (const p of s.promises.filter((p: any) => !flags.open || p.state !== 'kept')) console.log(`${String(p.id).padEnd(5)} ${p.state.padEnd(7)} to ${p.to.padEnd(18)} ${p.taskId ?? ''}  "${p.said}"`);
+        return;
+      }
+      if (sub === 'state') { await call('PATCH', `/api/promises/${a1}`, { state: a2 }); return console.log(`promise ${a1}: ${a2}`); }
       const p = await call('POST', '/api/promises', { said: sub, to: flags.to, where: flags.where, keptWhen: flags.when, taskId: flags.task, dueAt: flags.due, url: flags.url, direction: flags.direction });
       return console.log('promise ' + p.id);
     }
     case 'need': {
+      if (sub === 'answer') { await call('POST', `/api/needs/${a1}/answer`, { answer: a2 }); return console.log('answered (sent to the session in 10 seconds)'); }
+      if (sub === 'undo') { await call('POST', `/api/needs/${a1}/undo`, {}); return console.log('taken back'); }
       const n = await call('POST', '/api/needs', { title: sub, answers: (flags.answers ?? '').split(',').map((s) => s.trim()).filter(Boolean), kind: flags.kind, body: flags.body, session: flags.session ?? process.env.SHIFTBOSS_SESSION, taskId: flags.task });
       return console.log('asked, item ' + n.id);
     }
     case 'intake': {
       if (sub === 'begin') return console.log(JSON.stringify(await call('POST', '/api/intake/begin', {}), null, 1));
+      if (sub === 'run') { await call('POST', '/api/intake/run', {}); return console.log('asked the intake for a pass now'); }
+      if (sub === 'resolve') { await call('POST', `/api/intake/${a1}/resolve`, {}); return console.log('dismissed'); }
       if (sub === 'checkpoint') { await call('POST', '/api/intake/checkpoint', { readUntil: a1 }); return console.log('checkpoint saved: ' + a1); }
       if (sub === 'pause') { const st = await call('POST', '/api/intake/pause', { until: flags.until }); return console.log(st.resumeAt ? 'paused until ' + st.resumeAt : 'paused'); }
       if (sub === 'resume') { await call('POST', '/api/intake/resume', { catchUp: flags['from-now'] === undefined }); return console.log(flags['from-now'] === undefined ? 'resumed, catching up' : 'resumed from now'); }
@@ -117,10 +244,22 @@ async function main() {
       return console.log('logged');
     }
     case 'audit': {
+      if (sub === 'correct') { await call('POST', `/api/audit/${a1}/correct`, { note: a2 }); return console.log('marked corrected'); }
       await call('POST', '/api/audit', { where: flags.where, channel: flags.channel, text: flags.text, by: flags.by ?? who, approval: flags.approval });
       return console.log('logged');
     }
     case 'monitor': {
+      if (['pause', 'resume', 'stop'].includes(sub)) { await call('PATCH', `/api/monitors/${a1}`, { action: sub }); return console.log(`monitor ${a1}: ${sub}`); }
+      if (sub === 'check') { const r = await call('POST', `/api/monitors/${a1}/check-now`, {}); return console.log(r.message ?? 'check queued'); }
+      if (sub === 'edit') {
+        const e: any = {};
+        if (flags.title) e.title = flags.title;
+        if (flags.prompt) e.prompt = flags.prompt;
+        if (flags.days) e.durationDays = Number(flags.days);
+        if (flags.every) e.intervalHours = Number(flags.every);
+        await call('PATCH', `/api/monitors/${a1}`, e);
+        return console.log(`monitor ${a1} updated`);
+      }
       if (sub === 'add') {
         if (!a1) throw new Error('usage: shiftboss monitor add "<title>" --prompt TEXT --days N --every H');
         const m = await call('POST', '/api/monitors', { title: a1, prompt: flags.prompt, durationDays: Number(flags.days), intervalHours: Number(flags.every),
@@ -186,6 +325,11 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
       break;
     }
     case 'session': {
+      if (sub === 'prompt') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/prompt`, { text: a2 }); return console.log('sent to ' + a1); }
+      if (sub === 'interrupt') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/interrupt`, {}); return console.log('interrupted ' + a1); }
+      if (sub === 'screen') { const r = await call('GET', `/api/sessions/${encodeURIComponent(a1)}/screen`); return console.log(r.text); }
+      if (sub === 'lane') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/meta`, { lane: a2 ?? '', ...(flags.slots ? { slots: Number(flags.slots) } : {}) }); return console.log(`${a1}: lane saved`); }
+      if (sub === 'cancel-replace') { await call('POST', `/api/replacements/${a1}/cancel`, {}); return console.log('replacement cancelled'); }
       if (sub === 'outside') {
         const rows = await call('GET', '/api/outside-sessions?days=' + (Number(flags.days) || 14));
         if (!rows.length) return console.log('No Claude sessions outside herdr in that time.');

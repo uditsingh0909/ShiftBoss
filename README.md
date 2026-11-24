@@ -597,6 +597,25 @@ prompt: read the handoff, check the old transcript if unclear, register with `my
 20 minutes without a complete handoff it shows as stalled. The old session is never closed: you close it.
 A session sitting at a prompt is never typed into; the request waits until it moves on.
 
+### Everything works from Claude too
+
+Anything you can do in ShiftBoss, a Claude session can do for you through the MCP tools or the CLI, and you can
+always do it by hand in the UI. `shiftboss help` lists every command; the MCP server has a tool for each
+(`tasks_list`, `task_update`, `task_send`, `promises_list`, `promise_update`, `needs_list`, `need_answer`,
+`approval_decide`, `mode_set`, `settings_get`, `settings_set`, `sessions_list`, `session_prompt`,
+`session_interrupt`, `session_screen`, `session_lane`, `session_spawn_many`, `replacement_cancel`, `monitor_update`,
+`intake_run`, `intake_pause`, `thread_dismiss`, `slack_approve`, `audit_log`, `report_get`, `health_get`,
+`instructions_update`, `update_check`, plus the ones above).
+
+Two kinds of action differ:
+- **Things ShiftBoss does to sessions** (send a brief, start, replace, prompt or stop a session, an intake pass)
+  go through your [mode](#modes-how-much-shiftboss-does-on-its-own), whoever asks.
+- **Your decisions** (answering Needs you, approving held actions or Slack drafts, the mode, settings) need
+  `owner_asked: true` (MCP) or `--as-owner` (CLI): a session sets it only when you asked it to in the
+  conversation. The feed shows "<session> on your behalf: …" for each one.
+
+`bun test/mcp-check.ts` drives the MCP server as a real client against a running ShiftBoss (reads only).
+
 ## HTTP API
 
 Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET needs the header
