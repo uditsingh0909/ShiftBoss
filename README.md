@@ -94,7 +94,7 @@ launcher below is Windows-only.
 ## Install
 
 ```bash
-git clone https://github.com/uditsingh0909/shiftboss.git
+git clone https://github.com/uditsingh0909/ShiftBoss.git shiftboss
 cd shiftboss
 bun install
 cp shiftboss.config.example.json shiftboss.config.json   # then edit it, see below
