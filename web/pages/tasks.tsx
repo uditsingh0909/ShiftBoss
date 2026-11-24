@@ -66,7 +66,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
       <Hero eyebrow="Dispatcher" live title={`${inFlight} in flight.`} sub={`${snap.tasks.filter((t) => t.stage === 1).length} queued, ${snap.tasks.filter((t) => t.stage === 0).length} waiting for triage.`}>
         <Seg label="View" value={view} options={['Board', 'List'] as const} onChange={setView} />
         <Seg label="Filter" value={filter} options={['All', 'Inbox', 'P1', 'Unassigned', 'Mine to ship'] as const} onChange={setFilter} />
-        <button type="button" className="pill w" onClick={() => setAdding(!adding)}>New task<Arrow dark /></button>
+        <button type="button" className="pill w tour-newtask" onClick={() => setAdding(!adding)}>New task<Arrow dark /></button>
       </Hero>
       {adding && <NewTask onDone={() => setAdding(false)} />}
       {ready.length > 0 && !snap.settings.switches.autoDispatch && (
@@ -182,7 +182,7 @@ export function TaskPage({ id }: { id: string }) {
           </Card>
         </div>
 
-        <Card span={7}>
+        <Card span={7} className="tour-activity">
           <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}><span className="label">Activity</span><span className="mono faint" style={{ fontSize: 12 }}>{d.events.length} events</span>
             <span style={{ marginLeft: 'auto' }}><Seg label="Source" value={src} options={['All', 'Slack', 'GitHub', 'Session', 'ShiftBoss'] as const} onChange={setSrc} /></span></div>
           <div className="col divide scrollbox" style={{ maxHeight: 520 }}>
@@ -202,7 +202,7 @@ export function TaskPage({ id }: { id: string }) {
             <button type="submit" className="pill sm" disabled={!note.trim()}>Add</button>
           </form>
         </Card>
-        <Card span={5}>
+        <Card span={5} className="tour-slack">
           <div className="row" style={{ justifyContent: 'space-between' }}><span className="label">Slack thread</span><span className="mono faint" style={{ fontSize: 12 }}>{sent} sent</span></div>
           <div className="col scrollbox" style={{ gap: 12, maxHeight: 560 }}>
           {d.slack.map((m) => {

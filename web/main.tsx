@@ -4,6 +4,7 @@ import { C, Dot, href, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap 
 import { Audit, NeedsYou, Promises } from './pages/decide';
 import { Report, SettingsPage } from './pages/ops';
 import { Welcome } from './pages/welcome';
+import { replayTour, Tour } from './tour';
 import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
@@ -39,6 +40,7 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true" style={{ flex: 'none' }}><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4-4" /></svg>
           <span className="x">Search or run a command</span><span className="x" style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '1px 6px' }}>⌘K</span>
         </button>
+        <button type="button" onClick={replayTour} aria-label="Show this page's tour" title="Show this page's tour" className="row" style={{ justifyContent: 'center', width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', cursor: 'pointer', color: '#F4F4F5', fontSize: 14 }}>?</button>
         <a href={href('settings')} aria-label="Settings" aria-current={top === 'settings' ? 'page' : undefined} className="row" style={{ justifyContent: 'center', width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: top === 'settings' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F4F4F5" strokeWidth="1.25" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
         </a>
@@ -163,6 +165,7 @@ function App() {
       <main key={route.join('/')}>{page}</main>
       <Nav route={route} onSearch={() => setPalette(true)} connected={connected} />
       {palette && <Palette onClose={() => setPalette(false)} />}
+      {snap && <Tour page={top === '' && !(!snap.onboarding.doneAt && !snap.tasks.length) ? 'home' : top || 'welcome'} />}
       <Toaster />
     </SnapshotCtx.Provider>
   );

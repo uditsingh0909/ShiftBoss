@@ -36,6 +36,8 @@ const browser = await chromium.launch({ executablePath: findChrome(), headless: 
 const failures: string[] = [];
 for (const width of [1920, 390]) {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 1080 } });
+  // Guided tours would cover the screenshots; mark every page's tour as seen.
+  await page.addInitScript(() => localStorage.setItem('shiftboss-tour-seen', JSON.stringify(['home', 'tasks', 'task', 'needs', 'promises', 'intake', 'session', 'settings', 'welcome'])));
   const errs: string[] = [];
   page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
@@ -70,6 +72,20 @@ for (const width of [1920, 390]) {
       }
     }
   }
+  await page.close();
+}
+// The tour shows on a first visit and goes away with Skip.
+{
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.goto(BASE + '/#/tasks');
+  try {
+    await page.locator('.tour-card').waitFor({ timeout: 6000 });
+    await page.screenshot({ path: join(OUT, 'tour-1920.png') });
+    await page.getByRole('button', { name: 'Skip' }).click();
+    await page.reload();
+    await page.waitForTimeout(2500);
+    if (await page.locator('.tour-card').count()) failures.push('tour: shows again after Skip');
+  } catch { failures.push('tour: did not show on a first visit to Tasks'); }
   await page.close();
 }
 await browser.close();

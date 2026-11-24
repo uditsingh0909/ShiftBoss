@@ -64,7 +64,7 @@ function Alerts() {
     return () => clearInterval(t);
   }, [n, hold]);
   if (!n) return (
-    <div className="rise row" style={{ gap: 10, padding: '12px 18px', border: '1px solid var(--line)', borderRadius: 999, alignSelf: 'flex-start' }}>
+    <div className="rise row" aria-label="Needs attention" style={{ gap: 10, padding: '12px 18px', border: '1px solid var(--line)', borderRadius: 999, alignSelf: 'flex-start' }}>
       <Dot color={C.green} /><span style={{ fontSize: 13 }} className="dim">All clear: nothing needs you, no health issues, no overlaps.</span>
     </div>
   );
@@ -149,7 +149,7 @@ export function CommandCenter() {
           <h1 className="hero">{snap.sessions.length} sessions running.<br /><span className="faint">{blocked.length} need{blocked.length === 1 ? 's' : ''} you, {near.length} near the limit.</span></h1>
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
             <button type="button" className="pill sm w" aria-expanded={spawning} onClick={() => setSpawning(!spawning)}>+ New session</button>
           </div>
@@ -161,7 +161,7 @@ export function CommandCenter() {
 
       <section className="grid12">
         {hero ? (
-          <Card span={8} className="stretch" tone={hero.status === 'blocked' ? 'amber' : undefined} pad={28}>
+          <Card span={8} className="stretch tour-lead" tone={hero.status === 'blocked' ? 'amber' : undefined} pad={28}>
             <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
               <span className="eyebrow" style={{ borderColor: statusColor(hero.status), color: statusColor(hero.status) }}>{hero === lead ? (hero.status === 'blocked' ? 'Lead · needs you' : 'Lead') : hero.status === 'blocked' ? 'Needs you' : 'Fullest context'}</span>
               <span className="mono dim" style={{ fontSize: 12 }}>{hero.name} · {hero.model ?? 'model unknown'}</span>
@@ -207,7 +207,7 @@ export function CommandCenter() {
             ))}
             <span className="faint" style={{ fontSize: 12 }}>{fmtTok(L.fiveHourTokens)} tokens in the last 5 hours</span>
           </Card>
-          <Card span={4} delay={200} tone={snap.intakeState.paused ? 'amber' : undefined}>
+          <Card span={4} delay={200} className="tour-intake" tone={snap.intakeState.paused ? 'amber' : undefined}>
             <IntakeControl compact />
           </Card>
         </div>
@@ -285,7 +285,7 @@ export function SessionPage({ name }: { name: string }) {
           <button type="button" className="pill" onClick={() => post('interrupt', {}, 'Interrupted ' + s.name)}>Interrupt</button>
           <button type="button" className="pill" onClick={() => post('focus', {}, 'Opened in herdr')}>Open in herdr</button>
           <button type="button" className="pill" onClick={() => act(async () => setScreen((await api('GET', `/api/sessions/${encodeURIComponent(s.name)}/screen`)).text), 'Screen loaded')}>Raw screen</button>
-          <button type="button" className={'pill' + (s.contextPct >= th.replace ? ' r' : '')} onClick={() => post('prompt', { text: replaceText }, 'Asked ' + s.name + ' to write its handoff')}>Prepare replace</button>
+          <button type="button" className={'pill tour-replace' + (s.contextPct >= th.replace ? ' r' : '')} onClick={() => post('prompt', { text: replaceText }, 'Asked ' + s.name + ' to write its handoff')}>Prepare replace</button>
         </div>
       </section>
 
@@ -306,7 +306,7 @@ export function SessionPage({ name }: { name: string }) {
             <div className="row" style={{ gap: 10 }}><Dot color={C.green} blink={s.status === 'working'} /><span style={{ fontWeight: 500 }}>{screen ? 'Raw screen · refreshes every 3 s' : 'Live output'}</span>
               <span className="mono faint" style={{ marginLeft: 'auto', fontSize: 12 }}>{screen ? <button type="button" className="pill sm" onClick={() => setScreen(null)}>Back to live</button> : 'from the transcript · ' + s.lines.length + ' lines'}</span></div>
             {screen ? <pre className="term" style={{ height: 460, margin: 0, padding: 18, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{screen}</pre> : <Lines s={s} n={60} height={460} stamps />}
-            <form className="row" style={{ gap: 10, padding: 6, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: '#070707' }} onSubmit={(e) => { e.preventDefault(); void send(); }}>
+            <form aria-label="Send a prompt" className="row" style={{ gap: 10, padding: 6, borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: '#070707' }} onSubmit={(e) => { e.preventDefault(); void send(); }}>
               <label htmlFor="prompt" className="faint" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>Prompt</label>
               <input id="prompt" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={`Message ${s.name} · arrives in its herdr pane as your next prompt`}
                 style={{ flex: 1, height: 40, padding: '0 16px', border: 'none', background: 'transparent', fontSize: 14, outline: 'none' }} />
