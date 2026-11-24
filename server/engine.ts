@@ -8,7 +8,7 @@ import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
-import { contains, fetchPr, targetStage, taskIdsIn } from './github';
+import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
 import { UNDO_MS } from './api';
 
@@ -256,18 +256,16 @@ export class Engine {
     let merged: MergedPr[] = [];
     let freeze: boolean | null = null;
     if (this.cfg.releaseRepo) {
+      // gh() kills a hung gh after 15 s and drains both streams, so a stuck auth prompt cannot pile up processes.
       try {
-        const p = Bun.spawn(['gh', 'pr', 'list', '--repo', this.cfg.releaseRepo, '--state', 'merged', '--limit', '15', '--json', 'number,title,author,mergedAt,url'], { stdout: 'pipe', stderr: 'pipe' });
-        const out = await new Response(p.stdout).text();
-        if ((await p.exited) === 0) merged = JSON.parse(out).map((x: any) => ({ number: x.number, title: x.title, author: x.author?.login ?? '', mergedAt: x.mergedAt, url: x.url }));
-      } catch { /* gh missing */ }
+        const out = await gh(['pr', 'list', '--repo', this.cfg.releaseRepo, '--state', 'merged', '--limit', '15', '--json', 'number,title,author,mergedAt,url']);
+        merged = JSON.parse(out).map((x: any) => ({ number: x.number, title: x.title, author: x.author?.login ?? '', mergedAt: x.mergedAt, url: x.url }));
+      } catch { /* gh missing, offline or timed out */ }
     }
     if (this.cfg.freezeVar) {
       try {
-        const p = Bun.spawn(['gh', 'variable', 'get', this.cfg.freezeVar.name, '--repo', this.cfg.freezeVar.repo], { stdout: 'pipe', stderr: 'pipe' });
-        const out = (await new Response(p.stdout).text()).trim();
-        if ((await p.exited) === 0) freeze = out.toLowerCase() === 'true';
-      } catch { /* gh missing */ }
+        freeze = (await gh(['variable', 'get', this.cfg.freezeVar.name, '--repo', this.cfg.freezeVar.repo])).trim().toLowerCase() === 'true';
+      } catch { /* gh missing, offline or timed out */ }
     }
     this.releases = { envs, merged, freeze };
     this.emit();
