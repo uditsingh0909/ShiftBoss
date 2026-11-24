@@ -10,6 +10,7 @@ import { HerdrError } from './herdr';
 import { NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
+import { checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
@@ -248,21 +249,29 @@ export function makeApi(engine: Engine) {
         const first = optStr(b.prompt, 8000)?.trim();
         engine.pushFeed('you', `starting session ${name}`);
         // herdr waits for Claude to be ready (several seconds); answer now and report the result in the feed.
-        void (async () => {
-          try {
-            const pane = await engine.herdr.spawnClaude({ name, cwd, model: model || undefined, workspace: engine.store.settings().herdrWorkspace || undefined });
-            if (first) await engine.herdr.prompt(pane, first);
-            engine.pushFeed('shiftboss', `session ${name} is ready${first ? ' and has its first prompt' : ''}`);
-          } catch (e) {
-            const msg = (e as Error).message;
-            // A folder Claude has not seen before asks "trust this folder?". That is the owner's call:
-            // ShiftBoss never answers it. The pane shows up as blocked and lands in Needs you.
-            if (/agent_not_ready|blocked during startup/.test(msg)) engine.pushFeed('shiftboss', `session ${name} started but is waiting for you in herdr (a startup question, such as trusting the folder)${first ? '. Send the first prompt once it is ready' : ''}`);
-            else engine.pushFeed('shiftboss', `could not start session ${name}: ${msg.slice(0, 200)}`);
-          }
-        })();
+        // A folder Claude has not seen before asks "trust this folder?": ShiftBoss never answers it (see spawnOne).
+        void engine.spawnOne({ name, cwd, model: model ?? null, prompt: first ?? null });
         return done(json({ ok: true, name }, 202));
       }
+      if (p === '/api/sessions/spawn-many' && write) {
+        // Start up to SPAWN_MANY_CAP sessions, one after another. Every row is checked like a single
+        // spawn before any starts, so a typo never leaves half a batch running.
+        const b = await body<any>(req);
+        const specs = checkSpawnMany(b.sessions, engine.sessions.map((x) => x.name));
+        engine.spawnMany(specs);
+        return done(json({ ok: true, names: specs.map((x) => x.name) }, 202));
+      }
+      if (p === '/api/sessions/replace' && write) {
+        const b = await body<any>(req);
+        const names: string[] = Array.isArray(b.sessions) ? [...new Set<string>(b.sessions.filter((x: unknown) => typeof x === 'string' && x.trim()).map((x: string) => x.trim()))] : [];
+        if (!names.length) return json({ error: 'Pick at least one session.' }, 400);
+        if (names.length > SPAWN_MANY_CAP) return json({ error: `At most ${SPAWN_MANY_CAP} sessions at once.` }, 400);
+        const results = await engine.startReplacements(names);
+        if (!results.some((x) => x.id)) return done(json({ error: results.map((x) => x.error).join('; '), results }, 400));
+        return done(json({ results }, 202));
+      }
+      r = m(/^\/api\/replacements\/(\d+)\/cancel$/);
+      if (r && write) { engine.cancelReplacement(Number(r[1])); return done(json({ ok: true })); }
       // ----- first-run onboarding -----
       if (p === '/api/onboarding' && req.method === 'GET') {
         // Everything a setup run (Claude, the CLI or the Get started screen) needs to decide the next step.

@@ -178,4 +178,13 @@ server.registerTool('session_spawn', {
   inputSchema: { name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku']).optional(), prompt: z.string().max(8000).optional() },
 }, wrap(async ({ name, cwd, model, prompt }) => { await call('POST', '/api/sessions/spawn', { name, cwd, model: model ?? null, prompt: prompt ?? null }); return `starting ${name}; watch the ShiftBoss feed for "ready" or "waiting for you"`; }));
 
+server.registerTool('session_replace', {
+  title: 'Replace sessions through a handoff',
+  description: 'For each named session: ShiftBoss asks it to write a handoff file with fixed sections, waits until the file is complete, starts a fresh <name>-vN in the same folder with the same model, moves its open tasks and lane to the new name, and gives the new session its first prompt (read the handoff, register with my_tasks, continue). The old session is never closed; the owner does that. Use it for sessions near their context limit. Do not use it on yourself unless the owner asked.',
+  inputSchema: { sessions: z.array(z.string().min(1).max(100)).min(1).max(20) },
+}, wrap(async ({ sessions }) => {
+  const r = await call('POST', '/api/sessions/replace', { sessions });
+  return r.results.map((x: any) => (x.error ? `${x.name}: could not start (${x.error})` : `${x.name}: asked for its handoff; ${x.newName} starts once it is written`)).join('\n');
+}));
+
 await server.connect(new StdioServerTransport());

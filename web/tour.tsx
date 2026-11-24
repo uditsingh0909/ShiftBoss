@@ -37,7 +37,7 @@ const TOURS: Record<string, TourStep[]> = {
   ],
   session: [
     { sel: 'form[aria-label="Send a prompt"]', title: 'Talk to it', text: 'Sends a prompt to this session in herdr, as if you typed it there.' },
-    { sel: '.tour-replace', title: 'Before it fills up', text: 'Prepare replace asks it to write a handoff so a fresh session can carry on.' },
+    { sel: '.tour-replace', title: 'Before it fills up', text: 'Replace asks it to write a handoff, then starts a fresh session that reads it and takes over its tasks. The old one stays open for you to close.' },
   ],
   settings: [
     { sel: '[aria-label="General"]', title: 'Settings in sections', text: 'Each section saves with the Save button at the top. Lanes and slots save on their own.' },

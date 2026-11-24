@@ -2,3 +2,6 @@ node_modules/
 data/
 shiftboss.config.json
 *.log
+
+# Claude Code worktrees and local settings
+/.claude/

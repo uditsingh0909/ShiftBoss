@@ -159,6 +159,33 @@ export interface Onboarding {
   backfillFrom: string | null;
 }
 
+/**
+ * Replacing a session through a handoff. pending: waiting to ask (the old session is at a prompt);
+ * requested: asked for the handoff; stalled: no complete handoff after the timeout (still watched);
+ * ready: handoff complete; starting / started: the new session is starting / up; moved: tasks and
+ * lane moved to the new name, first prompt not delivered yet; done: the new session has its first
+ * prompt. The old session is never closed by ShiftBoss.
+ */
+export type ReplacementState = 'pending' | 'requested' | 'stalled' | 'ready' | 'starting' | 'started' | 'moved' | 'done' | 'failed' | 'cancelled';
+export interface Replacement {
+  id: number;
+  oldName: string;
+  newName: string;
+  cwd: string;
+  model: string | null;
+  handoffPath: string;
+  sessionId: string | null;
+  transcriptPath: string | null;
+  state: ReplacementState;
+  startedAt: string;
+  updatedAt: string;
+  requestedAt: string | null;
+  promptedAt: string | null;
+  error: string | null;
+  /** Section headings (or the end marker) the handoff file still lacks; empty when unknown or complete. */
+  missing: string[];
+}
+
 export interface Snapshot {
   now: string;
   herdrOk: boolean;
@@ -178,4 +205,5 @@ export interface Snapshot {
   onboarding: Onboarding;
   owner: string;
   feed: { at: string; who: string; text: string }[];
+  replacements: Replacement[];
 }

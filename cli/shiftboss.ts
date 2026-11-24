@@ -28,6 +28,11 @@ Setup and onboarding (the same steps as the Get started screen, which updates li
   shiftboss setup backfill <1|2|3|7|14>           send the intake back that many days
   shiftboss setup done                            mark setup finished
   shiftboss session spawn <name> --cwd DIR [--model sonnet|opus|haiku] [--prompt TEXT]
+  shiftboss session spawn-many <file.json>       start up to 20, one after another:
+                                                 [{ "name", "cwd", "model"?, "prompt"? }, …] (or { "sessions": [...] })
+  shiftboss session replace <name...>            handoff, then a fresh <name>-vN takes over its tasks
+                                                 (the old sessions stay open for you to close)
+  shiftboss session replacements                 progress of replacements under way
 `;
 
 function parse(argv: string[]) {
@@ -140,6 +145,26 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
       if (sub === 'spawn') {
         await call('POST', '/api/sessions/spawn', { name: a1, cwd: flags.cwd, model: flags.model || null, prompt: flags.prompt || null });
         return console.log(`starting ${a1}; it appears in herdr within a few seconds (a new folder asks "trust this folder?" there first)`);
+      }
+      if (sub === 'spawn-many') {
+        if (!a1) throw new Error('usage: shiftboss session spawn-many <file.json>');
+        const data = JSON.parse(await Bun.file(a1).text());
+        const sessions = Array.isArray(data) ? data : data?.sessions;
+        const r = await call('POST', '/api/sessions/spawn-many', { sessions });
+        return console.log(`starting ${r.names.length} one after another: ${r.names.join(', ')}\nResults arrive in the ShiftBoss feed (a new folder asks "trust this folder?" in herdr first).`);
+      }
+      if (sub === 'replace') {
+        const names = pos.slice(2);
+        if (!names.length) throw new Error('usage: shiftboss session replace <name...>');
+        const r = await call('POST', '/api/sessions/replace', { sessions: names });
+        for (const x of r.results) console.log(x.error ? `${x.name}: could not start (${x.error})` : `${x.name}: asked for its handoff; ${x.newName} starts once it is written`);
+        return;
+      }
+      if (sub === 'replacements') {
+        const s = await call('GET', '/api/snapshot');
+        if (!s.replacements.length) return console.log('No replacements in the last day.');
+        for (const x of s.replacements) console.log(`${String(x.id).padStart(3)}  ${x.oldName} -> ${x.newName}  ${x.state}${x.error ? '  (' + x.error + ')' : ''}${x.state === 'done' ? `  ${x.oldName} can be closed` : ''}`);
+        return;
       }
       break;
     }

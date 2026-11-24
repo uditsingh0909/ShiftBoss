@@ -11,6 +11,8 @@ import { mergeSettings } from '../server/settings';
 import { checkRequest, safeUrl } from '../server/guard';
 import { applyLine, type TranscriptState } from '../server/transcripts';
 import type { Session } from '../shared/types';
+import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
+import { tmpdir } from 'node:os';
 
 const mem = () => new Store('', ':memory:');
 const session = (over: Partial<Session> = {}): Session => ({
@@ -328,5 +330,97 @@ describe('audit fixes', () => {
     expect(s.getTask(again.id)).toMatchObject({ stage: 4, prio: 'P1' });
     const late = s.addPromise({ to: 'Ann', said: 'by Monday', taskId: t.id, dueAt: new Date(Date.now() - 864e5).toISOString() });
     expect(s.listPromises().find((p) => p.id === late.id)!.state).toBe('due');
+  });
+});
+
+describe('fleet: start many', () => {
+  const dir = tmpdir();
+  test('every row is checked like a single spawn, before any starts', () => {
+    const ok = checkSpawnMany([{ name: 'fix-1', cwd: dir, model: 'opus', prompt: ' go ' }, { name: 'fix-2', cwd: dir }], ['lead']);
+    expect(ok).toEqual([{ name: 'fix-1', cwd: dir, model: 'opus', prompt: 'go' }, { name: 'fix-2', cwd: dir, model: null, prompt: null }]);
+    expect(() => checkSpawnMany([{ name: 'a b', cwd: dir }], [])).toThrow('letters, digits');
+    expect(() => checkSpawnMany([{ name: 'lead', cwd: dir }], ['lead'])).toThrow('already running');
+    expect(() => checkSpawnMany([{ name: 'x1', cwd: dir }, { name: 'x1', cwd: dir }], [])).toThrow('listed twice');
+    expect(() => checkSpawnMany([{ name: 'x1', cwd: dir + '/no-such-folder-here' }], [])).toThrow('does not exist');
+    expect(() => checkSpawnMany([{ name: 'x1', cwd: dir, model: 'gpt' }], [])).toThrow('unknown model');
+    expect(() => checkSpawnMany([], [])).toThrow('at least one');
+    expect(() => checkSpawnMany(Array.from({ length: 21 }, (_, i) => ({ name: 'n' + i, cwd: dir })), [])).toThrow('At most 20');
+  });
+});
+
+describe('fleet: replace', () => {
+  test('next free -vN name', () => {
+    expect(baseName('lead-v3')).toBe('lead');
+    expect(baseName('billing')).toBe('billing');
+    expect(nextReplacementName('billing', ['billing', 'other'])).toBe('billing-v2');
+    expect(nextReplacementName('billing-v2', ['billing-v2'])).toBe('billing-v3');
+    expect(nextReplacementName('billing', ['billing', 'billing-v2', 'billing-v4'])).toBe('billing-v5');
+    expect(nextReplacementName('billing', ['billing', 'billing-api-v9'])).toBe('billing-v2'); // another base
+    expect(nextReplacementName('a'.repeat(40), []).length).toBeLessThanOrEqual(40);
+  });
+  test('model: exact id when known, else the family', () => {
+    expect(modelArg('claude-opus-5-5')).toBe('claude-opus-5-5');
+    expect(modelArg('Opus 4.5 (1M context)')).toBe('opus');
+    expect(modelArg('something else')).toBeNull();
+    expect(modelArg(null)).toBeNull();
+  });
+  test("handoff path: the session's own, else HANDOFF-<name>.md in its folder", () => {
+    expect(handoffPathFor('s1', 'C:/work', 'C:/handoffs/s1.md')).toBe('C:/handoffs/s1.md');
+    expect(handoffPathFor('s1', 'C:/work', null).replace(/\\/g, '/')).toBe('C:/work/HANDOFF-s1.md');
+  });
+  test('the handoff request names every section and the marker', () => {
+    const t = handoffRequest('Sam', 's1', 'C:/h/s1.md');
+    for (const h of HANDOFF_SECTIONS) expect(t).toContain('## ' + h);
+    expect(t).toContain(HANDOFF_MARKER);
+    expect(t).toContain('C:/h/s1.md');
+  });
+  test('a handoff is complete only with every heading and the final marker', () => {
+    const full = HANDOFF_SECTIONS.map((h) => `## ${h}\nnone\n`).join('\n') + '\n' + HANDOFF_MARKER + '\n';
+    expect(handoffCheck(full)).toEqual({ complete: true, missing: [] });
+    expect(handoffCheck(full.replace('## Promises owed', '## Promises'))).toEqual({ complete: false, missing: ['Promises owed'] });
+    expect(handoffCheck(full.replace(HANDOFF_MARKER, '')).missing).toEqual([HANDOFF_MARKER]);
+    // The marker must be the last line: a file still being written is not complete.
+    expect(handoffCheck(full + '\nmore notes').complete).toBe(false);
+    expect(handoffCheck(full.replace(HANDOFF_MARKER, '**HANDOFF COMPLETE**')).complete).toBe(true);
+    expect(handoffCheck('').missing.length).toBe(HANDOFF_SECTIONS.length + 1);
+  });
+  test('the replacement prompt points at the handoff, the transcript and my_tasks', () => {
+    const t = replacementPrompt({ newName: 's1-v2', oldName: 's1', handoffPath: 'C:/h/s1.md', transcriptPath: 'C:/t/x.jsonl', shiftbossCli: 'C:/sb/cli/shiftboss.ts' });
+    expect(t).toContain('C:/h/s1.md');
+    expect(t).toContain('C:/t/x.jsonl');
+    expect(t).toContain('my_tasks with session "s1-v2"');
+  });
+  test("store: rows, compare-and-set, and moving a session's state", () => {
+    const s = mem();
+    const r = s.addReplacement({ oldName: 's1', newName: 's1-v2', cwd: 'C:/work', model: 'opus', handoffPath: 'C:/h/s1.md', sessionId: 'abc', transcriptPath: null });
+    expect(r.state).toBe('pending');
+    expect(s.activeReplacementFor('s1')?.id).toBe(r.id);
+    expect(s.claimReplacement(r.id, ['pending'], 'requested')).toBe(true);
+    expect(s.claimReplacement(r.id, ['pending'], 'requested')).toBe(false); // only one caller wins
+    s.updateReplacement(r.id, { missing: ['Next steps'] });
+    expect(s.getReplacement(r.id)!.missing).toEqual(['Next steps']);
+    s.setMeta('s1', { lane: 'billing', slots: 3 });
+    const open = s.addTask({ title: 'Open', session: 's1' });
+    const told = s.addTask({ title: 'Told', session: 's1' });
+    s.updateTask(told.id, { stage: 6 });
+    const other = s.addTask({ title: 'Other', session: 's2' });
+    const q = s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 's1' });
+    const moved = s.moveSessionState('s1', 's1-v2');
+    expect(moved).toEqual({ tasks: [open.id], needs: 1 });
+    expect(s.getTask(open.id)!.session).toBe('s1-v2');
+    expect(s.getTask(told.id)!.session).toBe('s1'); // finished work stays as history
+    expect(s.getTask(other.id)!.session).toBe('s2');
+    expect(s.events(open.id)[0].text).toBe('Moved from s1 to s1-v2: s1 was replaced');
+    expect(s.listNeeds().find((n) => n.id === q.id)!.session).toBe('s1-v2');
+    expect(s.meta('s1-v2')).toEqual({ lane: 'billing', slots: 3, handoffPath: null });
+    expect(s.moveSessionState('s1', 's1-v2').tasks).toEqual([]); // safe to run twice
+    s.updateReplacement(r.id, { state: 'done' });
+    expect(s.activeReplacementFor('s1')).toBeNull();
+    expect(s.listReplacements().length).toBe(1); // finished today: still shown
+  });
+  test('the replacements table migration is safe to re-run', () => {
+    const s = mem();
+    (s as any).migrate();
+    expect(s.listReplacements()).toEqual([]);
   });
 });
