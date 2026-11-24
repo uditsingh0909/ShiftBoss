@@ -29,16 +29,16 @@ function NewTask({ onDone }: { onDone: () => void }) {
   );
 }
 
-export function Tasks({ openNew }: { openNew: boolean }) {
+export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean }) {
   const snap = useSnap()!;
-  const [view, setView] = useState<'Board' | 'List'>('Board');
-  const [filter, setFilter] = useState<'All' | 'P1' | 'Unassigned' | 'Mine to ship'>('All');
+  const [view, setView] = useState<'Board' | 'List'>(inbox ? 'List' : 'Board');
+  const [filter, setFilter] = useState<'All' | 'Inbox' | 'P1' | 'Unassigned' | 'Mine to ship'>(inbox ? 'Inbox' : 'All');
   const [adding, setAdding] = useState(openNew);
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const [ready, setReady] = useState<string[]>([]);
   useEffect(() => { api<string[]>('GET', '/api/ready').then(setReady).catch(() => setReady([])); }, [snap.now]);
-  const match = { All: () => true, P1: (t: Task) => t.prio === 'P1', Unassigned: (t: Task) => !t.session, 'Mine to ship': (t: Task) => t.stage >= 3 && t.stage <= 5 };
+  const match = { All: () => true, Inbox: (t: Task) => t.stage === 0, P1: (t: Task) => t.prio === 'P1', Unassigned: (t: Task) => !t.session, 'Mine to ship': (t: Task) => t.stage >= 3 && t.stage <= 5 };
   const list = snap.tasks.filter(match[filter]);
   const move = (id: string, stage: number) => act(() => api('PATCH', `/api/tasks/${id}`, { stage }), `${id} → ${STAGES[stage]}`);
   const inFlight = snap.tasks.filter((t) => t.stage >= 2 && t.stage <= 4).length;
@@ -52,6 +52,7 @@ export function Tasks({ openNew }: { openNew: boolean }) {
       <span className="row" style={{ gap: 8 }}>
         <Dot color={t.session ? C.fg : C.amber} /><span className="mono ellipsis dim" style={{ fontSize: 11, flex: 1 }}>{t.session ?? 'unassigned'}</span>
         <span className="mono faint" style={{ fontSize: 11 }}>{ago(t.updatedAt)}</span>
+        {t.sourceUrl && <a href={t.sourceUrl} target="_blank" rel="noreferrer" className="mono dim" style={{ fontSize: 11 }} aria-label={`Open ${t.id} in ${/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'its source'}`}>{/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'Link'} ↗</a>}
         {ready.includes(t.id) && <button type="button" className="pill sm w" style={{ height: 24, padding: '0 10px', fontSize: 11 }} onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Sent to ' + t.session)}>Send</button>}
         {t.stage < 6 && <button type="button" aria-label={`Move ${t.id} to ${STAGES[t.stage + 1]}`} onClick={() => move(t.id, t.stage + 1)} style={{ width: 24, height: 24, borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', cursor: 'pointer', fontSize: 12 }}>→</button>}
       </span>
@@ -62,7 +63,7 @@ export function Tasks({ openNew }: { openNew: boolean }) {
     <div className="page">
       <Hero eyebrow="Dispatcher" live title={`${inFlight} in flight.`} sub={`${snap.tasks.filter((t) => t.stage === 1).length} queued, ${snap.tasks.filter((t) => t.stage === 0).length} waiting for triage.`}>
         <Seg label="View" value={view} options={['Board', 'List'] as const} onChange={setView} />
-        <Seg label="Filter" value={filter} options={['All', 'P1', 'Unassigned', 'Mine to ship'] as const} onChange={setFilter} />
+        <Seg label="Filter" value={filter} options={['All', 'Inbox', 'P1', 'Unassigned', 'Mine to ship'] as const} onChange={setFilter} />
         <button type="button" className="pill w" onClick={() => setAdding(!adding)}>New task<Arrow dark /></button>
       </Hero>
       {adding && <NewTask onDone={() => setAdding(false)} />}
@@ -78,10 +79,10 @@ export function Tasks({ openNew }: { openNew: boolean }) {
           {STAGES.map((label, i) => {
             const cards = list.filter((t) => t.stage === i);
             return (
-              <div key={label} className="col" style={{ gap: 8, minWidth: 0, minHeight: 200, borderRadius: 18, padding: 4, outline: over === i ? '1px dashed rgba(255,255,255,0.3)' : 'none' }}
+              <div key={label} className="col stage-col" style={{ gap: 8, minWidth: 0, minHeight: 200, maxHeight: 'max(420px, calc(100vh - 300px))', overflowY: 'auto', borderRadius: 18, padding: 4, outline: over === i ? '1px dashed rgba(255,255,255,0.3)' : 'none' }}
                 onDragOver={(e) => { e.preventDefault(); setOver(i); }} onDragLeave={() => setOver(null)}
                 onDrop={(e) => { e.preventDefault(); if (dragId) void move(dragId, i); setOver(null); }}>
-                <div className="row" style={{ gap: 10, padding: '6px 4px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="row" style={{ gap: 10, padding: '6px 4px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: -4, zIndex: 1, background: '#050505' }}>
                   <Dot color={stageColor(i)} /><span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span><span className="mono faint" style={{ marginLeft: 'auto', fontSize: 12 }}>{cards.length}</span>
                 </div>
                 {cards.map(card)}
@@ -239,7 +240,7 @@ export function Intake() {
       <Hero eyebrow={'Intake · ' + (intakeSession ? intakeSession.name + ' · ' + (intakeSession.model ?? '') : 'no intake session running')} live={!!intakeSession}
         title={`${todays.length} messages read today.`} sub={`${todays.filter((i) => isTask(i.verdict)).length} became tasks.`}>
         <Seg label="Filter" value={filter} options={['All', 'Filed', 'To lead', 'Dropped'] as const} onChange={setFilter} />
-        <a className="pill" href={href('tasks')}>Open inbox<Arrow /></a>
+        <a className="pill" href={href('tasks', 'inbox')}>Open inbox<Arrow /></a>
       </Hero>
       <section className="grid12">
         <Card span={8} pad={12}>
@@ -248,7 +249,9 @@ export function Intake() {
               <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(m.at)}</span>
               <span className="mono dim ellipsis" style={{ width: 180, fontSize: 12, flex: 'none' }}>{m.src}</span>
               <span className="col" style={{ flex: 1, minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
-              {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
+              {m.url ? <a href={m.url} target="_blank" rel="noreferrer" className="pill sm" style={{ height: 28, fontSize: 11 }} aria-label={'Open in ' + (/slack\.com/.test(m.url) ? 'Slack' : 'source') + ': ' + m.text}>{/slack\.com/.test(m.url) ? 'Slack' : /mail\.google/.test(m.url) ? 'Gmail' : 'Open'} ↗</a>
+                : <span className="mono faint" style={{ fontSize: 11, width: 64, textAlign: 'center' }} title="The intake did not record a link for this one">no link</span>}
+              {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber, minWidth: 80, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, minWidth: 80, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
             </div>
           ))}
           {!snap.intake.length && <Empty text="Nothing logged yet. The intake session reports each message it reads with: foreman intake --src … --text … --verdict …" />}

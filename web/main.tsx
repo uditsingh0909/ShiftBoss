@@ -118,7 +118,7 @@ function App() {
   else if (top === 'roster') page = <Roster />;
   else if (top === 'health') page = <Health />;
   else if (top === 'overlap') page = <Overlap />;
-  else if (top === 'tasks') page = <Tasks openNew={a1 === 'new'} />;
+  else if (top === 'tasks') page = <Tasks openNew={a1 === 'new'} inbox={a1 === 'inbox'} />;
   else if (top === 'task' && a1) page = <TaskPage id={a1} />;
   else if (top === 'intake') page = <Intake />;
   else if (top === 'needs') page = <NeedsYou />;

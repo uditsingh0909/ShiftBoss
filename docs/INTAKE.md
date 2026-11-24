@@ -15,7 +15,8 @@ Each run, since your last run:
    Settings). Read every thread's replies before deciding anything is open. Read new Gemini
    meeting notes in Gmail.
 2. For each message, log it once:
-   `foreman intake --src "<channel>" --who "<name>" --text "<short quote>" --verdict "<verdict>"`
+   `foreman intake --src "<channel>" --who "<name>" --text "<short quote>" --verdict "<verdict>" --url "<Slack permalink or Gmail link>"`
+   Always pass `--url`: it is the "Open in Slack" link on the Intake screen.
    Verdicts: `filed T-n` (new task), `linked T-n` (adds to an existing task), `answered`
    (already handled in the thread), `dropped` (FYI, nothing to do), `to lead` (production,
    money, live customers, access, or anything you are unsure about).

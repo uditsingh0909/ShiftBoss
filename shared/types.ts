@@ -79,11 +79,12 @@ export interface Need {
   taskId: string | null;
   createdAt: string;
   answeredAt: string | null;
+  sentAt: string | null; // when the answer reached the session; null while it can still be undone
   auto: boolean; // created from a blocked herdr pane
 }
 
 export interface AuditEntry { id: number; at: string; where: 'Slack' | 'Jira' | 'GitHub' | 'Email'; channel: string; text: string; by: string; approval: string; corrected: boolean; note: string }
-export interface IntakeItem { id: number; at: string; src: string; who: string; text: string; verdict: string; taskId: string | null }
+export interface IntakeItem { id: number; at: string; src: string; who: string; text: string; verdict: string; taskId: string | null; url: string | null }
 export interface Decision { id: number; at: string; text: string }
 
 export interface HealthCard {

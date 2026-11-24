@@ -51,6 +51,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
     const cols = this.db.query('PRAGMA table_info(tasks)').all() as { name: string }[];
+    const ncols = this.db.query('PRAGMA table_info(needs)').all() as { name: string }[];
+    if (!ncols.some((c) => c.name === 'sent_at')) this.db.exec('ALTER TABLE needs ADD COLUMN sent_at TEXT');
+    const icols = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
+    if (!icols.some((c) => c.name === 'url')) this.db.exec('ALTER TABLE intake ADD COLUMN url TEXT');
     if (!cols.some((c) => c.name === 'ext_id')) {
       this.db.exec('ALTER TABLE tasks ADD COLUMN ext_id TEXT; CREATE UNIQUE INDEX IF NOT EXISTS tasks_ext_id ON tasks(ext_id);');
     }
@@ -146,7 +150,7 @@ export class Store {
   }
 
   // ---------- needs ----------
-  private rowNeed = (r: any): Need => ({ id: r.id, kind: r.kind, source: r.source, title: r.title, body: r.body, code: r.code, answers: JSON.parse(r.answers), answer: r.answer, session: r.session, taskId: r.task_id, createdAt: r.created_at, answeredAt: r.answered_at, auto: !!r.auto });
+  private rowNeed = (r: any): Need => ({ id: r.id, kind: r.kind, source: r.source, title: r.title, body: r.body, code: r.code, answers: JSON.parse(r.answers), answer: r.answer, session: r.session, taskId: r.task_id, createdAt: r.created_at, answeredAt: r.answered_at, sentAt: r.sent_at ?? null, auto: !!r.auto });
   listNeeds(includeAnswered = true): Need[] {
     return this.db.query(`SELECT * FROM needs ${includeAnswered ? '' : 'WHERE answer IS NULL'} ORDER BY id`).all().map(this.rowNeed);
   }
@@ -158,6 +162,22 @@ export class Store {
   answerNeed(id: number, answer: string): Need {
     this.db.query('UPDATE needs SET answer = ?, answered_at = ? WHERE id = ? AND answer IS NULL').run(answer, now(), id);
     return this.rowNeed(this.db.query('SELECT * FROM needs WHERE id = ?').get(id));
+  }
+  /** Answers older than `graceMs` that have not reached their session yet. */
+  pendingAnswers(graceMs: number): Need[] {
+    const cutoff = new Date(Date.now() - graceMs).toISOString();
+    return this.db.query('SELECT * FROM needs WHERE answer IS NOT NULL AND sent_at IS NULL AND auto = 0 AND answered_at <= ?').all(cutoff).map(this.rowNeed);
+  }
+  markSent(id: number) { this.db.query('UPDATE needs SET sent_at = ? WHERE id = ?').run(now(), id); }
+  /** Take an answer back: the item is open again. Returns what it was, so the caller can tell the session if it was already sent. */
+  undoAnswer(id: number): { was: Need } {
+    const r = this.db.query('SELECT * FROM needs WHERE id = ?').get(id);
+    if (!r) throw new Error('No item ' + id);
+    const was = this.rowNeed(r);
+    if (!was.answer) throw new Error('Not answered yet');
+    if (was.auto) throw new Error('Permission prompts are answered in herdr; there is nothing to undo here');
+    this.db.query('UPDATE needs SET answer = NULL, answered_at = NULL, sent_at = NULL WHERE id = ?').run(id);
+    return { was };
   }
   openAutoNeedFor(session: string): Need | null {
     const r = this.db.query('SELECT * FROM needs WHERE auto = 1 AND session = ? AND answer IS NULL ORDER BY id DESC LIMIT 1').get(session);
@@ -175,10 +195,10 @@ export class Store {
       .map((r: any) => ({ ...r, corrected: !!r.corrected }));
   }
   addIntake(i: Omit<IntakeItem, 'id' | 'at'>) {
-    this.db.query('INSERT INTO intake (at, src, who, text, verdict, task_id) VALUES (?, ?, ?, ?, ?, ?)').run(now(), i.src, i.who, i.text, i.verdict, i.taskId);
+    this.db.query('INSERT INTO intake (at, src, who, text, verdict, task_id, url) VALUES (?, ?, ?, ?, ?, ?, ?)').run(now(), i.src, i.who, i.text, i.verdict, i.taskId, i.url);
   }
   listIntake(limit = 200): IntakeItem[] {
-    return this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId FROM intake ORDER BY id DESC LIMIT ?').all(limit) as IntakeItem[];
+    return this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId, url FROM intake ORDER BY id DESC LIMIT ?').all(limit) as IntakeItem[];
   }
   intakeCountsByDay(days = 14): { day: string; read: number; filed: number }[] {
     return this.db.query(`SELECT substr(at, 1, 10) as day, count(*) as read, sum(CASE WHEN verdict LIKE 'filed%' THEN 1 ELSE 0 END) as filed

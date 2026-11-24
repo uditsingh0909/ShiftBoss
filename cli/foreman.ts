@@ -13,7 +13,7 @@ const HELP = `foreman: tell Foreman what happened
   foreman slack sent <message-id>
   foreman promise "<what was said>" --to NAME [--where CHANNEL] [--when "kept when…"] [--task T-n]
   foreman need "<question>" --answers "Yes,Not now" [--kind Decision|"Production write"|"Live customers"|Money|Access] [--body TEXT] [--session NAME] [--task T-n]
-  foreman intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" [--who NAME] [--task T-n]
+  foreman intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" [--who NAME] [--task T-n] [--url PERMALINK]
   foreman audit --text "<what was sent>" [--where Slack|Jira|GitHub|Email] [--channel C] [--by SESSION] [--approval TEXT]
   foreman decide "<what the lead decided>"
   foreman import <tasks.json>     (re-runnable: matched on extId)
@@ -71,7 +71,7 @@ async function main() {
       return console.log('asked, item ' + n.id);
     }
     case 'intake': {
-      await call('POST', '/api/intake', { src: flags.src, who: flags.who, text: flags.text, verdict: flags.verdict, taskId: flags.task });
+      await call('POST', '/api/intake', { src: flags.src, who: flags.who, text: flags.text, verdict: flags.verdict, taskId: flags.task, url: flags.url });
       return console.log('logged');
     }
     case 'audit': {

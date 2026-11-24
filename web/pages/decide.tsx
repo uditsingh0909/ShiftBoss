@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AuditEntry, Need, PromiseItem } from '../../shared/types';
-import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Seg, useSnap } from '../lib';
+import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSnap } from '../lib';
 
+const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const kindColor = (k: Need['kind']) => (k === 'Production write' || k === 'Live customers' || k === 'Money' ? C.red : C.amber);
 
@@ -11,7 +12,13 @@ function NeedBody({ n, onAnswered }: { n: Need; onAnswered?: () => void }) {
   const [busy, setBusy] = useState(false);
   const answer = async (a: string) => {
     setBusy(true);
-    await act(() => api('POST', `/api/needs/${n.id}/answer`, { answer: a }), n.auto ? 'Opened in herdr' : 'Answered: ' + a);
+    if (n.auto) await act(() => api('POST', `/api/needs/${n.id}/answer`, { answer: a }), 'Opened in herdr');
+    else {
+      try {
+        await api('POST', `/api/needs/${n.id}/answer`, { answer: a });
+        toast(`Answered: ${a} · sends in 10 s`, { label: 'Undo', run: () => void undoNeed(n.id) });
+      } catch (e) { toast((e as Error).message); }
+    }
     setBusy(false);
     if (!n.auto) onAnswered?.();
   };
@@ -116,7 +123,11 @@ export function NeedsYou() {
             {answered.map((n) => (
               <div key={n.id} className="col" style={{ gap: 4 }}>
                 <span className="ellipsis" style={{ fontSize: 13 }}>{n.title}</span>
-                <span className="mono" style={{ fontSize: 12 }}><span style={{ color: C.green }}>{n.answer}</span><span className="faint"> · {hhmm(n.answeredAt)}</span></span>
+                <span className="row mono" style={{ fontSize: 12, gap: 8 }}>
+                  <span style={{ color: C.green }}>{n.answer}</span><span className="faint">· {hhmm(n.answeredAt)} · {n.auto ? 'in herdr' : n.sentAt ? 'sent' : 'sending…'}</span>
+                  {!n.auto && <button type="button" className="pill sm" style={{ height: 26, marginLeft: 'auto', fontSize: 11 }} onClick={() => void undoNeed(n.id)}
+                    title={n.sentAt ? 'Opens it again and tells the session to ignore your answer' : 'Not sent yet: takes it back quietly'}>{n.sentAt ? 'Reopen' : 'Undo'}</button>}
+                </span>
               </div>
             ))}
             {!answered.length && <Empty text="None yet today." />}

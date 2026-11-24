@@ -68,6 +68,7 @@ export class Engine {
       }
       this.sessions = agents.map((a) => this.buildSession(a));
       this.syncNeeds();
+      await this.flushAnswers();
       this.dispatch(settings.switches.autoDispatch);
       this.emit();
     } finally {
@@ -126,6 +127,20 @@ export class Engine {
         this.pushFeed(s.name, 'needs your permission');
       } else if (s.status !== 'blocked' && open) {
         this.store.answerNeed(open.id, 'Answered in herdr');
+      }
+    }
+  }
+
+  /** Deliver answers whose undo window has passed. */
+  private async flushAnswers() {
+    for (const n of this.store.pendingAnswers(10_000)) {
+      const s = n.session ? this.sessions.find((x) => x.name === n.session) : null;
+      try {
+        if (s) await this.herdr.prompt(s.paneId, `Udit's answer to "${n.title}": ${n.answer}`);
+        this.store.markSent(n.id);
+        if (n.taskId) this.store.addEvent(n.taskId, 'Foreman', 'foreman', s ? `Sent the answer to ${s.name}` : 'Answer recorded; no running session to send it to');
+      } catch (e) {
+        this.pushFeed('foreman', `could not send answer to ${n.session}: ${(e as Error).message}`);
       }
     }
   }

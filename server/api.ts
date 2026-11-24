@@ -16,6 +16,7 @@ function str(v: unknown, field: string, max = 4000): string {
   return v.trim();
 }
 const optStr = (v: unknown, max = 4000) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
+export const UNDO_MS = 10_000;
 const STAGE_WORDS: Record<string, Stage> = { inbox: 0, queued: 1, progress: 2, pr: 3, dev: 4, live: 5, told: 6 };
 
 export function makeApi(engine: Engine) {
@@ -177,12 +178,22 @@ export function makeApi(engine: Engine) {
           await engine.herdr.focus(session(n.session!).paneId);
           return json({ ok: true, focused: true });
         }
-        const s = n.session ? engine.sessions.find((x) => x.name === n.session) : null;
-        if (s) await engine.herdr.prompt(s.paneId, `Udit's answer to "${n.title}": ${answer}`);
+        // Held for UNDO_MS so it can be taken back; the engine sends it to the session after that.
         const saved: Need = store.answerNeed(n.id, answer);
         if (n.taskId) store.addEvent(n.taskId, 'Foreman', 'you', `Answered "${n.title}": ${answer}`);
         engine.pushFeed('you', `answered ${n.title}: ${answer}`);
-        return done(json(saved));
+        return done(json({ ...saved, undoMs: UNDO_MS }));
+      }
+      r = m(/^\/api\/needs\/(\d+)\/undo$/);
+      if (r && write) {
+        const { was } = store.undoAnswer(Number(r[1]));
+        if (was.sentAt) {
+          const s = was.session ? engine.sessions.find((x) => x.name === was.session) : null;
+          if (s) await engine.herdr.prompt(s.paneId, `Udit took back his answer "${was.answer}" to "${was.title}". Do not act on it; wait for a new answer.`);
+        }
+        if (was.taskId) store.addEvent(was.taskId, 'Foreman', 'you', `Took back the answer "${was.answer}"`);
+        engine.pushFeed('you', `took back: ${was.title}`);
+        return done(json({ ok: true, wasSent: !!was.sentAt }));
       }
 
       // ----- audit, intake, decisions -----
@@ -196,7 +207,8 @@ export function makeApi(engine: Engine) {
       if (r && write) { const b = await body<any>(req); store.markCorrected(Number(r[1]), str(b.note, 'note', 500)); return done(json({ ok: true })); }
       if (p === '/api/intake' && write) {
         const b = await body<any>(req);
-        store.addIntake({ src: str(b.src, 'src', 200), who: optStr(b.who, 100) ?? '', text: str(b.text, 'text', 2000), verdict: str(b.verdict, 'verdict', 100), taskId: optStr(b.taskId, 20) ?? null });
+        store.addIntake({ src: str(b.src, 'src', 200), who: optStr(b.who, 100) ?? '', text: str(b.text, 'text', 2000), verdict: str(b.verdict, 'verdict', 100), taskId: optStr(b.taskId, 20) ?? null,
+          url: optStr(b.url, 500) && /^https:\/\//.test(b.url) ? b.url.trim() : null });
         return done(json({ ok: true }, 201));
       }
       if (p === '/api/intake/days') return json(store.intakeCountsByDay());

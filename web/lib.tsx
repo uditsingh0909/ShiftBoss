@@ -37,15 +37,22 @@ export function useRoute(): string[] {
 export const href = (...parts: string[]) => '#/' + parts.map(encodeURIComponent).join('/');
 
 // ---------- toast ----------
-let pushToast: (t: string) => void = () => {};
-export const toast = (t: string) => pushToast(t);
+type ToastAction = { label: string; run: () => void };
+let pushToast: (t: string, action?: ToastAction, ms?: number) => void = () => {};
+export const toast = (t: string, action?: ToastAction, ms?: number) => pushToast(t, action, ms);
 export function Toaster() {
-  const [t, setT] = useState<string | null>(null);
+  const [t, setT] = useState<{ text: string; action?: ToastAction } | null>(null);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
-    pushToast = (x) => { setT(x); clearTimeout(timer); timer = setTimeout(() => setT(null), 3500); };
+    pushToast = (text, action, ms) => { setT({ text, action }); clearTimeout(timer); timer = setTimeout(() => setT(null), ms ?? (action ? 10000 : 3500)); };
   }, []);
-  return t ? <div className="toast rise" role="status">{t}</div> : null;
+  if (!t) return null;
+  return (
+    <div className="toast rise row" role="status" style={{ gap: 14 }}>
+      <span>{t.text}</span>
+      {t.action && <button type="button" className="pill sm w" style={{ height: 28 }} onClick={() => { t.action!.run(); setT(null); }}>{t.action.label}</button>}
+    </div>
+  );
 }
 /** Run an action, toast the result or the error. */
 export async function act(fn: () => Promise<unknown>, ok: string) {
