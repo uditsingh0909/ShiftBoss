@@ -325,6 +325,13 @@ describe('audit fixes', () => {
     s.approveSlack(id);
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).not.toBeNull();
   });
+  test('stored PRs that are not finished stay on the GitHub check list', () => {
+    const s = mem();
+    const link = { taskIds: ['T-1'], state: 'MERGED', mergeSha: null, repo: 'acme/api', number: 1 };
+    s.savePrLink({ ...link, url: 'https://github.com/acme/api/pull/1', done: false });
+    s.savePrLink({ ...link, url: 'https://github.com/acme/api/pull/2', number: 2, done: true });
+    expect(s.openPrUrls()).toEqual(['https://github.com/acme/api/pull/1']);
+  });
   test('an answer is claimed once, and not at all after an undo', () => {
     const s = mem();
     const n = s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'worker' });

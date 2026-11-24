@@ -159,6 +159,10 @@ export class Store {
     const r: any = this.db.query('SELECT * FROM pr_links WHERE url = ?').get(url);
     return r ? { url: r.url, taskIds: JSON.parse(r.task_ids), state: r.state, mergeSha: r.merge_sha, repo: r.repo, number: r.number, done: !!r.done } : null;
   }
+  /** PRs still being followed (not closed, not live): re-checked even when no running transcript names them. */
+  openPrUrls(): string[] {
+    return (this.db.query('SELECT url FROM pr_links WHERE done = 0').all() as { url: string }[]).map((r) => r.url);
+  }
   savePrLink(l: { url: string; taskIds: string[]; state: string; mergeSha: string | null; repo: string; number: number; done: boolean }) {
     this.db.query(`INSERT INTO pr_links (url, task_ids, state, merge_sha, repo, number, done, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(url) DO UPDATE SET task_ids=excluded.task_ids, state=excluded.state, merge_sha=excluded.merge_sha, done=excluded.done, checked_at=excluded.checked_at`)

@@ -281,7 +281,9 @@ export class Engine {
     if (this.ghBusy) return;
     this.ghBusy = true;
     try {
-      const urls = [...new Set(this.sessions.flatMap((s) => s.prUrls))];
+      // Live transcripts plus every stored PR not finished yet, so a task does not stall at "PR open"
+      // after a restart or once the session that opened the PR has closed.
+      const urls = [...new Set([...this.sessions.flatMap((s) => s.prUrls), ...this.store.openPrUrls()])];
       const devSha = this.releases.envs.find((e) => /dev/i.test(e.name))?.version ?? null;
       const prodSha = this.releases.envs.find((e) => /prod/i.test(e.name))?.version ?? null;
       for (const url of urls) {
