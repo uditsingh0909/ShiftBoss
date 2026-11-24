@@ -14,6 +14,12 @@ import { UNDO_MS } from './api';
 
 type Listener = () => void;
 
+/** Wait before asking herdr again after `fails` failures in a row: one poll, then doubling, capped at 30 s. */
+export function herdrBackoffMs(fails: number, pollMs: number): number {
+  if (fails <= 0) return 0;
+  return Math.min(30_000, pollMs * 2 ** (fails - 1));
+}
+
 export class Engine {
   sessions: Session[] = [];
   herdrOk = false;
@@ -30,6 +36,8 @@ export class Engine {
   private ghTimer: ReturnType<typeof setInterval> | null = null;
   private ghBusy = false;
   private busy = false;
+  private herdrFails = 0; // consecutive failed `herdr agent list` calls
+  private herdrRetryAt = 0;
 
   constructor(public cfg: Config, public store: Store, public herdr: Herdr) {
     this.transcripts = new Transcripts(cfg.transcriptsDir);
@@ -63,11 +71,18 @@ export class Engine {
         this.pushFeed('intake', 'resumed on schedule; catching up on what came in while paused');
       }
       let agents: HerdrAgent[] = [];
-      try {
-        agents = await this.herdr.list(settings.herdrWorkspace || this.cfg.herdrWorkspace);
-        this.herdrOk = true; this.herdrError = null;
-      } catch (e) {
-        this.herdrOk = false; this.herdrError = (e as Error).message;
+      // While herdr is down, ask it less often (backoff up to 30 s) and log the change once, not every tick.
+      if (Date.now() >= this.herdrRetryAt) {
+        try {
+          agents = await this.herdr.list(settings.herdrWorkspace || this.cfg.herdrWorkspace);
+          if (this.herdrFails > 0) this.pushFeed('herdr', 'answering again');
+          this.herdrOk = true; this.herdrError = null; this.herdrFails = 0; this.herdrRetryAt = 0;
+        } catch (e) {
+          if (this.herdrFails === 0) this.pushFeed('herdr', 'not answering: ' + (e as Error).message + ' (retrying, less often while it is down)');
+          this.herdrFails++;
+          this.herdrRetryAt = Date.now() + herdrBackoffMs(this.herdrFails, this.cfg.pollMs);
+          this.herdrOk = false; this.herdrError = (e as Error).message;
+        }
       }
       // Footer text from one pane per tick keeps herdr load flat.
       if (agents.length) {

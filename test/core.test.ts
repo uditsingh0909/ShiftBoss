@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { healthOf, loopKeys, overlapsOf } from '../server/analysis';
 import { Store } from '../server/db';
-import { Engine } from '../server/engine';
+import { Engine, herdrBackoffMs } from '../server/engine';
 import { makeApi } from '../server/api';
 import { loadConfig } from '../server/config';
 import { nameOf, parseAgentList } from '../server/herdr';
@@ -324,6 +324,27 @@ describe('audit fixes', () => {
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).toBeNull();
     s.approveSlack(id);
     expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).not.toBeNull();
+  });
+  test('herdr down: back off up to 30 s and log the outage once', async () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map((f) => herdrBackoffMs(f, 2000))).toEqual([0, 2000, 4000, 8000, 16000, 30000, 30000]);
+    let calls = 0, up = false;
+    const herdr = { list: async () => { calls++; if (!up) throw new Error('herdr: not found'); return []; } };
+    const e = new Engine(loadConfig(), mem(), herdr as any);
+    await e.tick();
+    await e.tick(); // inside the backoff: herdr is not asked again
+    expect(calls).toBe(1);
+    expect(e.herdrOk).toBe(false);
+    (e as any).herdrRetryAt = 0;
+    await e.tick();
+    expect(calls).toBe(2);
+    up = true;
+    (e as any).herdrRetryAt = 0;
+    await e.tick();
+    expect(e.herdrOk).toBe(true);
+    const herdrFeed = (e as any).feed.filter((f: any) => f.who === 'herdr').map((f: any) => f.text);
+    expect(herdrFeed.length).toBe(2);
+    expect(herdrFeed[0]).toBe('answering again');
+    expect(herdrFeed[1]).toContain('not answering');
   });
   test('stored PRs that are not finished stay on the GitHub check list', () => {
     const s = mem();
