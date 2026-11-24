@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Onboarding,
+import type { Onboarding, Replacement, ReplacementState,
   AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
 
@@ -63,6 +63,9 @@ export class Store {
     if (!cols.some((c) => c.name === 'ext_id')) {
       this.db.exec('ALTER TABLE tasks ADD COLUMN ext_id TEXT; CREATE UNIQUE INDEX IF NOT EXISTS tasks_ext_id ON tasks(ext_id);');
     }
+    this.db.exec(`CREATE TABLE IF NOT EXISTS replacements (id INTEGER PRIMARY KEY AUTOINCREMENT, old_name TEXT NOT NULL, new_name TEXT NOT NULL,
+      cwd TEXT NOT NULL, model TEXT, handoff_path TEXT NOT NULL, session_id TEXT, transcript_path TEXT, state TEXT NOT NULL,
+      started_at TEXT NOT NULL, updated_at TEXT NOT NULL, requested_at TEXT, prompted_at TEXT, error TEXT, missing TEXT NOT NULL DEFAULT '[]')`);
   }
 
   /**
@@ -256,6 +259,63 @@ export class Store {
   }
   addDecision(text: string) { this.db.query('INSERT INTO decisions (at, text) VALUES (?, ?)').run(now(), text); }
   listDecisions(limit = 50): Decision[] { return this.db.query('SELECT * FROM decisions ORDER BY id DESC LIMIT ?').all(limit) as Decision[]; }
+
+  // ---------- replacements ----------
+  private rowRepl = (r: any): Replacement => ({
+    id: r.id, oldName: r.old_name, newName: r.new_name, cwd: r.cwd, model: r.model, handoffPath: r.handoff_path, sessionId: r.session_id,
+    transcriptPath: r.transcript_path, state: r.state, startedAt: r.started_at, updatedAt: r.updated_at, requestedAt: r.requested_at,
+    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'),
+  });
+  addReplacement(r: { oldName: string; newName: string; cwd: string; model: string | null; handoffPath: string; sessionId: string | null; transcriptPath: string | null }): Replacement {
+    const at = now();
+    const res = this.db.query(`INSERT INTO replacements (old_name, new_name, cwd, model, handoff_path, session_id, transcript_path, state, started_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`).run(r.oldName, r.newName, r.cwd, r.model, r.handoffPath, r.sessionId, r.transcriptPath, at, at);
+    return this.getReplacement(Number(res.lastInsertRowid))!;
+  }
+  getReplacement(id: number): Replacement | null {
+    const r = this.db.query('SELECT * FROM replacements WHERE id = ?').get(id);
+    return r ? this.rowRepl(r) : null;
+  }
+  /** Still running, finished or failed in the last day, newest first. */
+  listReplacements(): Replacement[] {
+    const since = new Date(Date.now() - 864e5).toISOString();
+    return this.db.query(`SELECT * FROM replacements WHERE state NOT IN ('done', 'failed', 'cancelled') OR updated_at >= ? ORDER BY id DESC LIMIT 100`).all(since).map(this.rowRepl);
+  }
+  /** The replacement still under way for this session, if any. */
+  activeReplacementFor(oldName: string): Replacement | null {
+    const r = this.db.query(`SELECT * FROM replacements WHERE old_name = ? AND state NOT IN ('done', 'failed', 'cancelled') ORDER BY id DESC LIMIT 1`).get(oldName);
+    return r ? this.rowRepl(r) : null;
+  }
+  updateReplacement(id: number, patch: Partial<Pick<Replacement, 'state' | 'newName' | 'requestedAt' | 'promptedAt' | 'error' | 'missing'>>): Replacement {
+    const cur = this.getReplacement(id);
+    if (!cur) throw new Error('No replacement ' + id);
+    const n = { ...cur, ...patch };
+    this.db.query('UPDATE replacements SET state=?, new_name=?, requested_at=?, prompted_at=?, error=?, missing=?, updated_at=? WHERE id=?')
+      .run(n.state, n.newName, n.requestedAt, n.promptedAt, n.error, JSON.stringify(n.missing), now(), id);
+    return this.getReplacement(id)!;
+  }
+  /** Compare-and-set on state, so the engine tick and an API call cannot both advance one row. */
+  claimReplacement(id: number, from: ReplacementState[], to: ReplacementState): boolean {
+    return this.db.query(`UPDATE replacements SET state = ?, updated_at = ? WHERE id = ? AND state IN (${from.map(() => '?').join(',')})`).run(to, now(), id, ...from).changes === 1;
+  }
+  /**
+   * A replaced session's ShiftBoss state goes to its successor: tasks not yet told, questions (and answers not yet delivered) it
+   * was waiting for, and its lane and slots. Each moved task logs the move. Safe to run twice.
+   */
+  moveSessionState(from: string, to: string, who = 'shiftboss'): { tasks: string[]; needs: number } {
+    const tx = this.db.transaction(() => {
+      const ids = (this.db.query('SELECT id FROM tasks WHERE session = ? AND stage < 6').all(from) as { id: string }[]).map((r) => r.id);
+      for (const id of ids) {
+        this.db.query('UPDATE tasks SET session = ?, updated_at = ? WHERE id = ?').run(to, now(), id);
+        this.addEvent(id, 'ShiftBoss', who, `Moved from ${from} to ${to}: ${from} was replaced`);
+      }
+      const needs = this.db.query('UPDATE needs SET session = ? WHERE session = ? AND sent_at IS NULL AND auto = 0').run(to, from).changes;
+      const m = this.meta(from);
+      if (m) this.setMeta(to, { lane: m.lane, slots: m.slots });
+      return { tasks: ids, needs };
+    });
+    return tx();
+  }
 
   // ---------- sessions meta + settings ----------
   meta(name: string): { lane: string; slots: number; handoffPath: string | null } | null {

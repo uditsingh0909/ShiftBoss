@@ -1,8 +1,8 @@
 // The engine polls herdr, transcripts and status-line data, keeps the store in sync
 // (auto "needs you" items for blocked panes, dispatch), and builds the snapshot the UI streams.
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AgentStatus, EnvVersion, Limits, MergedPr, Session, Snapshot } from '../shared/types';
+import type { AgentStatus, EnvVersion, Limits, MergedPr, Replacement, Session, Snapshot } from '../shared/types';
 import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
@@ -10,6 +10,8 @@ import { Herdr, nameOf, type HerdrAgent } from './herdr';
 import { parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, targetStage, taskIdsIn } from './github';
 import { heatOf, Transcripts } from './transcripts';
+import { HANDOFF_TIMEOUT_MS, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
+import { setupInfo } from './setup';
 
 type Listener = () => void;
 
@@ -80,6 +82,7 @@ export class Engine {
       this.syncNeeds();
       await this.flushAnswers();
       this.dispatch(settings.switches.autoDispatch);
+      await this.advanceReplacements();
       this.emit();
     } catch (e) {
       this.pushFeed('shiftboss', 'poll failed: ' + (e as Error).message); // next tick retries
@@ -309,6 +312,217 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     }
   }
 
+  // ---------- starting sessions ----------
+  /** herdr starts one session at a time (it waits for each to be ready), so every start goes through this queue. */
+  private spawnChain: Promise<void> = Promise.resolve();
+  private queueSpawn(job: () => Promise<void>): Promise<void> {
+    const next = this.spawnChain.then(job, job);
+    this.spawnChain = next.catch(() => {});
+    return next;
+  }
+
+  /**
+   * Start one session and send its first prompt. Never throws: the result goes to the feed.
+   * A folder Claude has not seen asks "trust this folder?". That is the owner's call: ShiftBoss
+   * never answers it, it says the session is waiting for them in herdr.
+   */
+  spawnOne(spec: SpawnSpec, tag = ''): Promise<void> {
+    return this.queueSpawn(async () => {
+      try {
+        const pane = await this.herdr.spawnClaude({ name: spec.name, cwd: spec.cwd, model: spec.model || undefined, workspace: this.store.settings().herdrWorkspace || undefined });
+        if (spec.prompt) await this.herdr.prompt(pane, spec.prompt);
+        this.pushFeed('shiftboss', `${tag}session ${spec.name} is ready${spec.prompt ? ' and has its first prompt' : ''}`);
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (isStartupQuestion(msg)) this.pushFeed('shiftboss', `${tag}session ${spec.name} started but is waiting for you in herdr (a startup question, such as trusting the folder)${spec.prompt ? '. Send the first prompt once it is ready' : ''}`);
+        else this.pushFeed('shiftboss', `${tag}could not start session ${spec.name}: ${msg.slice(0, 200)}`);
+      }
+      this.emit();
+    });
+  }
+
+  /** Start several sessions one after another. One failing never stops the rest. */
+  spawnMany(specs: SpawnSpec[]) {
+    this.pushFeed('you', `starting ${specs.length} sessions: ${specs.map((x) => x.name).join(', ')}`);
+    specs.forEach((spec, i) => void this.spawnOne(spec, `${i + 1}/${specs.length} `));
+  }
+
+  // ---------- replacing sessions ----------
+  private replacing = new Set<number>(); // replacement ids whose new session is being started right now
+
+  /** Start the handoff flow for each named session. Returns one result per name; one failing never stops the rest. */
+  async startReplacements(names: string[]): Promise<{ name: string; id?: number; newName?: string; error?: string }[]> {
+    const out: { name: string; id?: number; newName?: string; error?: string }[] = [];
+    for (const name of names) {
+      try {
+        const s = this.sessions.find((x) => x.name === name);
+        if (!s) throw new Error(name + ' is not running in herdr');
+        if (this.store.activeReplacementFor(name)) throw new Error(name + ' is already being replaced');
+        const r = this.store.addReplacement({
+          oldName: name, newName: nextReplacementName(name, this.takenNames()), cwd: s.cwd, model: modelArg(s.model),
+          handoffPath: handoffPathFor(name, s.cwd, s.handoffPath), sessionId: s.sessionId,
+          transcriptPath: s.sessionId ? this.transcripts.findPath(s.sessionId) : null,
+        });
+        this.pushFeed('you', `replacing ${name} with ${r.newName}`);
+        await this.requestHandoff(r);
+        out.push({ name, id: r.id, newName: r.newName });
+      } catch (e) {
+        const msg = (e as Error).message;
+        this.pushFeed('shiftboss', `could not start replacing ${name}: ${msg}`);
+        out.push({ name, error: msg });
+      }
+    }
+    this.emit();
+    return out;
+  }
+
+  /** Stop a replacement that has not started its new session yet. */
+  cancelReplacement(id: number) {
+    const r = this.store.getReplacement(id);
+    if (!r) throw new Error('No replacement ' + id);
+    if (!this.store.claimReplacement(id, ['pending', 'requested', 'stalled', 'ready', 'failed'], 'cancelled')) {
+      throw new Error(r.state === 'cancelled' ? 'Already cancelled' : `Too late to cancel: ${r.newName} was already started. Close it in herdr if you do not want it.`);
+    }
+    this.pushFeed('you', `cancelled replacing ${r.oldName}`);
+    this.emit();
+  }
+
+  /** Names that are running or reserved by a replacement under way. */
+  private takenNames(): string[] {
+    return [...this.sessions.map((x) => x.name), ...this.store.listReplacements().filter((x) => x.state !== 'cancelled' && x.state !== 'failed').map((x) => x.newName)];
+  }
+
+  /** Ask the old session for its handoff, unless it sits at a prompt (typing there could answer it): then wait. */
+  private async requestHandoff(r: Replacement) {
+    const s = this.sessions.find((x) => x.name === r.oldName);
+    if (!s) return;
+    if (s.status === 'blocked') {
+      if (!r.error) this.store.updateReplacement(r.id, { error: `${r.oldName} is waiting at a prompt in herdr; ShiftBoss asks for the handoff once it moves on` });
+      return;
+    }
+    if (!this.store.claimReplacement(r.id, ['pending'], 'requested')) return;
+    try {
+      await this.herdr.prompt(s.paneId, handoffRequest(this.cfg.ownerName, r.oldName, r.handoffPath));
+      this.store.updateReplacement(r.id, { requestedAt: new Date().toISOString(), error: null });
+      this.pushFeed('shiftboss', `asked ${r.oldName} for its handoff (${r.handoffPath})`);
+    } catch (e) {
+      this.store.updateReplacement(r.id, { state: 'pending', error: 'Could not ask for the handoff: ' + (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  /** One step of every replacement under way. Runs each tick; one bad row never stops the others. */
+  private async advanceReplacements() {
+    for (const r of this.store.listReplacements()) {
+      try { await this.advanceOne(r); } catch (e) {
+        this.pushFeed('shiftboss', `replacing ${r.oldName}: ${(e as Error).message.slice(0, 200)}`);
+      }
+    }
+  }
+
+  private async advanceOne(r: Replacement) {
+    const running = (n: string) => this.sessions.find((x) => x.name === n);
+    switch (r.state) {
+      case 'pending': {
+        if (!this.herdrOk) return;
+        if (!running(r.oldName)) { this.store.updateReplacement(r.id, { state: 'failed', error: `${r.oldName} is no longer running, so it cannot write a handoff` }); return; }
+        await this.requestHandoff(r);
+        return;
+      }
+      case 'requested':
+      case 'stalled': {
+        const check = this.readHandoff(r);
+        if (check.complete) {
+          this.store.updateReplacement(r.id, { state: 'ready', missing: [], error: null });
+          this.pushFeed('shiftboss', `${r.oldName}'s handoff is complete`);
+          return;
+        }
+        if (JSON.stringify(check.missing) !== JSON.stringify(r.missing)) this.store.updateReplacement(r.id, { missing: check.missing });
+        if (r.state === 'requested' && r.requestedAt && Date.now() - Date.parse(r.requestedAt) > HANDOFF_TIMEOUT_MS) {
+          this.store.updateReplacement(r.id, { state: 'stalled' });
+          this.pushFeed('shiftboss', `${r.oldName} has not finished its handoff after ${HANDOFF_TIMEOUT_MS / 60e3} min`);
+        }
+        return;
+      }
+      case 'ready': {
+        if (!this.herdrOk || this.replacing.has(r.id)) return;
+        if (!this.store.claimReplacement(r.id, ['ready'], 'starting')) return;
+        // The planned name may have been taken since the request.
+        const newName = running(r.newName) ? nextReplacementName(r.oldName, this.takenNames()) : r.newName;
+        if (newName !== r.newName) this.store.updateReplacement(r.id, { newName });
+        this.replacing.add(r.id);
+        void this.queueSpawn(() => this.startReplacement({ ...r, newName })).finally(() => this.replacing.delete(r.id));
+        return;
+      }
+      case 'starting': {
+        // Only stuck here if ShiftBoss restarted mid-start.
+        if (this.replacing.has(r.id) || !this.herdrOk) return;
+        if (running(r.newName)) this.store.updateReplacement(r.id, { state: 'started', error: null });
+        else this.store.updateReplacement(r.id, { state: 'failed', error: `ShiftBoss restarted while starting ${r.newName}; cancel and replace again` });
+        return;
+      }
+      case 'started': {
+        this.moveState(r);
+        return;
+      }
+      case 'moved': {
+        // The new session came up on a startup question (such as trusting the folder). The owner answers
+        // that in herdr; the first prompt goes only once the pane is plainly ready for input.
+        if (this.replacing.has(r.id)) return; // the start job sends it itself
+        const s = running(r.newName);
+        if (!s || (s.status !== 'idle' && s.status !== 'done')) return;
+        await this.sendFirstPrompt(r, s.paneId);
+        return;
+      }
+    }
+  }
+
+  private readHandoff(r: Replacement): { complete: boolean; missing: string[] } {
+    if (!existsSync(r.handoffPath)) return { complete: false, missing: [] };
+    const st = statSync(r.handoffPath);
+    // Only a file written after the request counts: an old handoff from last time is not this one.
+    if (!r.requestedAt || st.mtimeMs <= Date.parse(r.requestedAt) || st.size > 4 * 1024 * 1024) return { complete: false, missing: [] };
+    return handoffCheck(readFileSync(r.handoffPath, 'utf8'));
+  }
+
+  private async startReplacement(r: Replacement) {
+    let pane: string | null = null;
+    try {
+      pane = await this.herdr.spawnClaude({ name: r.newName, cwd: r.cwd, model: r.model ?? undefined, workspace: this.store.settings().herdrWorkspace || undefined });
+      this.store.updateReplacement(r.id, { state: 'started', error: null });
+      this.pushFeed('shiftboss', `${r.newName} is up to replace ${r.oldName}`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (!isStartupQuestion(msg)) {
+        this.store.updateReplacement(r.id, { state: 'failed', error: 'Could not start the new session: ' + msg.slice(0, 200) });
+        this.pushFeed('shiftboss', `could not start ${r.newName} to replace ${r.oldName}: ${msg.slice(0, 200)}`);
+        this.emit();
+        return;
+      }
+      this.store.updateReplacement(r.id, { state: 'started', error: `${r.newName} is waiting for you in herdr (a startup question); its first prompt goes once it is ready` });
+      this.pushFeed('shiftboss', `${r.newName} started but is waiting for you in herdr (a startup question, such as trusting the folder)`);
+    }
+    this.moveState(this.store.getReplacement(r.id)!);
+    if (pane) await this.sendFirstPrompt(this.store.getReplacement(r.id)!, pane);
+    this.emit();
+  }
+
+  private moveState(r: Replacement) {
+    if (!this.store.claimReplacement(r.id, ['started'], 'moved')) return;
+    const moved = this.store.moveSessionState(r.oldName, r.newName);
+    this.pushFeed('shiftboss', `moved ${moved.tasks.length} task${moved.tasks.length === 1 ? '' : 's'}${moved.needs ? ` and ${moved.needs} question${moved.needs === 1 ? '' : 's'}` : ''} from ${r.oldName} to ${r.newName}`);
+  }
+
+  private async sendFirstPrompt(r: Replacement, pane: string) {
+    if (r.state !== 'moved' || r.promptedAt) return;
+    try {
+      await this.herdr.prompt(pane, replacementPrompt({ newName: r.newName, oldName: r.oldName, handoffPath: r.handoffPath, transcriptPath: r.transcriptPath, shiftbossCli: setupInfo(this.cfg.port).repoPath + '/cli/shiftboss.ts' }));
+      this.store.updateReplacement(r.id, { state: 'done', promptedAt: new Date().toISOString(), error: null });
+      this.pushFeed('shiftboss', `${r.newName} has its first prompt; ${r.oldName} can be closed when you are ready`);
+    } catch (e) {
+      this.store.updateReplacement(r.id, { error: 'Could not send the first prompt yet: ' + (e as Error).message.slice(0, 200) }); // retried next tick
+    }
+  }
+
   snapshot(): Snapshot {
     const settings = this.store.settings();
     const tasks = this.store.listTasks();
@@ -331,6 +545,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       onboarding: this.store.onboarding(),
       owner: this.cfg.ownerName,
       feed: this.feed.slice(0, 40),
+      replacements: this.store.listReplacements(),
     };
   }
 }
