@@ -40,6 +40,7 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `cli/statusline-tap.cjs` | Status line tap: copies Claude Code's status JSON to `data/status/`, then runs the user's own command |
 | `desktop/` | Tauri 2 app (Windows built; macOS/Linux on hold). Reuses a running server or starts the compiled sidecar |
 | `docs/INTAKE.md` | Instructions the intake session follows |
+| `web/nav.tsx` | The sidebar (desktop), top bar and drawer (phone), with per-screen counts |
 | `web/tour.tsx` | First-visit guided tour per page |
 | `scripts/run.sh` | Restart loop; exits if ShiftBoss already answers on its port |
 | `test/core.test.ts` | Unit tests |

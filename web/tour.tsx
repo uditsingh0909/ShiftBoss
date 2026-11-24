@@ -9,7 +9,7 @@ type TourStep = { sel: string; title: string; text: string };
 
 const TOURS: Record<string, TourStep[]> = {
   home: [
-    { sel: '.navwrap', title: 'Every page, one tap away', text: 'The bar follows you on every page. Ctrl+K searches pages, sessions and tasks, and runs commands.' },
+    { sel: '.side, .topbar', title: 'Every screen in one place', text: 'The menu on the left lists every screen, with a count of what waits on each: red needs you now. On a phone it opens from the menu button. Ctrl+K searches pages, sessions and tasks.' },
     { sel: '[aria-label="Needs attention"]', title: 'What needs you', text: 'Decisions, stuck or looping sessions, overlaps, due promises and a silent intake, worst first. Arrows step through them.' },
     { sel: '.tour-lead', title: 'Your lead session', text: 'Always the session named in Settings, with its live output. A replacement called name-v2 takes over this card by itself.' },
     { sel: '.tour-quick', title: 'Start work', text: 'File a task, or start a new Claude Code session in its own herdr tab.' },
@@ -40,9 +40,18 @@ const TOURS: Record<string, TourStep[]> = {
     { sel: '.tour-replace', title: 'Before it fills up', text: 'Replace asks it to write a handoff, then starts a fresh session that reads it and takes over its tasks. The old one stays open for you to close.' },
   ],
   settings: [
-    { sel: '[aria-label="General"]', title: 'Settings in sections', text: 'Each section saves with the Save button at the top. Lanes and slots save on their own.' },
+    { sel: '[aria-label="Sections"]', title: 'Settings in sections', text: 'Jump to a section from here. Changes save with Save, which stays in this bar; lanes and slots save on their own.' },
   ],
 };
+
+/** The first element matching `sel` that is on screen (the sidebar on desktop, the top bar on a phone). */
+function find(sel: string): Element | null {
+  for (const el of document.querySelectorAll(sel)) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.right > 0 && r.left < innerWidth) return el;
+  }
+  return null;
+}
 
 const KEY = 'shiftboss-tour-seen';
 function seen(): string[] { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; } }
@@ -62,7 +71,7 @@ export function Tour({ page }: { page: string }) {
   const start = (force: boolean) => {
     const all = TOURS[page];
     if (!all || (!force && seen().includes(page))) return;
-    const here = all.filter((s) => document.querySelector(s.sel));
+    const here = all.filter((s) => find(s.sel));
     if (here.length) { setSteps(here); setI(0); }
   };
   useEffect(() => {
@@ -76,7 +85,7 @@ export function Tour({ page }: { page: string }) {
   const step = steps?.[i];
   useLayoutEffect(() => {
     if (!step) return;
-    const el = document.querySelector(step.sel);
+    const el = find(step.sel);
     if (!el) return;
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     const place = () => setRect(el.getBoundingClientRect());
@@ -99,11 +108,14 @@ export function Tour({ page }: { page: string }) {
   const pad = 8;
   const below = rect.bottom + 200 < innerHeight;
   const w = Math.min(360, innerWidth - 32);
-  const left = Math.min(Math.max(16, rect.left), innerWidth - w - 16);
+  // A tall element with room on its right (the sidebar) gets the card beside it, not above or below.
+  const beside = !below && rect.top - 200 < 0 && rect.right + pad + 12 + w + 16 <= innerWidth;
+  const left = beside ? rect.right + pad + 12 : Math.min(Math.max(16, rect.left), innerWidth - w - 16);
+  const place = beside ? { top: Math.max(16, rect.top + 72) } : below ? { top: rect.bottom + pad + 12 } : { bottom: innerHeight - rect.top + pad + 12 };
   return createPortal(
     <div className="tour" role="dialog" aria-modal="true" aria-label={`Tour: ${step.title}`}>
       <div className="tour-hole" style={{ left: rect.left - pad, top: rect.top - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }} />
-      <div className="tour-card shell" style={{ left, width: w, ...(below ? { top: rect.bottom + pad + 12 } : { bottom: innerHeight - rect.top + pad + 12 }) }}>
+      <div className="tour-card shell" style={{ left, width: w, ...place }}>
         <div className="core col" style={{ gap: 10, padding: 18 }}>
           <span className="mono faint" style={{ fontSize: 11 }}>{i + 1} / {steps.length}</span>
           <strong style={{ fontSize: 16, fontWeight: 500 }}>{step.title}</strong>

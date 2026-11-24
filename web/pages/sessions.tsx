@@ -316,6 +316,7 @@ export function CommandCenter() {
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
           <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <a className="pill sm" href={href('roster')}>All sessions</a>
             <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
             <button type="button" className={'pill sm' + (near.length ? ' r' : '')} aria-expanded={replacing} onClick={() => { setReplacing(!replacing); setSpawning(false); }}>Replace…</button>
             <button type="button" className="pill sm w" aria-expanded={spawning} onClick={() => { setSpawning(!spawning); setReplacing(false); }}>+ New session</button>
