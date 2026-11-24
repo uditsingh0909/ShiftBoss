@@ -224,7 +224,7 @@ Thresholds, switches and budgets live on the **Settings** screen and are stored 
 | Setting | Default | Meaning |
 |---|---|---|
 | Context warning | 70% | Bars turn amber |
-| Suggest replace at | 85% | Bars turn red; the session page offers to prepare a handoff |
+| Suggest replace at | 85% | Bars turn red; the session page offers Replace, and Replace… on Sessions pre-ticks these |
 | Needs you, at most | 3 | Above this, Needs you warns that decisions are piling up |
 | Handoff stale after | 30 min | Handoff age turns amber |
 | Stuck after | 20 min | No output while queued work waits |
@@ -432,7 +432,7 @@ The bar at the bottom of every screen links them. Ctrl+K (⌘K on a Mac) opens s
 | Screen | Use it to |
 |---|---|
 | **Get started** | First-run setup: connect the tools, pick the lead, ask running sessions to register their work, send the intake back in time, import. |
-| **Sessions** | Every session at a glance: the lead in the big card, a *Needs attention* strip (decisions, unhealthy sessions, overlaps, due promises, a silent intake), context pressure, usage limits, the intake card, live output. **New task** and **New session** start work from here. |
+| **Sessions** | Every session at a glance: the lead in the big card, a *Needs attention* strip (decisions, unhealthy sessions, overlaps, due promises, a silent intake), context pressure, usage limits, the intake card, live output. **New task** and **New session** (one, or several at once) start work from here; **Replace…** hands sessions over to fresh ones. |
 | **Session page** | Read one session's output, send it a prompt, interrupt it, see its raw terminal, or ask it to write its handoff before replacing it. |
 | **Roster** | Every session in a sortable table: lane, current task, context, tokens, handoff age. |
 | **Tasks** | Board (drag a card, or press →) or list, with filters for Inbox, P1, unassigned and shipping. |
@@ -476,6 +476,17 @@ The MCP tools and the CLI call the same API. Sessions should prefer the tools.
 | `onboarding_backfill` | `shiftboss setup backfill <1\|2\|3\|7\|14>` | Send the intake back that many days |
 | `onboarding_done` | `shiftboss setup done` | Mark setup finished |
 | `session_spawn` | `shiftboss session spawn <name> --cwd DIR [--model …] [--prompt …]` | Start Claude Code in a new herdr tab |
+| | `shiftboss session spawn-many <file.json>` | Start up to 20 sessions one after another |
+| `session_replace` | `shiftboss session replace <name…>` | Replace sessions through a handoff (see below) |
+
+**Replacing a session.** ShiftBoss asks it to write a handoff (its handoff path, else
+`<handoffs folder>/<name>.md`, else `HANDOFF-<name>.md` in its folder) with fixed sections (Open tasks,
+PRs, Promises owed, Scheduled jobs, Worktrees and branches, Decisions made, Open questions, Next steps)
+ending in `HANDOFF COMPLETE`. Once the file is written and complete, it starts `<name>-vN` in the same
+folder with the same model, moves the open tasks, unsent questions and lane to it, and sends it a first
+prompt: read the handoff, check the old transcript if unclear, register with `my_tasks`, continue. After
+20 minutes without a complete handoff it shows as stalled. The old session is never closed: you close it.
+A session sitting at a prompt is never typed into; the request waits until it moves on.
 
 ## HTTP API
 
@@ -501,6 +512,9 @@ Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET 
 | `POST /api/import` | `{tasks: [...]}` | Import tasks, matched on `extId` |
 | `POST /api/sessions/:name/prompt\|focus\|interrupt\|meta` | | Act on a session in herdr |
 | `POST /api/sessions/spawn` | `{name, cwd, model?, prompt?}` | Start Claude Code in a new herdr tab |
+| `POST /api/sessions/spawn-many` | `{sessions: [{name, cwd, model?, prompt?}, …]}` | Start up to 20, one after another; every row is checked before any starts |
+| `POST /api/sessions/replace` | `{sessions: [name, …]}` | Start a handoff replacement for each; progress is `replacements` in the snapshot |
+| `POST /api/replacements/:id/cancel` | | Stop a replacement before its new session starts |
 | `POST /api/intake/run` | | Ask the intake for one pass now |
 | `POST /api/intake/pause\|resume` | `{until?}` / `{catchUp}` | Pause or resume the intake |
 | `POST /api/onboarding/ask` | `{sessions: [...]}` | Ask running sessions to register their tasks |

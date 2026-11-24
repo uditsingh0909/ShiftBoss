@@ -27,10 +27,11 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `server/db.ts` | SQLite store and in-place migrations |
 | `server/api.ts` | HTTP API |
 | `server/herdr.ts` | herdr CLI wrapper |
+| `server/fleet.ts` | Pure rules for starting many sessions and replacing one through a handoff (names, handoff check, prompts); the engine runs the replacement state machine |
 | `server/config.ts` | Defaults + `shiftboss.config.json` (gitignored) + `SHIFTBOSS_*` env overrides |
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
-| `mcp/server.ts` | MCP server (`shiftboss`), 20 tools over the HTTP API |
+| `mcp/server.ts` | MCP server (`shiftboss`), 21 tools over the HTTP API |
 | `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
 | `shared/port.ts` | The install's port for the CLI, MCP and scripts: env, then config, then 4400 |
 | `cli/shiftboss.ts` | CLI over the HTTP API |
