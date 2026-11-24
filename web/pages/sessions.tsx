@@ -28,6 +28,95 @@ function Lines({ s, n, height, stamps, grow }: { s: Session; n: number; height: 
   );
 }
 
+
+
+type Alert = { key: string; tone: 'red' | 'amber'; what: string; detail: string; to: string; action?: { label: string; run: () => void } };
+
+/** Everything that needs attention right now, in one strip, worst first, each with its next step. */
+function Alerts() {
+  const snap = useSnap()!;
+  const th = snap.settings.thresholds;
+  const st = snap.intakeState;
+  const out: Alert[] = [];
+  if (!snap.herdrOk) out.push({ key: 'herdr', tone: 'red', what: 'herdr is not answering', detail: snap.herdrError ?? 'Sessions cannot be read', to: href('setup') });
+  for (const n of snap.needs.filter((x) => !x.answer)) {
+    const focus = n.session ? { label: 'Open in herdr', run: () => void act(() => api('POST', `/api/sessions/${encodeURIComponent(n.session!)}/focus`), 'Opened in herdr') } : undefined;
+    out.push({ key: 'need' + n.id, tone: n.kind === 'Decision' ? 'amber' : 'red', what: `${n.session ?? 'A session'} needs you`, detail: n.title + ' · ' + ago(n.createdAt), to: href('needs'), action: n.auto ? focus : undefined });
+  }
+  for (const h of snap.health.filter((x) => !['healthy', 'waiting'].includes(x.verdict)))
+    out.push({ key: 'h' + h.session, tone: ['lost', 'looping', 'burning'].includes(h.verdict) ? 'red' : 'amber', what: `${h.session} is ${h.verdict}`, detail: h.suggest || h.title, to: href('session', h.session) });
+  for (const s of snap.sessions.filter((x) => x.contextPct >= th.replace && !snap.health.some((h) => h.session === x.name && h.verdict === 'heavy')))
+    out.push({ key: 'ctx' + s.name, tone: 'red', what: `${s.name} is at ${Math.round(s.contextPct)}% context`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
+  for (const o of snap.overlaps) out.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
+  const due = snap.promises.filter((p) => p.state === 'due');
+  if (due.length) out.push({ key: 'due', tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
+  const silent = !st.paused && (!st.lastBeginAt || Date.now() - Date.parse(st.lastBeginAt) > 10 * 60e3);
+  if (silent) out.push({ key: 'intake', tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
+    action: snap.sessions.some((x) => /intake/i.test(x.name)) ? { label: 'Check now', run: () => void act(() => api('POST', '/api/intake/run'), 'Intake is checking now') } : undefined });
+  out.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'red' ? -1 : 1));
+  const [all, setAll] = useState(false);
+  if (!out.length) return (
+    <div className="rise row" style={{ gap: 10, padding: '12px 18px', border: '1px solid var(--line)', borderRadius: 999, alignSelf: 'flex-start' }}>
+      <Dot color={C.green} /><span style={{ fontSize: 13 }} className="dim">All clear: nothing needs you, no health issues, no overlaps.</span>
+    </div>
+  );
+  const shown = all ? out : out.slice(0, 5);
+  const worst = out[0].tone;
+  return (
+    <section className={`shell rise alert-${worst}`} aria-label="Needs attention">
+      <div className="core col" style={{ gap: 4, padding: '18px 22px' }}>
+        <div className="row" style={{ gap: 10, marginBottom: 6 }}>
+          <Dot color={worst === 'red' ? C.red : C.amber} blink />
+          <span className="label">Needs attention · {out.length}</span>
+          {out.length > 5 && <button type="button" className="pill sm" style={{ marginLeft: 'auto' }} onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${out.length}`}</button>}
+        </div>
+        <div className="col divide">
+          {shown.map((a) => (
+            <div key={a.key} className="row" style={{ gap: 14, padding: '10px 0', flexWrap: 'wrap' }}>
+              <Dot color={a.tone === 'red' ? C.red : C.amber} />
+              <a href={a.to} className="col" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }}>
+                <span style={{ fontSize: 14 }}>{a.what}</span>
+                <span className="faint ellipsis" style={{ fontSize: 12 }}>{a.detail}</span>
+              </a>
+              {a.action && <button type="button" className="pill sm w" onClick={a.action.run}>{a.action.label}</button>}
+              <a className="pill sm" href={a.to}>Open<Arrow /></a>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Quick action: start a Claude Code session in a new herdr tab, with an optional first prompt. */
+function NewSession({ onDone }: { onDone: () => void }) {
+  const snap = useSnap()!;
+  const folders = [...new Set(snap.sessions.map((s) => s.cwd).filter(Boolean))];
+  const [f, setF] = useState({ name: '', cwd: folders[0] ?? '', model: '', prompt: '' });
+  const submit = () => act(async () => { await api('POST', '/api/sessions/spawn', { ...f, model: f.model || null, prompt: f.prompt || null }); onDone(); }, `Starting ${f.name} · it shows up here in a few seconds`);
+  return (
+    <section className="shell rise" aria-label="New session">
+      <form className="core" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 16, alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-name" className="label">Name</label>
+          <input id="ns-name" className="field mono" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,39}" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="billing-fix" /></div>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="ns-cwd" className="label">Folder</label>
+          <input id="ns-cwd" className="field mono" required list="ns-folders" value={f.cwd} onChange={(e) => setF({ ...f, cwd: e.target.value })} placeholder="C:/path/to/repo" />
+          <datalist id="ns-folders">{folders.map((d) => <option key={d} value={d} />)}</datalist></div>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-model" className="label">Model</label>
+          <select id="ns-model" className="field" value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })}>
+            <option value="">Claude Code default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option>
+          </select></div>
+        <div className="col" style={{ gap: 8, gridColumn: 'span 9' }}><label htmlFor="ns-prompt" className="label">First prompt (optional)</label>
+          <textarea id="ns-prompt" className="field" rows={2} value={f.prompt} onChange={(e) => setF({ ...f, prompt: e.target.value })} placeholder="What should it start on?" /></div>
+        <div className="row" style={{ gridColumn: 'span 3', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" className="pill sm" onClick={onDone}>Cancel</button>
+          <button type="submit" className="pill w" disabled={!f.name.trim() || !f.cwd.trim()}>Start<Arrow dark /></button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export function CommandCenter() {
   const snap = useSnap()!;
   const [filter, setFilter] = useState<'All' | 'Working' | 'Needs you' | 'Near limit' | 'Idle'>('All');
@@ -35,6 +124,7 @@ export function CommandCenter() {
   const blocked = snap.sessions.filter((s) => s.status === 'blocked');
   const near = snap.sessions.filter((s) => s.contextPct >= th.replace);
   // The lead session is always the big card; without one, whoever needs you, then the fullest context.
+  const [spawning, setSpawning] = useState(false);
   const lead = resolveLead(snap.sessions, snap.settings.leadSession ?? '');
   const hero = lead ?? blocked[0] ?? [...snap.sessions].sort((a, b) => b.contextPct - a.contextPct)[0];
   const need = hero ? snap.needs.find((n) => !n.answer && n.session === hero.name) : null;
@@ -49,9 +139,15 @@ export function CommandCenter() {
           <h1 className="hero">{snap.sessions.length} sessions running.<br /><span className="faint">{blocked.length} need{blocked.length === 1 ? 's' : ''} you, {near.length} near the limit.</span></h1>
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
+            <button type="button" className="pill sm w" aria-expanded={spawning} onClick={() => setSpawning(!spawning)}>+ New session</button>
+          </div>
           <Seg label="Filter" value={filter} options={['All', 'Working', 'Needs you', 'Near limit', 'Idle'] as const} onChange={setFilter} />
         </div>
       </section>
+      {spawning && <NewSession onDone={() => setSpawning(false)} />}
+      <Alerts />
 
       <section className="grid12">
         {hero ? (

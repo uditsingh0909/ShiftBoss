@@ -22,9 +22,17 @@ Without them, `shiftboss` below means `bun <path-to-shiftboss>/cli/shiftboss.ts`
 
 Each run, from `readFrom`:
 
-1. **Slack.** Read new messages that mention the owner, DMs to them, replies in threads they posted
-   in during the last 3 days, and new top-level messages in the watched channels (see ShiftBoss →
-   Settings). Read every thread's replies before deciding anything is open.
+1. **Slack.** Read new messages that mention the owner, DMs to them, and new top-level messages in
+   the watched channels (see ShiftBoss → Settings). Read a message's whole thread before deciding
+   anything is open.
+   **Threads the owner is in.** A new reply inside a thread is a new message even when the thread
+   started days ago, and channel history does not show it. Each run, read replies newer than
+   `readFrom` only in threads where the owner is involved:
+   - threads where the owner is @-mentioned (in the parent or any reply);
+   - threads the owner started or replied in during the last 7 days;
+   - the Slack thread behind each open task of ours (its Slack link). A follow-up there is
+     `linked T-n`, and a question in it goes on that task (step 6).
+   Skip other threads, even in watched channels: there, only new top-level messages count.
 2. **Gmail.** Search the owner's mail newer than `readFrom` for:
    - **Meeting notes** (for example Gemini "Notes by Gemini", or any meeting-notes service). Open the
      notes, and the linked doc if the email only links to it. Every action item or "next step" that

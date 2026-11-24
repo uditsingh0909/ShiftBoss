@@ -78,6 +78,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       { group: 'Go to', label: 'Settings', meta: 'lanes, slots, thresholds', to: href('settings') },
       { group: 'Go to', label: 'Connect', meta: 'MCP tools, status line, intake setup', to: href('setup') },
       { group: 'Do', label: 'New task', meta: 'into the inbox', to: href('tasks', 'new') },
+      { group: 'Do', label: 'New session', meta: 'Claude Code in a new herdr tab', to: href('sessions') },
     ];
     for (const s of snap?.sessions ?? []) all.push({ group: 'Sessions', label: s.name, meta: `${s.status} · ctx ${Math.round(s.contextPct)}%`, to: href('session', s.name) });
     for (const t of snap?.tasks ?? []) all.push({ group: 'Tasks', label: `${t.id} · ${t.title}`, meta: t.session ?? 'unassigned', to: href('task', t.id) });

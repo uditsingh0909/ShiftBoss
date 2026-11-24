@@ -143,6 +143,12 @@ export class Engine {
         this.store.answerNeed(open.id, 'Answered in herdr');
       }
     }
+    // A pane that was closed can never answer: close its item. Only when herdr answered this tick,
+    // so a herdr hiccup does not wipe every open item.
+    if (this.herdrOk) {
+      const running = new Set(this.sessions.map((s) => s.name));
+      for (const n of this.store.openAutoNeeds()) if (n.session && !running.has(n.session)) this.store.answerNeed(n.id, 'Session closed');
+    }
   }
 
   /** Deliver answers whose undo window has passed. */

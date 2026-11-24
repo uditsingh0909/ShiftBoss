@@ -47,6 +47,18 @@ export class Herdr {
   async focus(pane: string): Promise<void> {
     await run(this.bin, ['agent', 'focus', pane]);
   }
+  /** New tab with a Claude Code session in it. Returns the pane id. Waits until Claude is ready for input. */
+  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string }): Promise<string> {
+    const tabArgs = ['tab', 'create', '--cwd', opts.cwd, '--label', opts.name, '--no-focus'];
+    if (opts.workspace) tabArgs.push('--workspace', opts.workspace);
+    const out = JSON.parse(await run(this.bin, tabArgs));
+    const pane: string | undefined = out?.result?.root_pane?.pane_id;
+    if (!pane) throw new Error('herdr did not return a pane for the new tab');
+    const startArgs = ['agent', 'start', opts.name, '--kind', 'claude', '--pane', pane, '--timeout', '60000'];
+    if (opts.model) startArgs.push('--', '--model', opts.model);
+    await run(this.bin, startArgs);
+    return pane;
+  }
   /** Same as pressing Esc in the pane: stops the current turn. */
   async interrupt(pane: string): Promise<void> {
     await run(this.bin, ['agent', 'send-keys', pane, 'esc']);

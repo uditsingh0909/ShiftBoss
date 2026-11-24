@@ -226,6 +226,9 @@ export class Store {
     this.db.query('UPDATE needs SET answer = NULL, answered_at = NULL, sent_at = NULL WHERE id = ?').run(id);
     return { was };
   }
+  openAutoNeeds(): Need[] {
+    return (this.db.query('SELECT * FROM needs WHERE auto = 1 AND answer IS NULL').all() as any[]).map((r) => this.rowNeed(r));
+  }
   openAutoNeedFor(session: string): Need | null {
     const r = this.db.query('SELECT * FROM needs WHERE auto = 1 AND session = ? AND answer IS NULL ORDER BY id DESC LIMIT 1').get(session);
     return r ? this.rowNeed(r) : null;

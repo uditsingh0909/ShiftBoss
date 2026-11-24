@@ -2,6 +2,7 @@
 // cannot trigger one (the custom header forces a CORS preflight that we never allow).
 import type { Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent } from '../shared/types';
 import type { Engine } from './engine';
+import { existsSync, statSync } from 'node:fs';
 import { buildReport, type Audience } from './report';
 import { setupInfo } from './setup';
 
@@ -220,6 +221,34 @@ export function makeApi(engine: Engine) {
         const st = store.resumeIntake(b.catchUp !== false);
         engine.pushFeed('you', b.catchUp !== false ? 'resumed intake and asked it to catch up' : 'resumed intake from now');
         return done(json(st));
+      }
+      if (p === '/api/sessions/spawn' && write) {
+        // Quick action: a new herdr tab running Claude Code, optionally with a first prompt.
+        const b = await body<any>(req);
+        const name = str(b.name, 'name', 40).trim();
+        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/.test(name)) return json({ error: 'Name: letters, digits, - and _ only (2-40 characters).' }, 400);
+        if (engine.snapshot().sessions.some((x) => x.name === name)) return json({ error: `A session named ${name} is already running.` }, 409);
+        const cwd = str(b.cwd, 'cwd', 400).trim();
+        if (!existsSync(cwd) || !statSync(cwd).isDirectory()) return json({ error: 'That folder does not exist.' }, 400);
+        const model = optStr(b.model, 20);
+        if (model && !['sonnet', 'opus', 'haiku', 'fable'].includes(model)) return json({ error: 'Unknown model.' }, 400);
+        const first = optStr(b.prompt, 8000)?.trim();
+        engine.pushFeed('you', `starting session ${name}`);
+        // herdr waits for Claude to be ready (several seconds); answer now and report the result in the feed.
+        void (async () => {
+          try {
+            const pane = await engine.herdr.spawnClaude({ name, cwd, model: model || undefined, workspace: engine.store.settings().herdrWorkspace || undefined });
+            if (first) await engine.herdr.prompt(pane, first);
+            engine.pushFeed('shiftboss', `session ${name} is ready${first ? ' and has its first prompt' : ''}`);
+          } catch (e) {
+            const msg = (e as Error).message;
+            // A folder Claude has not seen before asks "trust this folder?". That is the owner's call:
+            // ShiftBoss never answers it. The pane shows up as blocked and lands in Needs you.
+            if (/agent_not_ready|blocked during startup/.test(msg)) engine.pushFeed('shiftboss', `session ${name} started but is waiting for you in herdr (a startup question, such as trusting the folder)${first ? '. Send the first prompt once it is ready' : ''}`);
+            else engine.pushFeed('shiftboss', `could not start session ${name}: ${msg.slice(0, 200)}`);
+          }
+        })();
+        return done(json({ ok: true, name }, 202));
       }
       if (p === '/api/intake/run' && write) {
         // "Check now": ask the intake session for one pass right away instead of waiting for its loop.

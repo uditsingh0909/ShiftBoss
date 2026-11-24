@@ -84,6 +84,14 @@ describe('store', () => {
     s.answerNeed(n.id, 'No');
     expect(s.listNeeds()[0].answer).toBe('Yes');
   });
+  test('open auto needs are listed until answered', () => {
+    const s = mem();
+    const n = s.addNeed({ kind: 'Permission', title: 'x is waiting', answers: ['Open in herdr'], session: 'x', auto: true });
+    s.addNeed({ kind: 'Decision', title: 'Restore?', answers: ['Yes'] });
+    expect(s.openAutoNeeds().map((x) => x.id)).toEqual([n.id]);
+    s.answerNeed(n.id, 'Session closed');
+    expect(s.openAutoNeeds()).toEqual([]);
+  });
   test('settings merge over defaults', () => {
     const s = mem();
     s.saveSettings({ ...s.settings(), thresholds: { ...s.settings().thresholds, warn: 60 } });
