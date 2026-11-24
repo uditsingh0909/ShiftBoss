@@ -27,7 +27,7 @@ const wrap = <A,>(fn: (a: A) => Promise<string>) => async (a: A) => {
   try { return ok(await fn(a)); } catch (e) { return { ...ok('ShiftBoss: ' + (e as Error).message), isError: true }; }
 };
 const TASK = z.string().regex(/^T-\d+$/).describe('ShiftBoss task id, e.g. T-12 (it is in your brief)');
-const ME = z.string().max(100).optional().describe('Your session name, e.g. general-tasks');
+const ME = z.string().max(100).optional().describe('Your session name, e.g. billing-fix');
 
 const server = new McpServer({ name: 'shiftboss', version: '0.1.0' });
 
@@ -39,7 +39,7 @@ server.registerTool('task_stage', {
 
 server.registerTool('task_note', {
   title: 'Add to a task log',
-  description: "Add one line to a task's activity log, e.g. 'PR #3376 opened' or 'tested on dev with a real request'.",
+  description: "Add one line to a task's activity log, e.g. 'PR #81 opened' or 'tested on dev with a real request'.",
   inputSchema: { task: TASK, text: z.string().min(1).max(1000), source: z.enum(['Session', 'GitHub', 'Slack']).optional(), who: ME },
 }, wrap(async ({ task, text, source, who }) => { await call('POST', `/api/tasks/${task}/events`, { src: source ?? 'Session', who: who ?? 'session', text }); return 'noted on ' + task; }));
 

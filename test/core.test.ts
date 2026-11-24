@@ -22,7 +22,7 @@ describe('store', () => {
   test('task ids count up and events are logged', () => {
     const s = mem();
     const a = s.addTask({ title: 'One' });
-    const b = s.addTask({ title: 'Two', session: 'vdp' });
+    const b = s.addTask({ title: 'Two', session: 'billing' });
     expect(a.id).toBe('T-1');
     expect(b.id).toBe('T-2');
     expect(a.stage).toBe(0);
@@ -138,12 +138,12 @@ describe('store', () => {
 describe('herdr', () => {
   test('keeps only claude panes in the workspace', () => {
     const json = JSON.stringify({ result: { agents: [
-      { agent: 'claude', agent_status: 'idle', cwd: 'D:\\', focused: false, pane_id: 'w5:p1', terminal_title_stripped: 'vdp', workspace_id: 'w5' },
+      { agent: 'claude', agent_status: 'idle', cwd: 'D:\\', focused: false, pane_id: 'w5:p1', terminal_title_stripped: 'billing', workspace_id: 'w5' },
       { agent: 'claude', agent_status: 'idle', cwd: 'D:\\', focused: false, pane_id: 'w6:p1', terminal_title_stripped: 'other', workspace_id: 'w6' },
       { agent: 'shell', agent_status: 'idle', cwd: 'D:\\', focused: false, pane_id: 'w5:p2', workspace_id: 'w5' },
     ] } });
     const a = parseAgentList(json, 'w5');
-    expect(a.map(nameOf)).toEqual(['vdp']);
+    expect(a.map(nameOf)).toEqual(['billing']);
     expect(parseAgentList(json, '').length).toBe(2);
     expect(nameOf({ ...a[0], name: 'intake', terminal_title_stripped: 'Rename intake' })).toBe('intake');
   });
@@ -229,13 +229,13 @@ import { resolveLead } from '../shared/types';
 describe('lead session', () => {
   const s = (name: string) => ({ name });
   test('the newest replacement is the lead', () => {
-    expect(resolveLead([s('lead-manager'), s('lead-manager-v2'), s('vdp')], 'lead-manager')?.name).toBe('lead-manager-v2');
-    expect(resolveLead([s('lead-manager-v10'), s('lead-manager-v9')], 'lead-manager')?.name).toBe('lead-manager-v10');
-    expect(resolveLead([s('lead-manager')], 'lead-manager')?.name).toBe('lead-manager');
+    expect(resolveLead([s('lead'), s('lead-v2'), s('billing')], 'lead')?.name).toBe('lead-v2');
+    expect(resolveLead([s('lead-v10'), s('lead-v9')], 'lead')?.name).toBe('lead-v10');
+    expect(resolveLead([s('lead')], 'lead')?.name).toBe('lead');
   });
   test('other names never match', () => {
-    expect(resolveLead([s('lead-manager-old'), s('my-lead-manager'), s('lead-manager-v2x')], 'lead-manager')).toBeNull();
-    expect(resolveLead([s('lead-manager')], '')).toBeNull();
+    expect(resolveLead([s('lead-old'), s('my-lead'), s('lead-v2x')], 'lead')).toBeNull();
+    expect(resolveLead([s('lead')], '')).toBeNull();
   });
 });
 

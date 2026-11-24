@@ -166,7 +166,7 @@ export function SettingsPage() {
       <div className="col" style={{ gap: 16 }}>
         <SettingsSection title="General" text="Where ShiftBoss looks, and which session leads.">
           <Field id="lead-session" label="Lead session" hint="Always the big card on Sessions. Its replacements (name-v2, name-v3 …) take over automatically.">
-            <input id="lead-session" className="field mono" value={st.leadSession ?? ''} placeholder="lead-manager" onChange={(e) => setSt({ ...st, leadSession: e.target.value })} />
+            <input id="lead-session" className="field mono" value={st.leadSession ?? ''} placeholder="lead" onChange={(e) => setSt({ ...st, leadSession: e.target.value })} />
           </Field>
           <Field id="herdr-ws" label="herdr workspace" hint="Only show sessions in this workspace. Empty means every workspace.">
             <input id="herdr-ws" className="field mono" value={st.herdrWorkspace} placeholder="all workspaces" onChange={(e) => setSt({ ...st, herdrWorkspace: e.target.value })} />

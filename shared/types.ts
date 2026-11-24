@@ -133,9 +133,9 @@ export interface Settings {
   budgets: { fiveHourTokens: number; weeklyTokens: number };
   herdrWorkspace: string;
   handoffsDir: string;
-  /** Name of the lead session, e.g. 'lead-manager'. Also matches its replacements: lead-manager-v2, -v3, … */
+  /** Name of the lead session, e.g. 'lead'. Also matches its replacements: lead-v2, lead-v3, … */
   leadSession: string;
-  /** Slack channels intake reads for new top-level messages, e.g. "#proj-vdp-plus". */
+  /** Slack channels intake reads for new top-level messages, e.g. "#team-billing". */
   watchedChannels: string[];
 }
 

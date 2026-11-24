@@ -208,9 +208,9 @@ workspace.
 |---|---|---|
 | `ownerName` | `"The owner"` | Your name. Used in prompts ShiftBoss sends to sessions, e.g. "Priya's answer to …". |
 | `port` | `4400` | Port on 127.0.0.1. |
-| `herdrWorkspace` | `""` | Only show sessions in this herdr workspace, e.g. `"w5"`. Empty means every workspace. |
+| `herdrWorkspace` | `""` | Only show sessions in this herdr workspace, e.g. `"w1"`. Empty means every workspace. |
 | `handoffsDir` | `""` | Folder with one handoff file per session (`<session>.md`). ShiftBoss shows each file's age. |
-| `lanes` | `{}` | Per session: what it works on and how many tasks it may hold, e.g. `{"vdp": {"lane": "spin, banners", "slots": 2}}`. Also editable on the Settings screen. |
+| `lanes` | `{}` | Per session: what it works on and how many tasks it may hold, e.g. `{"billing-fix": {"lane": "billing, invoices", "slots": 2}}`. Also editable on the Settings screen. |
 | `contextWindows` | opus/sonnet 1M, haiku 200k | Context window per model, matched on part of the model id. Used only when the status line gives no percentage. |
 | `releaseEnvs` | `[]` | `[{ "name": "Production", "url": "https://…/health/version" }]`. Each URL returns a version, as plain text or JSON with `version`, `message` or `commit`. A name containing "dev" or "prod" drives the automatic On dev and Live moves. |
 | `releaseRepo` | `""` | `owner/repo` those environments deploy. Enables merged-PR listing and automatic On dev and Live moves. |
@@ -514,8 +514,8 @@ Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET 
 `shiftboss import tasks.json` takes an array like this:
 
 ```json
-[{ "extId": "board:capture-feed-photos", "title": "Feed photos must not show for uncaptured cars",
-   "stage": 2, "ask": "…", "session": "vdp", "sourceUrl": "https://…", "held": false,
+[{ "extId": "JIRA-123", "title": "Fix the billing export",
+   "stage": 2, "ask": "…", "session": "billing-fix", "sourceUrl": "https://…", "held": false,
    "links": [{ "label": "PR", "url": "https://github.com/org/repo/pull/81" }] }]
 ```
 

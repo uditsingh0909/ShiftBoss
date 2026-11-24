@@ -64,7 +64,7 @@ export function Welcome() {
           <span className="dim" style={{ fontSize: 14 }}>The lead is the session that coordinates the others; it always gets the big card on Sessions. A replacement named <code className="mono">name-v2</code> takes over automatically.</span>
           <form className="settings-controls" onSubmit={(e) => { e.preventDefault(); void saveBasics(); }}>
             <div className="col" style={{ gap: 6 }}><label htmlFor="wl-lead" style={{ fontSize: 13 }}>Lead session</label>
-              <Pick id="wl-lead" free value={lead} onChange={setLead} placeholder="lead-manager"
+              <Pick id="wl-lead" free value={lead} onChange={setLead} placeholder="lead"
                 options={[...new Set(snap.sessions.map((s) => s.name.replace(/-v\d+$/, '')))].map((n) => ({ value: n }))} />
             </div>
             <label className="col" style={{ gap: 6 }}><span style={{ fontSize: 13 }}>herdr workspace</span>
