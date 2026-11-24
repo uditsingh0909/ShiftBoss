@@ -1,6 +1,6 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
-import { resolveLead, type Replacement, type Session } from '../../shared/types';
+import { MONITOR_SESSION, resolveLead, type Replacement, type Session } from '../../shared/types';
 import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, safeHref, Seg, toneColor, useSnap } from '../lib';
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
@@ -53,6 +53,11 @@ function Alerts() {
   const silent = !st.paused && (!st.lastBeginAt || Date.now() - Date.parse(st.lastBeginAt) > 10 * 60e3);
   if (silent) out.push({ key: 'intake', tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
     action: snap.sessions.some((x) => /intake/i.test(x.name)) ? { label: 'Check now', run: () => void act(() => api('POST', '/api/intake/run'), 'Intake is checking now') } : undefined });
+  for (const m of (snap.monitors ?? []).filter((x) => x.state === 'alerting'))
+    out.push({ key: 'mon' + m.id, tone: 'red', what: `Monitor: ${m.title} ${m.lastVerdict === 'error' ? 'could not be checked twice in a row' : 'looks bad'}`, detail: (m.lastSummary ?? '') + ' · ' + ago(m.lastCheckAt), to: href('monitors') });
+  const watched = (snap.monitors ?? []).filter((x) => x.state === 'active' || x.state === 'alerting');
+  if (watched.length && snap.herdrOk && !resolveLead(snap.sessions, MONITOR_SESSION))
+    out.push({ key: 'mon-session', tone: 'amber', what: 'No monitor session running', detail: `${watched.length} monitor${watched.length === 1 ? '' : 's'} not being checked`, to: href('monitors') });
   out.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'red' ? -1 : 1));
   const [idx, setIdx] = useState(0);
   const [hold, setHold] = useState(false);
