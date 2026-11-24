@@ -10,9 +10,12 @@ if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/"; then
   echo "$(date -u +%FT%TZ) ShiftBoss already answering on ${PORT}; not starting a second copy" >> data/server.log
   exit 0
 fi
+# Open the browser on the first start only; restarts after a crash or an update stay quiet.
+OPEN=1
 while true; do
   echo "$(date -u +%FT%TZ) starting ShiftBoss" >> data/server.log
-  bun server/index.ts >> data/server.log 2>&1
+  SHIFTBOSS_OPEN=$OPEN bun server/index.ts >> data/server.log 2>&1
+  OPEN=0
   code=$?
   # Someone else took the port while we were down: stop looping.
   if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/"; then exit 0; fi

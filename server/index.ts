@@ -46,3 +46,11 @@ function serve() { return Bun.serve({
 }); }
 
 console.log(`ShiftBoss on http://127.0.0.1:${server.port}`);
+
+// Open the UI on a first start (scripts/run.sh sets SHIFTBOSS_OPEN=1 only for its first launch, so a
+// crash restart or an update does not open another tab). Set "openBrowser": false in the config to stop it.
+if (process.env.SHIFTBOSS_OPEN === '1' && cfg.openBrowser !== false) {
+  const url = `http://127.0.0.1:${server.port}/`;
+  const cmd = process.platform === 'win32' ? ['cmd', '/c', 'start', '', url] : process.platform === 'darwin' ? ['open', url] : ['xdg-open', url];
+  try { Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore' }).unref(); } catch { /* no browser on this machine: fine */ }
+}

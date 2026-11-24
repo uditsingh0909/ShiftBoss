@@ -19,6 +19,7 @@ export interface Config {
   releaseEnvs: { name: string; url: string }[]; // GET <url> returns a version
   releaseRepo: string; // owner/repo for merged PRs via gh, '' to skip
   freezeVar: { repo: string; name: string } | null;
+  openBrowser: boolean; // open the UI in the browser when ShiftBoss first starts (not on automatic restarts)
 }
 
 const defaults: Config = {
@@ -36,6 +37,7 @@ const defaults: Config = {
   releaseEnvs: [],
   releaseRepo: '',
   freezeVar: null,
+  openBrowser: true,
 };
 
 export function loadConfig(): Config {

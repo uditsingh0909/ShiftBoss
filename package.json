@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "bun --hot server/index.ts",
-    "start": "bun server/index.ts",
+    "start": "SHIFTBOSS_OPEN=1 bun server/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
