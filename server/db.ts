@@ -60,6 +60,11 @@ export class Store {
     if (!ncols.some((c) => c.name === 'sent_at')) this.db.exec('ALTER TABLE needs ADD COLUMN sent_at TEXT');
     const icols = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
     if (!icols.some((c) => c.name === 'url')) this.db.exec('ALTER TABLE intake ADD COLUMN url TEXT');
+    // vetted: the owner queued or assigned this task in the UI. Only vetted tasks are sent automatically,
+    // so text from Slack (filed by the intake) never reaches a session as a prompt without a person.
+    if (!cols.some((c) => c.name === 'vetted')) this.db.exec('ALTER TABLE tasks ADD COLUMN vetted INTEGER NOT NULL DEFAULT 0');
+    const scols = this.db.query('PRAGMA table_info(slack_msgs)').all() as { name: string }[];
+    if (!scols.some((c) => c.name === 'approved_at')) this.db.exec('ALTER TABLE slack_msgs ADD COLUMN approved_at TEXT');
     if (!cols.some((c) => c.name === 'ext_id')) {
       this.db.exec('ALTER TABLE tasks ADD COLUMN ext_id TEXT; CREATE UNIQUE INDEX IF NOT EXISTS tasks_ext_id ON tasks(ext_id);');
     }
@@ -86,9 +91,11 @@ export class Store {
   // ---------- tasks ----------
   private rowTask = (r: any): Task => ({
     id: r.id, title: r.title, ask: r.ask, requester: r.requester, source: r.source, sourceUrl: r.source_url,
-    session: r.session, stage: r.stage as Stage, prio: r.prio, held: !!r.held, createdAt: r.created_at, updatedAt: r.updated_at,
+    session: r.session, stage: r.stage as Stage, prio: r.prio, held: !!r.held, vetted: !!r.vetted, createdAt: r.created_at, updatedAt: r.updated_at,
   });
 
+  vetTask(id: string) { this.db.query('UPDATE tasks SET vetted = 1 WHERE id = ?').run(id); }
+  approveSlack(id: number) { this.db.query('UPDATE slack_msgs SET approved_at = ? WHERE id = ? AND approved_at IS NULL').run(now(), id); }
   listTasks(): Task[] {
     return this.db.query('SELECT * FROM tasks ORDER BY seq DESC').all().map(this.rowTask);
   }

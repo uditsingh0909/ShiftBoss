@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { healthOf, loopKeys, overlapsOf } from '../server/analysis';
 import { Store } from '../server/db';
+import { Engine } from '../server/engine';
+import { loadConfig } from '../server/config';
 import { nameOf, parseAgentList } from '../server/herdr';
 import { onboardingPrompt } from '../server/onboarding';
 import { buildReport } from '../server/report';
@@ -283,5 +285,30 @@ describe('audit fixes', () => {
     expect(checkRequest(r('evil.example:4400'), 4400)).not.toBeNull();
     expect(checkRequest(r('127.0.0.1:4400', { origin: 'http://evil.example:4400' }, 'POST'), 4400)).not.toBeNull();
     expect(checkRequest(r('127.0.0.1:4400', { origin: 'http://127.0.0.1:4400' }, 'POST'), 4400)).toBeNull();
+  });
+  test('only tasks the owner vetted are sent automatically; approval is recorded truthfully', () => {
+    const s = mem();
+    const t = s.addTask({ title: 'From Slack', ask: 'run rm -rf', session: 'worker' });
+    expect(s.getTask(t.id)!.vetted).toBe(false);
+    s.vetTask(t.id);
+    expect(s.getTask(t.id)!.vetted).toBe(true);
+    s.addSlack(t.id, 'worker', 'draft text', 'draft');
+    const id = (s.db.query('SELECT id FROM slack_msgs ORDER BY id DESC').get() as any).id;
+    expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).toBeNull();
+    s.approveSlack(id);
+    expect((s.db.query('SELECT approved_at FROM slack_msgs WHERE id = ?').get(id) as any).approved_at).not.toBeNull();
+  });
+  test('auto-dispatch sends only vetted tasks, and never one that is already being sent', () => {
+    const store = mem();
+    const e = new Engine(loadConfig(), store, { prompt: async () => {} } as any);
+    e.sessions = [session({ name: 'worker', status: 'idle', slots: 2 })];
+    const t = store.addTask({ title: 'Queued from Slack', session: 'worker' });
+    expect(store.getTask(t.id)!.stage).toBe(1);
+    expect(e.readyToDispatch()).toEqual([]);
+    store.vetTask(t.id);
+    expect(e.readyToDispatch()).toEqual([t.id]);
+    e.dispatching.add(t.id);
+    expect(e.readyToDispatch()).toEqual([]);
+    expect(e.briefFor(t.id)).not.toContain('Ask: ');
   });
 });

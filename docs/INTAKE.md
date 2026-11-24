@@ -50,7 +50,8 @@ Each run, from `readFrom`:
    money, live customers, access, or anything you are unsure about).
 4. A new ask that is ours becomes a task, in the asker's words:
    `shiftboss task add "<title>" --ask "<their words>" --from "<name>" --source "<channel>" --url "<permalink>" --prio P1|P2|P3`
-   Leave it in the inbox (no `--session`) unless the lane is obvious.
+   Always leave it in the inbox: never pass `--session`. The owner reads it and assigns it, so text
+   from Slack never reaches a coding session as a prompt without a person seeing it first.
 5. Every line sent from the owner's account that says what we will do or tell someone becomes a promise:
    `shiftboss promise "<what was said>" --to "<name>" --where "<channel>" --when "<what keeps it>" --task T-n`
 6. A question the requester asked in a task's thread goes on that task:

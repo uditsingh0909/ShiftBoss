@@ -13,7 +13,7 @@ function StagePips({ stage }: { stage: number }) {
 function NewTask({ onDone }: { onDone: () => void }) {
   const snap = useSnap()!;
   const [f, setF] = useState({ title: '', ask: '', requester: '', source: '', session: '', prio: 'P2' as Task['prio'] });
-  const submit = () => act(async () => { await api('POST', '/api/tasks', { ...f, session: f.session || null }); onDone(); }, 'Added to the inbox');
+  const submit = () => act(async () => { await api('POST', '/api/tasks', { ...f, session: f.session || null, who: 'you' }); onDone(); }, 'Added to the inbox');
   return (
     <section className="shell rise" aria-label="New task">
       <form className="core" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 16, alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); if (f.title.trim()) void submit(); }}>
@@ -42,7 +42,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
   const match = { All: () => true, Inbox: (t: Task) => t.stage === 0, P1: (t: Task) => t.prio === 'P1', Unassigned: (t: Task) => !t.session, 'Mine to ship': (t: Task) => t.stage >= 3 && t.stage <= 5 };
   const list = snap.tasks.filter(match[filter]);
   const page = usePage(list, 50, filter);
-  const move = (id: string, stage: number) => act(() => api('PATCH', `/api/tasks/${id}`, { stage }), `${id} → ${STAGES[stage]}`);
+  const move = (id: string, stage: number) => act(() => api('PATCH', `/api/tasks/${id}`, { stage, who: 'you' }), `${id} → ${STAGES[stage]}`);
   const inFlight = snap.tasks.filter((t) => t.stage >= 2 && t.stage <= 4).length;
 
   const card = (t: Task) => (
@@ -124,7 +124,7 @@ export function TaskPage({ id }: { id: string }) {
   if (!d) return <div className="page faint">Loading…</div>;
   const t = d.task;
   const s = t.session ? snap.sessions.find((x) => x.name === t.session) : null;
-  const patch = (body: object, ok: string) => act(() => api('PATCH', `/api/tasks/${t.id}`, body), ok);
+  const patch = (body: object, ok: string) => act(() => api('PATCH', `/api/tasks/${t.id}`, { ...body, who: 'you' }), ok);
   const events = d.events.filter((e) => src === 'All' || e.src === src);
   const sent = d.slack.filter((m) => m.kind === 'sent').length;
   const owed = d.promises.filter((p) => p.state !== 'kept').length;

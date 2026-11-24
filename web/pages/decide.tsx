@@ -283,7 +283,7 @@ export function Audit() {
                 <span className="mono dim ellipsis" style={{ fontSize: 12 }}>{r.channel || '—'}</span>
                 <span className="ellipsis">{r.text}</span>
                 <span className="mono dim ellipsis" style={{ fontSize: 12 }}>{r.by || '—'}</span>
-                <span className="mono ellipsis" style={{ fontSize: 12, color: r.corrected ? C.red : r.approval.includes('you') ? C.green : C.dim }}>{r.corrected ? 'corrected' : r.approval || '—'}</span>
+                <span className="mono ellipsis" style={{ fontSize: 12, color: r.corrected || r.approval === 'not approved' ? C.red : r.approval.includes('you') ? C.green : C.dim }}>{r.corrected ? 'corrected' : r.approval || '—'}</span>
               </button>
               {expanded && (
                 <div className="col fresh" style={{ gap: 12, padding: '4px 16px 18px 92px' }}>

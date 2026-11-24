@@ -62,6 +62,7 @@ export function makeApi(engine: Engine) {
         const b = await body<any>(req);
         const t = store.addTask({ title: str(b.title, 'title', 300), ask: optStr(b.ask), requester: optStr(b.requester, 100), source: optStr(b.source, 200),
           sourceUrl: safeUrl(b.sourceUrl), session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2' });
+        if (b.who === 'you' && t.session) store.vetTask(t.id);
         engine.pushFeed('shiftboss', `filed ${t.id}: ${t.title}`);
         return done(json(t, 201));
       }
@@ -85,10 +86,13 @@ export function makeApi(engine: Engine) {
         if (b.title !== undefined) patch.title = str(b.title, 'title', 300);
         if (b.ask !== undefined) patch.ask = String(b.ask);
         if (patch.session && patch.stage === undefined) { const cur = store.getTask(r[1]); if (cur?.stage === 0) patch.stage = 1; }
-        return done(json(store.updateTask(r[1], patch, optStr(b.who, 100) ?? 'you')));
+        const who = optStr(b.who, 100) ?? 'session';
+        const updated = store.updateTask(r[1], patch, who);
+        if (who === 'you' && (patch.session || patch.stage === 1)) store.vetTask(r[1]);
+        return done(json(updated));
       }
       r = m(/^\/api\/tasks\/(T-\d+)\/dispatch$/);
-      if (r && write) { await engine.dispatchTask(r[1]); return done(json({ ok: true })); }
+      if (r && write) { store.vetTask(r[1]); await engine.dispatchTask(r[1]); return done(json({ ok: true })); }
       r = m(/^\/api\/tasks\/(T-\d+)\/brief$/);
       if (r) return json({ brief: engine.briefFor(r[1]) });
       r = m(/^\/api\/tasks\/(T-\d+)\/events$/);
@@ -113,6 +117,7 @@ export function makeApi(engine: Engine) {
         const t = store.getTask(msg.task_id);
         const s = t?.session ? engine.sessions.find((x) => x.name === t.session) : null;
         if (!s) return fail('The session that owns this draft is not running, so nobody can post it', 409);
+        store.approveSlack(id);
         await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} approved your draft for ${t!.id}. Post it exactly as written, then run: shiftboss slack sent ${id}\n\n${msg.text}`);
         store.addEvent(t!.id, 'Slack', 'you', 'Approved the draft; ' + s.name + ' will post it');
         return done(json({ ok: true }));
@@ -123,7 +128,7 @@ export function makeApi(engine: Engine) {
         const msg: any = store.db.query('SELECT * FROM slack_msgs WHERE id = ?').get(id);
         if (!msg) return fail('No message ' + id, 404);
         store.setSlackKind(id, 'sent');
-        store.addAudit({ where: 'Slack', channel: '', text: msg.text, by: store.getTask(msg.task_id)?.session ?? '', approval: 'approved by you' });
+        store.addAudit({ where: 'Slack', channel: '', text: msg.text, by: store.getTask(msg.task_id)?.session ?? '', approval: msg.approved_at ? 'approved by you' : 'not approved' }); // only a draft approved here counts
         return done(json({ ok: true }));
       }
 

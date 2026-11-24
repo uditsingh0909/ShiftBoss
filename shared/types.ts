@@ -48,6 +48,8 @@ export interface Task {
   stage: Stage;
   prio: 'P1' | 'P2' | 'P3';
   held: boolean;
+  /** The owner queued or assigned it in the UI; only these are sent automatically. */
+  vetted?: boolean;
   createdAt: string;
   updatedAt: string;
 }
