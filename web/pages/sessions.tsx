@@ -54,35 +54,48 @@ function Alerts() {
   if (silent) out.push({ key: 'intake', tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
     action: snap.sessions.some((x) => /intake/i.test(x.name)) ? { label: 'Check now', run: () => void act(() => api('POST', '/api/intake/run'), 'Intake is checking now') } : undefined });
   out.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'red' ? -1 : 1));
-  const [all, setAll] = useState(false);
-  if (!out.length) return (
+  const [idx, setIdx] = useState(0);
+  const [hold, setHold] = useState(false);
+  const n = out.length;
+  // Auto-advance every 6 s; hovering or focusing the strip holds it.
+  useEffect(() => {
+    if (n < 2 || hold) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % n), 6000);
+    return () => clearInterval(t);
+  }, [n, hold]);
+  if (!n) return (
     <div className="rise row" style={{ gap: 10, padding: '12px 18px', border: '1px solid var(--line)', borderRadius: 999, alignSelf: 'flex-start' }}>
       <Dot color={C.green} /><span style={{ fontSize: 13 }} className="dim">All clear: nothing needs you, no health issues, no overlaps.</span>
     </div>
   );
-  const shown = all ? out : out.slice(0, 5);
-  const worst = out[0].tone;
+  const i = idx % n;
+  const a = out[i];
+  const reds = out.filter((x) => x.tone === 'red').length;
+  const go = (d: number) => setIdx((x) => (x % n + d + n) % n);
   return (
-    <section className={`shell rise alert-${worst}`} aria-label="Needs attention">
-      <div className="core col" style={{ gap: 4, padding: '18px 22px' }}>
-        <div className="row" style={{ gap: 10, marginBottom: 6 }}>
-          <Dot color={worst === 'red' ? C.red : C.amber} blink />
-          <span className="label">Needs attention · {out.length}</span>
-          {out.length > 5 && <button type="button" className="pill sm" style={{ marginLeft: 'auto' }} onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${out.length}`}</button>}
-        </div>
-        <div className="col divide">
-          {shown.map((a) => (
-            <div key={a.key} className="row" style={{ gap: 14, padding: '10px 0', flexWrap: 'wrap' }}>
-              <Dot color={a.tone === 'red' ? C.red : C.amber} />
-              <a href={a.to} className="col" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }}>
-                <span style={{ fontSize: 14 }}>{a.what}</span>
-                <span className="faint ellipsis" style={{ fontSize: 12 }}>{a.detail}</span>
-              </a>
-              {a.action && <button type="button" className="pill sm w" onClick={a.action.run}>{a.action.label}</button>}
-              <a className="pill sm" href={a.to}>Open<Arrow /></a>
-            </div>
-          ))}
-        </div>
+    <section className={`shell rise alert-${a.tone}`} aria-label="Needs attention" aria-roledescription="carousel"
+      onMouseEnter={() => setHold(true)} onMouseLeave={() => setHold(false)} onFocus={() => setHold(true)} onBlur={() => setHold(false)}>
+      <div className="core row" style={{ gap: 14, padding: '12px 14px 12px 20px', flexWrap: 'wrap' }}>
+        <span className="row" style={{ gap: 8, flex: 'none' }}>
+          <Dot color={reds ? C.red : C.amber} blink />
+          <span className="label">{n} need{n === 1 ? 's' : ''} attention</span>
+        </span>
+        <a key={a.key} href={a.to} className="col alert-slide" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }} aria-live="polite">
+          <span className="row" style={{ gap: 8, fontSize: 14, minWidth: 0 }}><Dot color={a.tone === 'red' ? C.red : C.amber} /><span className="ellipsis">{a.what}</span></span>
+          <span className="faint ellipsis" style={{ fontSize: 12, paddingLeft: 16 }}>{a.detail}</span>
+        </a>
+        <span className="row" style={{ gap: 8, flex: 'none', marginLeft: 'auto' }}>
+          {a.action && <button type="button" className="pill sm w" onClick={a.action.run}>{a.action.label}</button>}
+          <a className="pill sm" href={a.to}>Open<Arrow /></a>
+          {n > 1 && <>
+            <span className="row hide-sm" style={{ gap: 4, margin: '0 4px' }} aria-hidden="true">
+              {out.slice(0, 12).map((x, k) => <span key={x.key} style={{ width: k === i ? 14 : 5, height: 5, borderRadius: 999, background: k === i ? C.fg : x.tone === 'red' ? 'rgba(255,90,79,.5)' : C.ghost, transition: 'width .5s var(--ease)' }} />)}
+            </span>
+            <span className="mono faint" style={{ fontSize: 11 }}>{i + 1}/{n}</span>
+            <button type="button" className="pill sm" style={{ width: 32, padding: 0, justifyContent: 'center' }} aria-label="Previous alert" onClick={() => go(-1)}>‹</button>
+            <button type="button" className="pill sm" style={{ width: 32, padding: 0, justifyContent: 'center' }} aria-label="Next alert" onClick={() => go(1)}>›</button>
+          </>}
+        </span>
       </div>
     </section>
   );
