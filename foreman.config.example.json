@@ -1,0 +1,16 @@
+{
+  "port": 4400,
+  "herdrWorkspace": "w5",
+  "handoffsDir": "D:/Ditra/handoffs",
+  "contextWindows": { "opus": 1000000, "sonnet": 1000000, "haiku": 200000 },
+  "lanes": {
+    "general-tasks": { "lane": "console, analytics, anything unowned", "slots": 2 },
+    "urgent-bugs": { "lane": "prod incidents, alerts, backfills", "slots": 2 }
+  },
+  "releaseEnvs": [
+    { "name": "Production", "url": "https://api.example.com/health/version" },
+    { "name": "Development", "url": "https://api-dev.example.com/health/version" }
+  ],
+  "releaseRepo": "your-org/your-service",
+  "freezeVar": { "repo": "your-org/your-service", "name": "DEPLOY_FREEZE" }
+}
