@@ -51,6 +51,12 @@ export class Engine {
   onChange(fn: Listener) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   emit() { for (const fn of this.listeners) fn(); }
   pushFeed(who: string, text: string) {
+    // The same line again from the same source within 10 minutes is one line (its time moves), not a column of repeats.
+    const top = this.feed.find((f) => f.who === who);
+    if (top && top.text === text && Date.now() - Date.parse(top.at) < 10 * 60e3) {
+      this.feed = [{ ...top, at: new Date().toISOString() }, ...this.feed.filter((f) => f !== top)];
+      return;
+    }
     this.feed.unshift({ at: new Date().toISOString(), who, text });
     this.feed = this.feed.slice(0, 60);
   }
@@ -134,7 +140,9 @@ export class Engine {
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const status = (['working', 'idle', 'done', 'blocked'].includes(a.agent_status) ? a.agent_status : 'unknown') as AgentStatus;
     const prev = this.lastStatus.get(name);
-    if (prev && prev !== status) this.pushFeed(name, status === 'blocked' ? 'waiting for permission' : status === 'done' ? 'finished its turn' : status);
+    // Only what is worth reading: a session finishing its turn. Working/idle flips are noise, and a blocked pane is
+    // already reported as 'needs your permission' (syncNeeds).
+    if (prev && prev !== status && status === 'done') this.pushFeed(name, 'finished its turn');
     this.lastStatus.set(name, status);
     const loops = loopKeys(st?.tools ?? [], settings.thresholds.loopRepeats);
     return {
@@ -757,6 +765,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     const settings = this.store.settings();
     const tasks = this.store.listTasks();
     const transcripts = this.sessions.map((s) => ({ s, tools: s.sessionId ? this.transcripts.read(s.sessionId)?.tools ?? [] : [] }));
+    if (Math.random() < 0.01) this.transcripts.evict(); // now and then is enough
     return {
       now: new Date().toISOString(),
       herdrOk: this.herdrOk, herdrError: this.herdrError,

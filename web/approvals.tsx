@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ago, api, C, Empty, toast, useSnap } from './lib';
+import { ago, agoText, api, C, Empty, toast, useSnap } from './lib';
 import { modeName } from './mode';
 
 const by = (who: string) => (who === 'dispatcher' ? 'ShiftBoss (automatic sending)' : who === 'shiftboss' ? 'ShiftBoss' : who);
@@ -42,7 +42,7 @@ export function Approvals() {
                 <button type="button" className="col" onClick={() => setOpen(open === a.id ? null : a.id)} aria-expanded={open === a.id}
                   style={{ gap: 2, flex: '1 1 280px', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
                   <span style={{ fontSize: 14 }}>{a.summary}</span>
-                  <span className="faint" style={{ fontSize: 12 }}>asked by {by(a.by)} · {ago(a.at)} ago{a.detail ? ' · details' : ''}</span>
+                  <span className="faint" style={{ fontSize: 12 }}>asked by {by(a.by)} · {agoText(a.at)}{a.detail ? ' · details' : ''}</span>
                 </button>
                 <button type="button" className="pill sm w" disabled={busy !== null} onClick={() => void decide(a.id, true)}>{busy === a.id ? 'Running…' : 'Approve'}</button>
                 <button type="button" className="pill sm" disabled={busy !== null} onClick={() => void decide(a.id, false)}>Reject</button>

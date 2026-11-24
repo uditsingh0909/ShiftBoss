@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { act, ago, api, C, Dot, hhmm, href, useSnap } from './lib';
+import { act, ago, agoText, api, C, Dot, hhmm, href, useSnap } from './lib';
 
 /** Next morning at 9:00 local time, as the default "pause until". */
 function nextMorning(): string {
@@ -30,7 +30,7 @@ export function IntakeControl({ compact }: { compact?: boolean }) {
     ? `Paused ${span(st.pausedAt)}${st.resumeAt ? ` · resumes ${new Date(st.resumeAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}`
     : silent
       ? intakeSession ? 'Running, but has not checked in for 10+ min' : 'No intake session running'
-      : st.catchUpFrom ? `Catching up from ${hhmm(st.catchUpFrom)}` : `Reading · checked in ${ago(st.lastBeginAt)} ago`;
+      : st.catchUpFrom ? `Catching up from ${hhmm(st.catchUpFrom)}` : `Reading · checked in ${agoText(st.lastBeginAt)}`;
   const pause = (u: string | null) => act(() => api('POST', '/api/intake/pause', { until: u ? new Date(u).toISOString() : null }), u ? 'Intake paused until ' + new Date(u).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'Intake paused').then(() => setPicking(false));
   const resume = (catchUp: boolean) => act(() => api('POST', '/api/intake/resume', { catchUp }), catchUp ? 'Resumed · it will read what it missed' : 'Resumed from now · missed messages skipped');
 

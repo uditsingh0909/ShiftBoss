@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveLead } from '../../shared/types';
-import { act, ago, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
+import { act, ago, agoText, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
 import { Cmd, Step, type SetupInfo } from './setup';
 import { ModePicker } from '../mode';
 
@@ -46,7 +46,7 @@ export function BringIn() {
               <input type="checkbox" aria-label={'Bring in ' + o.suggestedName} checked={on} disabled={!o.cwdExists} onChange={() => toggle(o)} style={{ width: 16, height: 16, accentColor: '#F4F4F5' }} />
               <div className="col" style={{ gap: 3, flex: '1 1 260px', minWidth: 0 }}>
                 <span className="ellipsis" style={{ fontSize: 14 }}>{o.title ?? o.firstAsk ?? 'Untitled session'}</span>
-                <span className="mono faint ellipsis" style={{ fontSize: 11 }}>{o.cwd} · {o.sizeKB > 1024 ? (o.sizeKB / 1024).toFixed(1) + ' MB' : o.sizeKB + ' KB'} · {ago(o.lastAt)} ago</span>
+                <span className="mono faint ellipsis" style={{ fontSize: 11 }}>{o.cwd} · {o.sizeKB > 1024 ? (o.sizeKB / 1024).toFixed(1) + ' MB' : o.sizeKB + ' KB'} · {agoText(o.lastAt)}</span>
                 {o.recent && <span style={{ fontSize: 12, color: C.amber }}>Active a moment ago: probably still open somewhere. Exit it there before bringing it in.</span>}
                 {!o.cwdExists && <span style={{ fontSize: 12, color: C.faint }}>Its folder no longer exists.</span>}
               </div>
@@ -161,7 +161,7 @@ export function Welcome() {
                   <span className="mono ellipsis" style={{ flex: '1 1 200px', minWidth: 0 }}>{s.name}</span>
                   <span className="mono" style={{ fontSize: 12, color: s.status === 'blocked' ? C.amber : C.faint }}>{s.status}</span>
                   <span className="mono" style={{ fontSize: 12, minWidth: 90, textAlign: 'right', color: n ? C.green : C.faint }}>{n} task{n === 1 ? '' : 's'}</span>
-                  <span className="mono faint" style={{ fontSize: 12, minWidth: 110, textAlign: 'right' }}>{ob.asked[s.name] ? `asked ${ago(ob.asked[s.name])} ago` : 'not asked'}</span>
+                  <span className="mono faint" style={{ fontSize: 12, minWidth: 110, textAlign: 'right' }}>{ob.asked[s.name] ? `asked ${agoText(ob.asked[s.name])}` : 'not asked'}</span>
                 </label>
               );
             })}

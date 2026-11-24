@@ -91,6 +91,7 @@ function parse(argv: string[]) {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (a.startsWith('--') && a.includes('=')) { const i2 = a.indexOf('='); flags[a.slice(2, i2)] = a.slice(i2 + 1); continue; }
     if (a.startsWith('--')) {
       const k = a.slice(2);
       if (BOOL.has(k) || i + 1 >= argv.length || argv[i + 1].startsWith('--')) flags[k] = 'true';

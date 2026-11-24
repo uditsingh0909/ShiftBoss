@@ -1,7 +1,7 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, toast, usePage, useSnap } from '../lib';
+import { act, ago, agoText, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, toast, usePage, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
@@ -190,7 +190,7 @@ export function TaskPage({ id }: { id: string }) {
         <div className="col" style={{ gap: 20, maxWidth: 1040 }}>
           <div className="row" style={{ gap: 10 }}><a className="eyebrow" href={href('tasks')}>‹ Tasks</a><span className="eyebrow mono">{t.id}</span><span className="eyebrow" style={{ color: prioColor(t.prio), borderColor: prioColor(t.prio) }}>{t.prio}{t.held ? ' · held' : ''}</span></div>
           <h1 className="hero" style={{ fontSize: 52, lineHeight: 1.06 }}>{t.title}</h1>
-          <span className="row dim" style={{ gap: 16, flexWrap: 'wrap' }}><span>{t.requester ? 'Asked by ' + t.requester : 'No requester'}{t.source ? ' in ' + t.source : ''}</span><span className="faint">·</span><span>filed {ago(t.createdAt)} ago</span><span className="faint">·</span><span>{STAGES[t.stage]}</span>
+          <span className="row dim" style={{ gap: 16, flexWrap: 'wrap' }}><span>{t.requester ? 'Asked by ' + t.requester : 'No requester'}{t.source ? ' in ' + t.source : ''}</span><span className="faint">·</span><span>filed {agoText(t.createdAt)}</span><span className="faint">·</span><span>{STAGES[t.stage]}</span>
             <DirectionChip d={t.direction} />{t.sourceUrl && <SourceButton url={t.sourceUrl} what={t.title} />}</span>
         </div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

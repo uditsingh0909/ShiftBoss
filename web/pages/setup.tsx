@@ -10,9 +10,9 @@ export interface SetupInfo {
   commands: { mcpAdd: string; mcpCheck: string; cli: string; statusLine: string; intakeLoop: string };
 }
 
-const CLAUDE_MD = `## ShiftBoss: report your task's progress
+const claudeMd = (port: number) => `## ShiftBoss: report your task's progress
 
-ShiftBoss (http://127.0.0.1:4400) already sees your status, output, edits and PRs.
+ShiftBoss (http://127.0.0.1:${port}) already sees your status, output, edits and PRs.
 It cannot see where your task is, so tell it:
 - Your brief names a task id like T-12. Put "ShiftBoss: T-12" in the PR description.
   ShiftBoss then moves the task to PR open, On dev and Live by itself.
@@ -80,7 +80,7 @@ export function SetupPage() {
 
           <Step n={2} title="Tell sessions how to report" state={reporting ? 'ok' : 'todo'}>
             <span className="dim" style={{ fontSize: 14 }}>Paste this into the CLAUDE.md your sessions read. {reporting ? `${reporting} session${reporting === 1 ? ' has' : 's have'} used the tools in the last 3 hours.` : 'No session has used the tools in the last 3 hours yet.'}</span>
-            <Cmd text={CLAUDE_MD} />
+            <Cmd text={claudeMd(info.port)} />
           </Step>
 
           <Step n={3} title="Exact usage numbers (status line)" state={info.statusTap.configured ? 'ok' : 'optional'}>

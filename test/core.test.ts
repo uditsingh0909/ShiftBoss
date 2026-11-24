@@ -1163,3 +1163,17 @@ describe('review fixes', () => {
   });
 });
 
+
+describe('report: live today', () => {
+  test('a task counts as live today when it went live today, not when an old live task is edited', () => {
+    const s = mem();
+    const t = s.addTask({ title: 'Ship it' });
+    s.updateTask(t.id, { stage: 5 });
+    expect(s.getTask(t.id)!.liveAt).toBeTruthy();
+    const first = s.getTask(t.id)!.liveAt;
+    s.db.query("UPDATE tasks SET live_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(t.id);
+    s.updateTask(t.id, { title: 'Ship it (renamed)' });
+    expect(s.getTask(t.id)!.liveAt).toBe('2020-01-01T00:00:00.000Z');
+    expect(first).not.toBeNull();
+  });
+});

@@ -195,6 +195,9 @@ input[type="checkbox"] { accent-color: #F4F4F5; width: 16px; height: 16px; flex:
 /* quick actions on task cards and list rows: on hover or keyboard focus, always on touch screens */
 .kq { display: none; gap: 6px; flex-wrap: wrap; align-items: center; }
 .kcard:hover .kq, .kcard:focus-within .kq { display: flex; }
+/* on a board card: the buttons on one row, the session picker on its own full-width row (no 3-line wrap) */
+.kcard .kq > .pick { order: 9; flex: 1 1 100%; width: 100% !important; }
+.kcard .kq > .pill { flex: none; }
 .kq .pick-field { height: 26px; border-radius: 999px; font-size: 11px; padding: 0 26px 0 10px; background-position: right 9px center; border-color: rgba(255,255,255,.12); background-color: transparent; }
 .tlist { display: grid; grid-template-columns: 64px minmax(0,1fr) 170px 110px 90px 70px; gap: 16px; align-items: center; position: relative; }
 .tlist .kq { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding-left: 16px; background: #121212; flex-wrap: nowrap; }

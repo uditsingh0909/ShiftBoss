@@ -86,7 +86,7 @@ account.
 | Tool | Why | Check |
 |---|---|---|
 | [Bun](https://bun.sh) 1.2 or newer | Runs the server, the CLI and the MCP server | `bun --version` |
-| [herdr](https://herdr.dev) | ShiftBoss reads your sessions from it | `herdr agent list` |
+| [herdr](https://herdr.dev) 0.9 or newer | ShiftBoss reads your sessions from it. 0.9 is the version that refuses to type into a pane waiting on a permission prompt, which ShiftBoss relies on | `herdr --version`, `herdr agent list` |
 | [Claude Code](https://claude.com/claude-code) | The sessions themselves | `claude --version` |
 | [GitHub CLI](https://cli.github.com) (optional) | Automatic task moves (PR open, On dev, Live) | `gh auth status` |
 
@@ -309,6 +309,24 @@ sh.Run """C:\Program Files\Git\bin\bash.exe"" scripts/run.sh", 0, False
 
 It runs hidden. On macOS or Linux, add `bash /path/to/shiftboss/scripts/run.sh` to your login items or a
 user service.
+
+### A `shiftboss` command on your PATH
+
+The CLI is `bun <shiftboss folder>/cli/shiftboss.ts`. To type just `shiftboss` in any terminal (and in Claude
+Code's own shell, which has no aliases), run `bun link` once in the ShiftBoss folder: the package declares the
+`shiftboss` command, and Bun puts it on your PATH.
+
+### Environment variables
+
+| Variable | What it does |
+|---|---|
+| `SHIFTBOSS_PORT` | The port, over the config file's `port` (default 4400). The CLI and MCP server follow it too. |
+| `SHIFTBOSS_DATA_DIR` | Where the database, status files and log live (default `data/` in the ShiftBoss folder). |
+| `SHIFTBOSS_CONFIG` | A config file other than `shiftboss.config.json` in the ShiftBoss folder. |
+| `SHIFTBOSS_SESSION` | Set in a session's environment: the CLI and MCP tools use it as the session's name ("by …"). |
+| `CHROME_PATH` | A Chrome, Edge or Chromium for the browser checks (`test/e2e.ts`), if none is found by itself. |
+
+One ShiftBoss per person per machine: two would both see the same herdr sessions and could both prompt them.
 
 ### Files ShiftBoss writes
 

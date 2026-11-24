@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Approvals } from '../approvals';
 import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
-import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
+import { act, ago, agoText, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
@@ -70,7 +70,7 @@ export function NeedsYou() {
   return (
     <div className="page">
       <Hero eyebrow="Needs you" live title={open.length ? `${open.length} thing${open.length === 1 ? '' : 's'} waiting on you.` : 'Nothing waiting on you.'}
-        sub={open.length ? `Oldest waiting ${ago([...open].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0].createdAt)}.` : 'Sessions will ask here when they need a decision.'}>
+        sub={open.length ? `Oldest has waited ${((x) => (x === 'just now' ? 'a moment' : x.replace(' ago', '')))(agoText([...open].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0].createdAt))}.` : 'Sessions will ask here when they need a decision.'}>
         <Seg label="View" value={view} options={['Focus', 'List'] as const} onChange={setView} />
       </Hero>
       <Approvals />
@@ -193,7 +193,7 @@ export function Promises() {
                 <span style={{ fontWeight: 500 }}>{p.to}</span>
                 {p.where && <span className="mono dim" style={{ fontSize: 12 }}>{p.where}</span>}
                 <span className="mono" style={{ fontSize: 12, color: promiseColor(p.state) }}>{p.state === 'due' ? 'overdue' : p.state === 'ready' ? 'ready to send' : p.state}</span>
-                <span className="mono faint" style={{ fontSize: 12, marginLeft: 'auto' }}>{ago(p.createdAt)} ago</span>
+                <span className="mono faint" style={{ fontSize: 12, marginLeft: 'auto' }}>{agoText(p.createdAt)}</span>
               </div>
               <blockquote style={{ margin: 0, fontSize: 18, lineHeight: 1.45 }}>“{p.said}”</blockquote>
               {p.keptWhen && <span className="dim" style={{ fontSize: 13 }}>Kept when: {p.keptWhen}</span>}

@@ -80,6 +80,8 @@ export function ago(iso: string | null): string {
   const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60e3));
   return m < 1 ? 'now' : m < 60 ? m + 'm' : m < 1440 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : Math.floor(m / 1440) + 'd';
 }
+/** "3m ago", or "just now" (never "now ago"). */
+export const agoText = (iso: string | null) => { const a = ago(iso); return a === 'now' ? 'just now' : a === '—' ? '—' : a + ' ago'; };
 export const fmtTok = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n));
 export const toneColor = (t: 'red' | 'amber' | 'green' | 'dim') => (t === 'red' ? C.red : t === 'amber' ? C.amber : t === 'green' ? C.green : C.dim);
 

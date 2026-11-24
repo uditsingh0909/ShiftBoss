@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Settings } from '../../shared/types';
-import { act, ago, api, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSnap } from '../lib';
+import { act, ago, agoText, api, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSnap } from '../lib';
 import { IntakeControl } from '../intake-control';
 import { resetTours } from '../tour';
 import { ModePicker } from '../mode';
@@ -161,7 +161,7 @@ function UpdateRow() {
     <div className="row well" style={{ gap: 14, padding: '12px 16px', flexWrap: 'wrap' }}>
       <div className="col" style={{ gap: 4, flex: '1 1 280px', minWidth: 0 }}>
         <span style={{ fontSize: 14 }}>Running <span className="mono">{u.current?.sha ?? '?'}</span>{u.current ? <span className="faint"> · {u.current.date.slice(0, 10)} · {u.current.subject}</span> : null}</span>
-        <span style={{ fontSize: 12, color: tone }}>{u.checking ? 'Checking…' : u.note}{u.checkedAt && !u.checking ? <span className="faint"> · checked {ago(u.checkedAt) === 'now' ? 'just now' : ago(u.checkedAt) + ' ago'}</span> : null}</span>
+        <span style={{ fontSize: 12, color: tone }}>{u.checking ? 'Checking…' : u.note}{u.checkedAt && !u.checking ? <span className="faint"> · checked {agoText(u.checkedAt)}</span> : null}</span>
         {u.latest && u.behind > 0 && <span className="faint ellipsis" style={{ fontSize: 12 }}>Newest: <span className="mono">{u.latest.sha}</span> {u.latest.subject}</span>}
       </div>
       <button type="button" className="pill sm" disabled={busy || u.checking} onClick={() => void check()}>{busy || u.checking ? 'Checking…' : 'Check now'}</button>

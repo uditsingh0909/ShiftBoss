@@ -107,7 +107,13 @@ function prune(st: TranscriptState) {
 export class Transcripts {
   private states = new Map<string, TranscriptState>();
   private pathCache = new Map<string, string | null>();
+  private lastRead = new Map<string, number>();
   constructor(private dir: string) {}
+
+  /** Forget sessions not read for an hour (they ended): the state would otherwise grow for weeks. */
+  evict(idleMs = 3600e3, nowMs = Date.now()) {
+    for (const [sid, at] of this.lastRead) if (nowMs - at > idleMs) { this.states.delete(sid); this.pathCache.delete(sid); this.lastRead.delete(sid); }
+  }
 
   findPath(sessionId: string): string | null {
     if (this.pathCache.has(sessionId)) return this.pathCache.get(sessionId)!;
@@ -123,6 +129,7 @@ export class Transcripts {
   }
 
   read(sessionId: string): TranscriptState | null {
+    this.lastRead.set(sessionId, Date.now());
     const path = this.findPath(sessionId);
     if (!path) return null;
     let st = this.states.get(sessionId);

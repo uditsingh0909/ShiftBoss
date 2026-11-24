@@ -13,6 +13,8 @@ fi
 # Open the browser on the first start only; restarts after a crash or an update stay quiet.
 OPEN=1
 while true; do
+  # Keep the log small: past 5 MB, the old one becomes server.log.1 (one generation).
+  if [ -f data/server.log ] && [ "$(wc -c < data/server.log)" -gt 5242880 ]; then mv -f data/server.log data/server.log.1; fi
   echo "$(date -u +%FT%TZ) starting ShiftBoss" >> data/server.log
   SHIFTBOSS_OPEN=$OPEN SHIFTBOSS_SUPERVISED=1 bun server/index.ts >> data/server.log 2>&1
   code=$?

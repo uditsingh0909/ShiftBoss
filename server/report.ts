@@ -6,7 +6,7 @@ export type Audience = 'plain' | 'team' | 'me';
 export function buildReport(aud: Audience, tasks: Task[], needs: Need[], day = new Date()): { sections: { title: string; tone: 'green' | 'amber' | 'dim'; lines: string[] }[]; text: string } {
   const d0 = new Date(day); d0.setHours(0, 0, 0, 0);
   const today = (iso: string) => Date.parse(iso) >= d0.getTime();
-  const live = tasks.filter((t) => t.stage >= 5 && today(t.updatedAt));
+  const live = tasks.filter((t) => t.stage >= 5 && today(t.liveAt ?? t.updatedAt));
   const waitingOnYou = needs.filter((n) => !n.answer && !n.auto);
   const inFlight = tasks.filter((t) => t.stage >= 2 && t.stage <= 4);
   const next = tasks.filter((t) => t.stage === 4);

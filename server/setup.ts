@@ -32,7 +32,8 @@ export function setupInfo(port: number): SetupInfo {
     repoPath: repo,
     port,
     mcp: { registered: !!mcpEntry, command: mcpCommand, pointsHere: !!mcpCommand && mcpCommand.replace(/\\/g, '/').includes(repo + '/mcp/server.ts') },
-    statusTap: { configured: !!statusCmd && statusCmd.includes('statusline-tap'), command: statusCmd },
+    // Counts only when the tap is this install's: another install's tap writes that install's numbers, not ours.
+    statusTap: { configured: !!statusCmd && statusCmd.replace(/\\/g, '/').includes(repo + '/cli/statusline-tap'), command: statusCmd },
     commands: {
       mcpAdd: `claude mcp add --scope user${portEnv} shiftboss -- bun ${repo}/mcp/server.ts`,
       mcpCheck: 'claude mcp get shiftboss',

@@ -47,6 +47,8 @@ export interface Task {
   session: string | null;
   stage: Stage;
   prio: 'P1' | 'P2' | 'P3';
+  /** When it first reached Live (or later). */
+  liveAt?: string | null;
   held: boolean;
   /** The owner queued or assigned it in the UI; only these are sent automatically. */
   vetted?: boolean;
@@ -154,6 +156,8 @@ export interface Settings {
   autoUpdate?: boolean;
   /** What ShiftBoss may do on its own: dry (Dry run), ask (Ask first), safe (Safe auto), auto (Autopilot). */
   mode?: 'dry' | 'ask' | 'safe' | 'auto';
+  /** Claude can make the owner's decisions (approve, mode, settings, answers) when the owner asks it to. Off: only ShiftBoss's own screens can. */
+  delegate?: boolean;
   /** The owner's way of working, in their words. Added to everything ShiftBoss tells sessions. */
   instructions?: string;
   /** The text before the last change, so a change can be undone. */

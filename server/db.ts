@@ -94,6 +94,8 @@ export class Store {
     this.db.exec("UPDATE actions SET state = 'failed', result = 'interrupted by a restart' WHERE state = 'approved'");
     const icols2 = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
     if (!icols2.some((c) => c.name === 'resolved')) this.db.exec('ALTER TABLE intake ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0');
+    // When a task first went live: the report's "Live today" must not count an old task that was just edited.
+    if (!cols.some((c) => c.name === 'live_at')) this.db.exec("ALTER TABLE tasks ADD COLUMN live_at TEXT; UPDATE tasks SET live_at = updated_at WHERE stage >= 5");
     if (!cols.some((c) => c.name === 'vetted')) this.db.exec('ALTER TABLE tasks ADD COLUMN vetted INTEGER NOT NULL DEFAULT 0');
     const scols = this.db.query('PRAGMA table_info(slack_msgs)').all() as { name: string }[];
     if (!scols.some((c) => c.name === 'approved_at')) this.db.exec('ALTER TABLE slack_msgs ADD COLUMN approved_at TEXT');
@@ -152,7 +154,7 @@ export class Store {
   private rowTask = (r: any): Task => ({
     id: r.id, title: r.title, ask: r.ask, requester: r.requester, source: r.source, sourceUrl: r.source_url,
     session: r.session, stage: r.stage as Stage, prio: r.prio, held: !!r.held, vetted: !!r.vetted, createdAt: r.created_at, updatedAt: r.updated_at,
-    direction: r.direction ?? null,
+    direction: r.direction ?? null, liveAt: r.live_at ?? null,
   });
 
   vetTask(id: string) { this.db.query('UPDATE tasks SET vetted = 1 WHERE id = ?').run(id); }
@@ -189,6 +191,7 @@ export class Store {
     checkDirection(next.direction);
     this.db.query('UPDATE tasks SET title=?, ask=?, session=?, stage=?, prio=?, held=?, source_url=?, direction=?, updated_at=? WHERE id=?')
       .run(next.title, next.ask, next.session, next.stage, next.prio, next.held ? 1 : 0, next.sourceUrl ?? null, next.direction ?? null, now(), id);
+    if (next.stage >= 5 && cur.stage < 5) this.db.query('UPDATE tasks SET live_at = COALESCE(live_at, ?) WHERE id = ?').run(now(), id);
     const notes: string[] = [];
     if (patch.sourceUrl !== undefined && patch.sourceUrl !== cur.sourceUrl) notes.push(patch.sourceUrl ? 'Source link set: ' + patch.sourceUrl : 'Source link removed');
     if (patch.direction !== undefined && patch.direction !== cur.direction) notes.push(patch.direction ? 'Marked ' + patch.direction : 'Direction cleared');
