@@ -51,9 +51,9 @@ if (!existsSync(join(REPO, 'node_modules', 'react'))) {
 
 // ---------- 3. config
 const cfgPath = join(REPO, 'shiftboss.config.json');
-let cfg: any = {};
-if (existsSync(cfgPath)) cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
-else if (existsSync(join(REPO, 'shiftboss.config.example.json'))) cfg = JSON.parse(readFileSync(join(REPO, 'shiftboss.config.example.json'), 'utf8'));
+// A new config starts empty (every field has a working default), not from the example, whose
+// placeholder URLs and lanes would otherwise become real settings.
+let cfg: any = existsSync(cfgPath) ? JSON.parse(readFileSync(cfgPath, 'utf8')) : {};
 const before = JSON.stringify(cfg);
 if (opt('owner')) cfg.ownerName = opt('owner');
 if (opt('workspace') !== undefined) cfg.herdrWorkspace = opt('workspace');
@@ -104,23 +104,27 @@ const settingsPath = join(homedir(), '.claude', 'settings.json');
 let settings: any = {};
 try { settings = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch { /* none yet */ }
 const current: string | undefined = settings.statusLine?.command;
-const tapped = !!current && current.includes('statusline-tap');
+const tapped = !!current && current.replace(/\\/g, '/').includes(REPO + '/cli/statusline-tap');
+const tappedElsewhere = !!current && current.includes('statusline-tap') && !tapped;
 if (!tapped && flag('status-line')) {
   if (existsSync(settingsPath)) copyFileSync(settingsPath, settingsPath + '.shiftboss-backup');
   else mkdirSync(join(homedir(), '.claude'), { recursive: true });
-  settings.statusLine = { type: 'command', ...(settings.statusLine ?? {}), command: `node ${REPO}/cli/statusline-tap.cjs${current ? ' ' + current : ''}` };
+  // Another install's tap: replace it, keeping the user's own command that follows it.
+  const own = tappedElsewhere ? current!.replace(/^node\s+\S*statusline-tap\.cjs\s*/, '') : current;
+  settings.statusLine = { type: 'command', ...(settings.statusLine ?? {}), command: `node ${REPO}/cli/statusline-tap.cjs${own ? ' ' + own : ''}` };
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   log('status line tap', true, `added in front of ${current ? 'your status line' : 'an empty status line'}; backup at settings.json.shiftboss-backup`);
-} else log('status line tap', tapped, tapped ? 'on' : 'off (optional: add --status-line)');
+} else log('status line tap', tapped, tapped ? 'on' : tappedElsewhere ? 'points at another install (add --status-line to point it here)' : 'off (optional: add --status-line)');
 
 // ---------- 7. start at login (Windows)
 if (WIN) {
   const startup = join(process.env.APPDATA ?? join(homedir(), 'AppData/Roaming'), 'Microsoft/Windows/Start Menu/Programs/Startup/ShiftBoss.vbs');
   const bash = gitBash();
-  if (!existsSync(startup) && flag('startup') && bash) {
+  const mine = existsSync(startup) && readFileSync(startup, 'utf8').replace(/\\/g, '/').includes(REPO);
+  if (!mine && flag('startup') && bash) {
     writeFileSync(startup, `Set sh = CreateObject("WScript.Shell")\r\nsh.CurrentDirectory = "${REPO.replace(/\//g, '\\')}"\r\nsh.Run """${bash.replace(/\//g, '\\')}"" scripts/run.sh", 0, False\r\n`);
     log('start at login', true, startup);
-  } else log('start at login', existsSync(startup), existsSync(startup) ? 'on' : bash ? 'off (optional: add --startup)' : 'needs Git Bash');
+  } else log('start at login', mine, mine ? 'on' : existsSync(startup) ? 'starts another install (add --startup to start this one)' : bash ? 'off (optional: add --startup)' : 'needs Git Bash');
 }
 
 // ---------- 8. lead session, intake

@@ -30,11 +30,14 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `server/config.ts` | Defaults + `shiftboss.config.json` (gitignored) + `SHIFTBOSS_*` env overrides |
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
-| `mcp/server.ts` | MCP server (`shiftboss`), 12 tools over the HTTP API |
+| `mcp/server.ts` | MCP server (`shiftboss`), 20 tools over the HTTP API |
+| `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
+| `shared/port.ts` | The install's port for the CLI, MCP and scripts: env, then config, then 4400 |
 | `cli/shiftboss.ts` | CLI over the HTTP API |
 | `cli/statusline-tap.cjs` | Status line tap: copies Claude Code's status JSON to `data/status/`, then runs the user's own command |
 | `desktop/` | Tauri 2 app (Windows built; macOS/Linux on hold). Reuses a running server or starts the compiled sidecar |
 | `docs/INTAKE.md` | Instructions the intake session follows |
+| `web/tour.tsx` | First-visit guided tour per page |
 | `scripts/run.sh` | Restart loop; exits if ShiftBoss already answers on its port |
 | `test/core.test.ts` | Unit tests |
 | `test/e2e.ts` | Browser check: every screen at 1920 and 390 px, fails on errors or sideways scroll |

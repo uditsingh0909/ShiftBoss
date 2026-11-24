@@ -93,9 +93,25 @@ launcher below is Windows-only.
 
 ## Setup guide
 
-About 15 minutes from a fresh clone to a full board. Each step says how to check it worked.
+### The quick way: let Claude Code do it
 
-### Before you start
+Paste this into Claude Code (any session, on the machine that runs herdr):
+
+```
+Set up ShiftBoss for me: https://github.com/uditsingh0909/ShiftBoss — clone it and follow its SETUP.md.
+```
+
+It checks the machine, asks you a few questions (your name, which extras, your lead session), installs
+and starts ShiftBoss, then brings in the work your sessions are already doing. Open
+<http://127.0.0.1:4400/#/welcome> to watch each step tick off, or take over there at any point. The same
+steps are in the CLI (`shiftboss setup …`) and the MCP tools (`setup_status`, `onboarding_ask`, …).
+
+### By hand
+
+About 15 minutes from a fresh clone to a full board. Each step says how to check it worked.
+`bun scripts/setup.ts` runs steps 1 to 7 for you (`--help` is at the top of that file).
+
+#### Before you start
 
 - [ ] Bun, herdr and Claude Code are installed (see [Requirements](#requirements)).
 - [ ] herdr is running and `herdr agent list` prints your sessions.
@@ -103,7 +119,7 @@ About 15 minutes from a fresh clone to a full board. Each step says how to check
 - [ ] Optional, for the intake session: Claude Code has the Slack connector, and Gmail if you want
       meeting notes read.
 
-### 1. Install
+#### 1. Install
 
 ```bash
 git clone https://github.com/uditsingh0909/ShiftBoss.git shiftboss
@@ -112,7 +128,7 @@ bun install
 bun test                     # every test should pass
 ```
 
-### 2. Configure
+#### 2. Configure
 
 ```bash
 cp shiftboss.config.example.json shiftboss.config.json
@@ -126,7 +142,7 @@ full list is under [Configuration](#configuration).
 { "ownerName": "Sam", "herdrWorkspace": "w1" }
 ```
 
-### 3. Start it
+#### 3. Start it
 
 ```bash
 bash scripts/run.sh          # keeps it running; logs to data/server.log
@@ -135,7 +151,7 @@ bash scripts/run.sh          # keeps it running; logs to data/server.log
 Open <http://127.0.0.1:4400>. **Check:** your sessions appear within a few seconds. To start it with
 Windows, see [Start at login](#start-at-login-windows).
 
-### 4. Follow Get started
+#### 4. Follow Get started
 
 With an empty board, ShiftBoss opens on **Get started** (also under *Get started* at the top right, or
 `Ctrl+K`). It checks each step as you go:
@@ -145,12 +161,12 @@ With an empty board, ShiftBoss opens on **Get started** (also under *Get started
 | 1. Connect the tools | Run the `claude mcp add …` command it shows (details in [step 5](#5-give-sessions-the-tools)) | Sessions can report their tasks |
 | 2. Lead session | Name the session that coordinates the others | It always gets the big card on Sessions; `name-v2` takes over automatically |
 | 3. Bring in current work | Tick sessions and press **Ask** | Each gets one prompt to put its tasks, stages and promises on the board. Their work is not changed |
-| 4. Read back Slack and Gmail | Pick 1–14 days, press **Read back** | The intake reads everything since then and files what is still open (needs [step 7](#7-start-the-intake-session)) |
+| 4. Read back Slack and Gmail | Pick 1–14 days, press **Read back** | The intake reads everything since then and files what is still open (needs step 7) |
 | 5. Import | Optional: `shiftboss import tasks.json` | Tasks from Jira or a spreadsheet ([format](#importing-tasks-from-another-tracker)) |
 
 Press **Finish setup** when done. Every step can be run again later.
 
-### 5. Give sessions the tools
+#### 5. Give sessions the tools
 
 ```bash
 claude mcp add --scope user shiftboss -- bun /full/path/to/shiftboss/mcp/server.ts
@@ -162,18 +178,18 @@ Restart the sessions that were already running so they load the tools. Then past
 without being asked. **Check:** the Connect screen (`#/setup`) marks a session "reports with tools" once
 it has used one.
 
-### 6. Exact usage numbers (optional)
+#### 6. Exact usage numbers (optional)
 
 Put the [status line tap](#exact-usage-numbers) in front of your status line command. **Check:** on
 Connect, sessions started afterwards show "exact usage".
 
-### 7. Start the intake session
+#### 7. Start the intake session
 
 The intake reads Slack and Gmail for you and files asks as tasks. See
 [The intake session](#the-intake-session). **Check:** the Intake card on Sessions says "Reading · checked
 in … ago", and **Check now** runs a pass on demand.
 
-### 8. Check it all works
+#### 8. Check it all works
 
 - [ ] Sessions shows every session, the lead in the big card, and either *All clear* or a *Needs
       attention* strip.
@@ -453,6 +469,13 @@ The MCP tools and the CLI call the same API. Sessions should prefer the tools.
 | `decide` | `shiftboss decide "<text>"` | Lead only: log a decision made without asking |
 | — | `shiftboss import <tasks.json>` | Import tasks from another tracker |
 | — | `shiftboss audit --text … [--where Slack] [--by …]` | Log something sent in the owner's name |
+| `intake_begin`, `intake_checkpoint` | `shiftboss intake begin`, `shiftboss intake checkpoint <ISO time>` | Intake only: start and end each run (pause, resume and catch-up) |
+| `setup_status` | `shiftboss setup status [--json]` | What is connected, every session with its task count, what is left to set up |
+| `setup_lead` | `shiftboss setup lead <session> [--workspace W]` | Set the lead session |
+| `onboarding_ask` | `shiftboss setup ask <session…> \| --all` | Ask running sessions to register their work on the board |
+| `onboarding_backfill` | `shiftboss setup backfill <1\|2\|3\|7\|14>` | Send the intake back that many days |
+| `onboarding_done` | `shiftboss setup done` | Mark setup finished |
+| `session_spawn` | `shiftboss session spawn <name> --cwd DIR [--model …] [--prompt …]` | Start Claude Code in a new herdr tab |
 
 ## HTTP API
 

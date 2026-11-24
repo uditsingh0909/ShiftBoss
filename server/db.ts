@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   budgets: { fiveHourTokens: 0, weeklyTokens: 0 },
   herdrWorkspace: '',
   handoffsDir: '',
-  leadSession: 'lead-manager',
+  leadSession: '',
   watchedChannels: [],
 };
 
