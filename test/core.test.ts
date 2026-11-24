@@ -19,7 +19,8 @@ import { needsInstall, Updater } from '../server/update';
 import { actionKey, decide } from '../server/gate';
 import { join } from 'node:path';
 import { checksLeft, checksTotal, effectiveState, isAlerting, nextDueAfter, pickDue } from '../server/monitors';
-import type { Session } from '../shared/types';
+import { DEFAULT_NOTIFY, type Session } from '../shared/types';
+import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
 
 const mem = () => new Store('', ':memory:');
@@ -471,6 +472,165 @@ describe('audit fixes', () => {
     expect(s.getTask(again.id)).toMatchObject({ stage: 4, prio: 'P1' });
     const late = s.addPromise({ to: 'Ann', said: 'by Monday', taskId: t.id, dueAt: new Date(Date.now() - 864e5).toISOString() });
     expect(s.listPromises().find((p) => p.id === late.id)!.state).toBe('due');
+  });
+});
+
+describe('source links and direction', () => {
+  test('the migration adds url and direction to an old database, keeps its rows, and is safe to run again', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-mig-'));
+    try {
+      // A database from before this change: promises without url/direction, intake without direction.
+      const { Database } = require('bun:sqlite');
+      const old = new Database(join(dir, 'shiftboss.db'), { create: true });
+      old.exec(`CREATE TABLE promises (id INTEGER PRIMARY KEY AUTOINCREMENT, to_person TEXT NOT NULL, where_text TEXT NOT NULL DEFAULT '',
+        said TEXT NOT NULL, kept_when TEXT NOT NULL DEFAULT '', task_id TEXT, state TEXT NOT NULL DEFAULT 'open', due_at TEXT, created_at TEXT NOT NULL, kept_at TEXT);
+        CREATE TABLE intake (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, src TEXT NOT NULL, who TEXT NOT NULL DEFAULT '', text TEXT NOT NULL, verdict TEXT NOT NULL, task_id TEXT);
+        INSERT INTO promises (to_person, said, created_at) VALUES ('Sam', 'will send it', '2026-01-01T00:00:00Z');
+        INSERT INTO intake (at, src, text, verdict) VALUES ('2026-01-01T00:00:00Z', '#team', 'hi', 'dropped');`);
+      old.close();
+      const a = new Store(dir);
+      const cols = (t: string) => (a.db.query(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+      expect(cols('promises')).toContain('url');
+      expect(cols('promises')).toContain('direction');
+      expect(cols('tasks')).toContain('direction');
+      expect(cols('intake')).toContain('direction');
+      expect(a.listPromises()[0]).toMatchObject({ said: 'will send it', url: null, direction: null, link: null });
+      expect(a.listIntake()[0]).toMatchObject({ text: 'hi', url: null, direction: null });
+      a.db.close();
+      const b = new Store(dir); // second run: no "duplicate column" error
+      expect((b.db.query('PRAGMA table_info(promises)').all() as { name: string }[]).filter((c) => c.name === 'url').length).toBe(1);
+      expect(b.listPromises().length).toBe(1);
+      b.db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('direction must be inbound, outbound or unknown', () => {
+    const s = mem();
+    expect(s.addTask({ title: 'a', direction: 'inbound' }).direction).toBe('inbound');
+    expect(s.addTask({ title: 'b' }).direction).toBeNull();
+    expect(() => s.addTask({ title: 'c', direction: 'sideways' as any })).toThrow('direction must be inbound or outbound');
+    expect(() => s.addPromise({ to: 'Sam', said: 'x', direction: 'up' as any })).toThrow();
+    expect(() => s.addIntake({ src: '#x', who: '', text: 't', verdict: 'dropped', taskId: null, url: null, direction: 'in' as any })).toThrow();
+    const t = s.updateTask('T-1', { direction: 'outbound' });
+    expect(t.direction).toBe('outbound');
+    expect(s.events('T-1')[0].text).toContain('Marked outbound');
+  });
+
+  test('a promise without its own link shows its task link via T-n, worked out when read', () => {
+    const s = mem();
+    const t = s.addTask({ title: 'From Slack', sourceUrl: 'https://acme.slack.com/archives/C1/p1' });
+    const p = s.addPromise({ to: 'Sam', said: 'will do', taskId: t.id });
+    expect(p.url).toBeNull();
+    expect(p.link).toEqual({ url: 'https://acme.slack.com/archives/C1/p1', via: t.id });
+    // Fixing the task's link fixes the promise's too (nothing was copied).
+    s.updateTask(t.id, { sourceUrl: 'https://acme.slack.com/archives/C1/p2' });
+    expect(s.getPromise(p.id)!.link).toEqual({ url: 'https://acme.slack.com/archives/C1/p2', via: t.id });
+    // Its own link wins.
+    s.updatePromiseSource(p.id, { url: 'https://mail.google.com/mail/u/0/#inbox/abc', direction: 'outbound' });
+    expect(s.getPromise(p.id)).toMatchObject({ url: 'https://mail.google.com/mail/u/0/#inbox/abc', direction: 'outbound', link: { via: null } });
+    // A promise filed without a task gives its new task its link and direction.
+    const q = s.addPromise({ to: 'Ann', said: 'by Friday', url: 'https://acme.slack.com/archives/C2/p3', direction: 'outbound' });
+    expect(s.getTask(q.taskId!)).toMatchObject({ sourceUrl: 'https://acme.slack.com/archives/C2/p3', direction: 'outbound' });
+    // No link anywhere: null, so the UI shows "No source link".
+    const bare = s.addPromise({ to: 'Bo', said: 'soon', taskId: s.addTask({ title: 'no link' }).id });
+    expect(bare.link).toBeNull();
+  });
+
+  test('the API checks links and direction on tasks, promises, intake and Slack', async () => {
+    const store = mem();
+    const e = new Engine(loadConfig(), store, { prompt: async () => {} } as any);
+    const handle = makeApi(e);
+    const call = async (method: string, path: string, body?: unknown) => {
+      const res = (await handle(new Request('http://x' + path, { method, headers: { 'x-shiftboss': '1', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }), new URL('http://x' + path)))!;
+      return { status: res.status, body: await res.json() as any };
+    };
+    let r = await call('POST', '/api/tasks', { title: 'x', sourceUrl: 'javascript:alert(1)' });
+    expect(r.status).toBe(400);
+    r = await call('POST', '/api/tasks', { title: 'x', direction: 'both' });
+    expect(r.body.error).toContain('direction');
+    r = await call('POST', '/api/tasks', { title: 'Asked in Slack', sourceUrl: 'https://acme.slack.com/archives/C1/p1', direction: 'inbound' });
+    expect(r.body).toMatchObject({ id: 'T-1', direction: 'inbound', sourceUrl: 'https://acme.slack.com/archives/C1/p1' });
+    const bare = (await call('POST', '/api/tasks', { title: 'No link yet' })).body.id;
+    // "Add link" on the task page.
+    expect((await call('PATCH', `/api/tasks/${bare}`, { sourceUrl: 'ftp://x/y' })).status).toBe(400);
+    r = await call('PATCH', `/api/tasks/${bare}`, { sourceUrl: 'https://mail.google.com/mail/u/0/#inbox/1', direction: 'inbound', who: 'you' });
+    expect(r.body).toMatchObject({ sourceUrl: 'https://mail.google.com/mail/u/0/#inbox/1', direction: 'inbound' });
+    // Promises.
+    expect((await call('POST', '/api/promises', { to: 'Sam', said: 'x', url: 'data:text/html,hi' })).status).toBe(400);
+    r = await call('POST', '/api/promises', { to: 'Sam', said: 'will send', taskId: 'T-1', direction: 'outbound' });
+    expect(r.body).toMatchObject({ url: null, direction: 'outbound', link: { url: 'https://acme.slack.com/archives/C1/p1', via: 'T-1' } });
+    const pid = r.body.id;
+    expect((await call('PATCH', `/api/promises/${pid}`, { url: 'not a url' })).status).toBe(400);
+    expect((await call('PATCH', `/api/promises/${pid}`, { direction: 'down' })).status).toBe(400);
+    expect((await call('PATCH', `/api/promises/${pid}`, { url: 'https://acme.slack.com/archives/C1/p9' })).status).toBe(200);
+    expect(store.getPromise(pid)).toMatchObject({ url: 'https://acme.slack.com/archives/C1/p9', link: { via: null } });
+    expect((await call('PATCH', '/api/promises/999', { url: 'https://acme.slack.com/x' })).status).toBe(404);
+    // Intake.
+    expect((await call('POST', '/api/intake', { src: '#t', text: 'hi', verdict: 'dropped', direction: 'out' })).status).toBe(400);
+    expect((await call('POST', '/api/intake', { src: '#t', text: 'hi', verdict: 'dropped', url: 'https://acme.slack.com/archives/C1/p5', direction: 'inbound' })).status).toBe(201);
+    expect(store.listIntake()[0]).toMatchObject({ url: 'https://acme.slack.com/archives/C1/p5', direction: 'inbound' });
+    // A Slack message with a permalink fills a task that has none, and never replaces one.
+    const third = (await call('POST', '/api/tasks', { title: 'third' })).body.id;
+    await call('POST', `/api/tasks/${third}/slack`, { who: 'Sam', text: 'can you?', kind: 'ask', url: 'https://acme.slack.com/archives/C3/p1' });
+    expect(store.getTask(third)!.sourceUrl).toBe('https://acme.slack.com/archives/C3/p1');
+    await call('POST', `/api/tasks/${third}/slack`, { who: 'Sam', text: 'again', kind: 'ask', url: 'https://acme.slack.com/archives/C3/p2' });
+    expect(store.getTask(third)!.sourceUrl).toBe('https://acme.slack.com/archives/C3/p1');
+  });
+
+  test('notification switches default to on, merge partially and reject non-booleans', () => {
+    const s = mem();
+    expect(s.settings().notify).toEqual({ needs: true, blocked: true, stuck: true, overlap: true, promiseDue: true, monitor: true, updated: true });
+    const next = mergeSettings(s.settings(), { notify: { overlap: false } });
+    expect(next.notify).toMatchObject({ overlap: false, needs: true });
+    s.saveSettings(next);
+    expect(s.settings().notify!.overlap).toBe(false);
+    expect(() => mergeSettings(s.settings(), { notify: { needs: 'yes' } })).toThrow();
+  });
+});
+
+describe('browser notifications', () => {
+  const snapOf = (store: Store, over: Record<string, unknown> = {}) => {
+    const e = new Engine(loadConfig(), store, { prompt: async () => {} } as any);
+    return { ...e.snapshot(), ...over } as any;
+  };
+  test('only items that appear after the page loaded notify, and only enabled kinds', () => {
+    const s = mem();
+    s.addNeed({ kind: 'Decision', title: 'Old question', answers: ['Yes'] });
+    const first = snapOf(s);
+    expect(newNotifications(null, first, undefined)).toEqual([]); // page load: nothing is new
+    s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes', 'No'], session: 'w1' });
+    s.addNeed({ kind: 'Permission', title: 'Bash: rm', answers: ['Focus'], session: 'w2', auto: true });
+    s.addPromise({ to: 'Sam', said: 'by Monday', dueAt: new Date(Date.now() - 6e4).toISOString() });
+    const second = snapOf(s);
+    const got = newNotifications(first, second, undefined);
+    expect(got.map((x) => x.kind).sort()).toEqual(['blocked', 'needs', 'promiseDue']);
+    expect(got.find((x) => x.kind === 'needs')).toMatchObject({ title: 'Needs you: Ship it?', route: '#/needs' });
+    expect(newNotifications(first, second, { ...DEFAULT_NOTIFY, blocked: false, promiseDue: false }).map((x) => x.kind)).toEqual(['needs']);
+    expect(newNotifications(second, second, undefined)).toEqual([]); // nothing new the second time
+  });
+  test('stuck sessions, overlaps and monitor alerts (when present) notify; answered items do not', () => {
+    const s = mem();
+    const a = snapOf(s, { monitors: [{ id: 'm1', name: 'API', state: 'up' }] });
+    const b = snapOf(s, {
+      health: [{ session: 'w1', verdict: 'looping', title: 'Same command 4 times', signals: [], loop: [], suggest: 'Interrupt it' }],
+      overlaps: [{ id: 'o1', kind: 'Same file', severity: 'red', where: 'x.ts', title: '', a: { session: 'w1', what: '' }, b: { session: 'w2', what: '' }, fix: '' }],
+      monitors: [{ id: 'm1', name: 'API', state: 'down' }],
+    });
+    const got = newNotifications(a, b, undefined);
+    expect(got.map((x) => x.kind).sort()).toEqual(['monitor', 'overlap', 'stuck']);
+    expect(got.find((x) => x.kind === 'stuck')!.route).toBe('#/session/w1');
+    expect(notifyItems(snapOf(s)).length).toBe(0); // no monitors field: skipped
+    const n = s.addNeed({ kind: 'Decision', title: 'Q', answers: ['Yes'] });
+    s.answerNeed(n.id, 'Yes');
+    expect(notifyItems(snapOf(s))).toEqual([]);
+  });
+  test('the tab title counts unanswered Needs you items', () => {
+    const s = mem();
+    expect(tabTitle(snapOf(s))).toBe('ShiftBoss');
+    s.addNeed({ kind: 'Decision', title: 'A', answers: ['Yes'] });
+    s.addNeed({ kind: 'Decision', title: 'B', answers: ['Yes'] });
+    expect(tabTitle(snapOf(s))).toBe('(2) ShiftBoss');
+    expect(tabTitle(null)).toBe('ShiftBoss');
   });
 });
 

@@ -522,18 +522,36 @@ The sidebar on the left links them, grouped into Work, Watch and Setup, with a c
 | **Roster** | Every session in a sortable table: lane, current task, context, tokens, handoff age. |
 | **Tasks** | Board (drag a card, or press →) or list, with filters for Inbox, P1, unassigned and shipping. |
 | **Task page** | The ask in the requester's words, what done means, the session on it, promises, the Slack thread with drafts to approve, and the full activity log by source. |
-| **Intake** | Every message the intake read, its verdict, and a link back to Slack or Gmail. |
+| **Intake** | Every message the intake read, its verdict, which way it went (↓ Inbound / ↑ Outbound) and an **Open in Slack** / **Open in Gmail** button. A message logged without a link says "No source link". |
 | **Needs you** | Decisions one at a time with Back, Next and Skip. Answers send after 10 seconds; Undo takes one back, Reopen asks the session to ignore an answer already sent. |
-| **Promises** | Everyone waiting on something you said, filtered by open, overdue, ready to send or kept. |
+| **Promises** | Everyone waiting on something you said, filtered by open, overdue, ready to send or kept. Each one opens the message it was said in, or its task's link ("via T-12") when it has none of its own; **Add link** fixes a missing one. |
 | **Daily report** | A summary in plain words, for the team, or for yourself, ready to copy. ShiftBoss never sends it. |
 | **Sent as you** | Every message logged as sent in your name, who wrote it and how it was approved, and which ones needed a correction. |
 | **Health** | A 60-minute activity strip per session, and cards for sessions that are looping, stuck, heavy or waiting, with a one-click nudge. |
 | **Overlaps** | Same file, same migration number or same task across two sessions, with who should go first. |
 | **Connect** | Checks MCP, the status line tap and the intake, with the exact commands for this install. |
 | **Monitors** | What is watched after it shipped: state, next check, last result and every check so far; New monitor, Check now, Pause, Stop, Edit, and starting the monitor session. |
-| **Settings** | General, warnings, automation, intake, usage budgets, and each session's lane and slots. |
+| **Settings** | Updates, notifications, general, warnings, automation, intake, usage budgets, and each session's lane and slots. |
 
 The pages work at phone width too.
+
+**Where things came from.** Every task, promise and intake row that came from Slack or Gmail carries the
+permalink to the original message and a direction: *inbound* (someone asked or wrote to you) or
+*outbound* (you or a session said or sent it). The intake and sessions are told to always pass both,
+backfill included. Older items without one show "No source link"; the task page and promise cards have
+an **Add link** field to fix it (or `shiftboss task link` / `shiftboss promise link`).
+
+### Notifications
+
+Settings → **Notifications** asks your browser for permission and has a switch per event: a new Needs
+you item, a session waiting on a permission answer, a stuck or looping session, an overlap, an overdue
+promise, a monitor alert and ShiftBoss updating itself. The switches are stored in ShiftBoss, so every
+tab follows them. Only one open tab shows notifications, nothing that was already there when the page
+opened notifies, and nothing is shown for the page you are already looking at. Clicking one opens that
+page. The tab title counts what waits on you, e.g. "(2) ShiftBoss".
+
+These are plain browser notifications: they need ShiftBoss open in a tab (it can be in the background).
+There is no service worker and no push server, so a closed browser gets nothing.
 
 ## MCP tools and CLI reference
 
@@ -543,15 +561,17 @@ The MCP tools and the CLI call the same API. Sessions should prefer the tools.
 |---|---|---|
 | `task_stage` | `shiftboss task stage T-12 queued\|progress\|pr\|dev\|live\|told` | Move a task |
 | `task_note` | `shiftboss task note T-12 "PR #81 opened" [--src GitHub]` | Add a line to the task's log |
-| `task_add` | `shiftboss task add "<title>" [--ask …] [--from …] [--source …] [--url …] [--session …] [--prio P1]` | File a new task |
+| `task_add` | `shiftboss task add "<title>" [--ask …] [--from …] [--source …] [--url …] [--direction inbound\|outbound] [--session …] [--prio P1]` | File a new task. From Slack or Gmail: always with `url` and `direction` |
+| — | `shiftboss task link T-12 <url> [--direction …]` | Set a task's missing source link |
 | `task_assign` | `shiftboss task assign T-12 <session>` | Give a task to a session |
 | `task_get` | — | Read a task with its log and Slack thread |
 | `my_tasks` | `shiftboss status` | List open tasks (for one session, or all) |
-| `slack_draft` | `shiftboss slack T-12 "<text>" --kind draft\|sent\|ask\|promise` | Save a reply for the owner to approve, or record a message |
+| `slack_draft` | `shiftboss slack T-12 "<text>" --kind draft\|sent\|ask\|promise [--url …]` | Save a reply for the owner to approve, or record a message; `url` (the thread) fills a task with no source link |
 | `slack_sent` | `shiftboss slack sent <message-id>` | Mark an approved draft as posted |
 | `ask_owner` | `shiftboss need "<question>" --answers "Yes,Not now" [--kind …]` | Put a decision in Needs you; the answer comes back as the session's next prompt |
-| `promise_add` | `shiftboss promise "<said>" --to <name> [--where …] [--task T-12]` | Track something promised from the owner's account |
-| `intake_log` | `shiftboss intake --src … --text … --verdict … [--url …]` | Intake only: log a message it read |
+| `promise_add` | `shiftboss promise "<said>" --to <name> [--where …] [--task T-12] [--due …] [--url …] [--direction …]` | Track something promised from the owner's account, with the link to where it was said |
+| — | `shiftboss promise link <id> <url> [--direction …]` | Set a promise's missing link |
+| `intake_log` | `shiftboss intake --src … --text … --verdict … --url … --direction inbound\|outbound` | Intake only: log a message it read, always with its permalink and direction |
 | `decide` | `shiftboss decide "<text>"` | Lead only: log a decision made without asking |
 | — | `shiftboss import <tasks.json>` | Import tasks from another tracker |
 | — | `shiftboss audit --text … [--where Slack] [--by …]` | Log something sent in the owner's name |
@@ -586,18 +606,21 @@ Everything goes through `http://127.0.0.1:4400/api`. Every request except a GET 
 |---|---|---|
 | `GET /api/snapshot` | | Everything the UI shows, as one JSON object |
 | `GET /api/stream` | | The snapshot as server-sent events, pushed on every change |
-| `POST /api/tasks` | `{title, ask?, requester?, source?, sourceUrl?, session?, prio?}` | File a task |
+| `POST /api/tasks` | `{title, ask?, requester?, source?, sourceUrl?, direction?, session?, prio?}` | File a task. `direction`: `inbound`, `outbound` or null |
 | `GET /api/tasks/:id` | | Task with events, Slack messages and promises |
-| `PATCH /api/tasks/:id` | `{stage?, session?, prio?, held?, title?, ask?, who?}` | Update; `stage` takes 0–6 or a word |
+| `PATCH /api/tasks/:id` | `{stage?, session?, prio?, held?, title?, ask?, sourceUrl?, direction?, who?}` | Update; `stage` takes 0–6 or a word |
 | `POST /api/tasks/:id/dispatch` | | Send the brief to the task's session |
 | `POST /api/tasks/:id/events` | `{src, who, text}` | Add to the log |
-| `POST /api/tasks/:id/slack` | `{who, text, kind}` | Record a Slack message or draft |
+| `POST /api/tasks/:id/slack` | `{who, text, kind, url?}` | Record a Slack message or draft; `url` fills a task with no source link |
 | `POST /api/slack/:msgId/approve` | | Ask the owning session to post an approved draft |
 | `POST /api/needs` | `{title, answers[], kind?, body?, session?, taskId?}` | Ask the owner |
 | `POST /api/needs/:id/answer` | `{answer}` | Answer; sent to the session after 10 s |
 | `POST /api/needs/:id/undo` | | Take an answer back |
-| `POST /api/promises`, `PATCH /api/promises/:id` | | Add a promise, or set its state |
-| `POST /api/intake`, `POST /api/audit`, `POST /api/decisions` | | Log intake, audit, decisions |
+| `POST /api/promises`, `PATCH /api/promises/:id` | `{…, url?, direction?}` / `{state?, taskId?, url?, direction?}` | Add a promise, or set its state, task, link or direction |
+| `POST /api/intake`, `POST /api/audit`, `POST /api/decisions` | | Log intake (`url`, `direction`), audit, decisions |
+
+Every stored link must be http(s); anything else is a 400. A promise in the snapshot has `link`: its own
+`url`, else its task's source link with `via` set to that task id (worked out when read, never stored).
 | `POST /api/import` | `{tasks: [...]}` | Import tasks, matched on `extId` |
 | `POST /api/sessions/:name/prompt\|focus\|interrupt\|meta` | | Act on a session in herdr |
 | `POST /api/sessions/spawn` | `{name, cwd, model?, prompt?}` | Start Claude Code in a new herdr tab |

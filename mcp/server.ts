@@ -28,6 +28,10 @@ const wrap = <A,>(fn: (a: A) => Promise<string>) => async (a: A) => {
 };
 const TASK = z.string().regex(/^T-\d+$/).describe('ShiftBoss task id, e.g. T-12 (it is in your brief)');
 const ME = z.string().max(100).optional().describe('Your session name, e.g. billing-fix');
+const LINK = z.string().url().max(500).optional()
+  .describe('Permalink to the message it came from (Slack "Copy link", or the Gmail message link). Required whenever the item came from Slack or Gmail, backfill included');
+const DIRECTION = z.enum(['inbound', 'outbound']).optional()
+  .describe('inbound: someone asked us or wrote to the owner. outbound: the owner or a session said or sent it. Always pass it for Slack and Gmail items');
 
 const server = new McpServer({ name: 'shiftboss', version: '0.1.0' });
 
@@ -45,13 +49,16 @@ server.registerTool('task_note', {
 
 server.registerTool('task_add', {
   title: 'File a new task',
-  description: 'File a new task in ShiftBoss. Use the asker\'s own words for `ask`. Leave `session` empty to put it in the inbox for triage.',
+  description: 'File a new task in ShiftBoss. Use the asker\'s own words for `ask`. Leave `session` empty to put it in the inbox for triage. A task from Slack or Gmail must carry `url` (the permalink) and `direction`, so the owner can open the original in one click.',
   inputSchema: {
     title: z.string().min(1).max(300), ask: z.string().max(4000).optional(), from: z.string().max(100).optional(),
-    source: z.string().max(200).optional().describe('Channel or meeting'), url: z.string().url().optional().describe('Slack permalink or other link'),
+    source: z.string().max(200).optional().describe('Channel or meeting'), url: LINK, direction: DIRECTION,
     session: z.string().max(100).optional(), prio: z.enum(['P1', 'P2', 'P3']).optional(),
   },
-}, wrap(async (a) => { const t = await call('POST', '/api/tasks', { title: a.title, ask: a.ask, requester: a.from, source: a.source, sourceUrl: a.url, session: a.session, prio: a.prio }); return 'filed ' + t.id; }));
+}, wrap(async (a) => {
+  const t = await call('POST', '/api/tasks', { title: a.title, ask: a.ask, requester: a.from, source: a.source, sourceUrl: a.url, direction: a.direction, session: a.session, prio: a.prio });
+  return 'filed ' + t.id + (a.url ? '' : ' (no source link: pass url when it came from Slack or Gmail)');
+}));
 
 server.registerTool('task_assign', {
   title: 'Assign a task',
@@ -67,9 +74,9 @@ server.registerTool('task_get', {
 
 server.registerTool('slack_draft', {
   title: 'Draft a Slack reply for approval',
-  description: 'Save a reply you want to post in the task\'s Slack thread. The owner approves it in ShiftBoss; you are then asked to post it. Use kind "sent" only to record something already posted.',
-  inputSchema: { task: TASK, text: z.string().min(1).max(4000), kind: z.enum(['draft', 'sent', 'ask', 'promise']).optional(), who: ME },
-}, wrap(async ({ task, text, kind, who }) => { await call('POST', `/api/tasks/${task}/slack`, { who: who ?? 'session', text, kind: kind ?? 'draft' }); return (kind ?? 'draft') + ' saved on ' + task; }));
+  description: 'Save a reply you want to post in the task\'s Slack thread. The owner approves it in ShiftBoss; you are then asked to post it. Use kind "sent" only to record something already posted. Kind "ask" (a question the requester asked) is inbound; the others are outbound. Pass `url`, the thread permalink, when you have it: it becomes the task\'s source link if the task has none.',
+  inputSchema: { task: TASK, text: z.string().min(1).max(4000), kind: z.enum(['draft', 'sent', 'ask', 'promise']).optional(), who: ME, url: LINK },
+}, wrap(async ({ task, text, kind, who, url }) => { await call('POST', `/api/tasks/${task}/slack`, { who: who ?? 'session', text, kind: kind ?? 'draft', url }); return (kind ?? 'draft') + ' saved on ' + task; }));
 
 server.registerTool('slack_sent', {
   title: 'Mark an approved draft as posted',
@@ -79,9 +86,12 @@ server.registerTool('slack_sent', {
 
 server.registerTool('promise_add', {
   title: 'Record a promise',
-  description: 'Record a line sent from the owner\'s account that says what we will do or tell someone, so it is tracked until kept.',
-  inputSchema: { said: z.string().min(1).max(1000), to: z.string().min(1).max(100), where: z.string().max(200).optional(), kept_when: z.string().max(300).optional(), task: TASK.optional(), due: z.string().max(40).optional().describe('When it is due, e.g. 2026-12-01 or 2026-12-01T17:00. Overdue promises show in red') },
-}, wrap(async (a) => { const p = await call('POST', '/api/promises', { said: a.said, to: a.to, where: a.where, keptWhen: a.kept_when, taskId: a.task, dueAt: a.due }); return 'promise ' + p.id; }));
+  description: 'Record a line sent from the owner\'s account that says what we will do or tell someone, so it is tracked until kept. Pass `url`, the permalink of the message where it was said (required for Slack and Gmail, backfill included), and `direction` (usually outbound).',
+  inputSchema: { said: z.string().min(1).max(1000), to: z.string().min(1).max(100), where: z.string().max(200).optional(), kept_when: z.string().max(300).optional(), task: TASK.optional(), due: z.string().max(40).optional().describe('When it is due, e.g. 2026-12-01 or 2026-12-01T17:00. Overdue promises show in red'), url: LINK, direction: DIRECTION },
+}, wrap(async (a) => {
+  const p = await call('POST', '/api/promises', { said: a.said, to: a.to, where: a.where, keptWhen: a.kept_when, taskId: a.task, dueAt: a.due, url: a.url, direction: a.direction });
+  return 'promise ' + p.id + (p.link ? '' : ' (no source link: pass url when it came from Slack or Gmail)');
+}));
 
 server.registerTool('ask_owner', {
   title: 'Ask the owner for a decision',
@@ -107,9 +117,12 @@ server.registerTool('intake_checkpoint', {
 
 server.registerTool('intake_log', {
   title: 'Log a message the intake read',
-  description: 'Intake session only: log one message once, with a verdict (filed T-n, linked T-n, answered, dropped, to lead) and its permalink.',
-  inputSchema: { source: z.string().min(1).max(200), who: z.string().max(100).optional(), text: z.string().min(1).max(2000), verdict: z.string().min(1).max(100), task: TASK.optional(), url: z.string().url().optional() },
-}, wrap(async (a) => { await call('POST', '/api/intake', { src: a.source, who: a.who, text: a.text, verdict: a.verdict, taskId: a.task, url: a.url }); return 'logged'; }));
+  description: 'Intake session only: log one message once, with a verdict (filed T-n, linked T-n, answered, dropped, to lead), its permalink (`url`, always, backfill and catch-up included) and its `direction` (inbound: written to the owner; outbound: sent by the owner).',
+  inputSchema: { source: z.string().min(1).max(200), who: z.string().max(100).optional(), text: z.string().min(1).max(2000), verdict: z.string().min(1).max(100), task: TASK.optional(), url: LINK, direction: DIRECTION },
+}, wrap(async (a) => {
+  await call('POST', '/api/intake', { src: a.source, who: a.who, text: a.text, verdict: a.verdict, taskId: a.task, url: a.url, direction: a.direction });
+  return 'logged' + (a.url ? '' : ' (no link: the Intake screen will show "No source link")');
+}));
 
 server.registerTool('decide', {
   title: 'Log a lead decision',

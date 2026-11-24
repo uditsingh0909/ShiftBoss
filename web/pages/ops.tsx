@@ -4,6 +4,7 @@ import { act, ago, api, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSn
 import { IntakeControl } from '../intake-control';
 import { resetTours } from '../tour';
 import { ModePicker } from '../mode';
+import { NotificationSettings } from '../notify';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
@@ -181,13 +182,14 @@ export function SettingsPage({ section }: { section?: string }) {
   const th = (k: keyof Settings['thresholds']) => (v: number) => setSt({ ...st, thresholds: { ...st.thresholds, [k]: v } });
   const sw = (k: keyof Settings['switches']) => (v: boolean) => setSt({ ...st, switches: { ...st.switches, [k]: v } });
   const bud = (k: keyof Settings['budgets']) => (v: number) => setSt({ ...st, budgets: { ...st.budgets, [k]: v } });
-  const save = () => act(async () => { const next = await api<Settings>('PUT', '/api/settings', st); setSt(next); setBase(JSON.stringify(next)); }, 'Saved');
+  // Notification switches save on their own (NotificationSettings), so Save never sends a stale copy of them.
+  const save = () => act(async () => { const { notify: _own, ...rest } = st; const next = await api<Settings>('PUT', '/api/settings', rest); setSt(next); setBase(JSON.stringify(next)); }, 'Saved');
   const T = st.thresholds;
   const badOrder = T.warn >= T.replace;
   // Most-used first. The menu jumps to a section without leaving the page, so unsaved edits survive;
   // #/settings/<id> opens the page at that section.
   const SECTIONS = [
-    ['mode', 'Mode'], ['instructions', 'Your way of working'], ['automation', 'Automation'], ['intake', 'Intake'], ['lanes', 'Lanes and slots'], ['warnings', 'Warnings'],
+    ['mode', 'Mode'], ['instructions', 'Your way of working'], ['notifications', 'Notifications'], ['automation', 'Automation'], ['intake', 'Intake'], ['lanes', 'Lanes and slots'], ['warnings', 'Warnings'],
     ['general', 'General'], ['updates', 'Updates'], ['budgets', 'Usage budgets'], ['help', 'Help'],
   ] as const;
   const jump = (id: string) => document.getElementById('set-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -229,6 +231,8 @@ export function SettingsPage({ section }: { section?: string }) {
             </span>
           </div>
         </SettingsSection>
+
+        <NotificationSettings Section={SettingsSection} Switch={Switch} />
 
         <SettingsSection id="automation" title="Automation" text="What ShiftBoss may do without asking you.">
           <div style={{ gridColumn: '1 / -1', gap: 22 }} className="col">

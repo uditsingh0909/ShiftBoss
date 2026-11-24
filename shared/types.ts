@@ -52,7 +52,15 @@ export interface Task {
   vetted?: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Always set by the store; optional so hand-built tasks (tests, imports) need not name it. */
+  direction?: Direction;
 }
+
+/**
+ * Which way something went. inbound: someone asked us or wrote to the owner. outbound: the owner or a session
+ * said or sent it. null: not recorded (older rows, or the sender did not say).
+ */
+export type Direction = 'inbound' | 'outbound' | null;
 
 export interface TaskEvent { id: number; taskId: string; at: string; src: 'Slack' | 'GitHub' | 'Session' | 'ShiftBoss'; who: string; text: string }
 export interface SlackMsg { id: number; taskId: string; at: string; who: string; text: string; kind: 'ask' | 'promise' | 'sent' | 'draft' }
@@ -68,6 +76,11 @@ export interface PromiseItem {
   dueAt: string | null;
   createdAt: string;
   keptAt: string | null;
+  /** The promise's own link (Slack permalink, Gmail link), if one was recorded. */
+  url: string | null;
+  direction: Direction;
+  /** Where "Open" goes: its own url, else its task's source link (via = that task id). Worked out when read. */
+  link: { url: string; via: string | null } | null;
 }
 
 export interface Need {
@@ -88,7 +101,7 @@ export interface Need {
 }
 
 export interface AuditEntry { id: number; at: string; where: 'Slack' | 'Jira' | 'GitHub' | 'Email'; channel: string; text: string; by: string; approval: string; corrected: boolean; note: string }
-export interface IntakeItem { id: number; at: string; src: string; who: string; text: string; verdict: string; taskId: string | null; url: string | null }
+export interface IntakeItem { id: number; at: string; src: string; who: string; text: string; verdict: string; taskId: string | null; url: string | null; direction: Direction }
 export interface Decision { id: number; at: string; text: string }
 
 export interface HealthCard {
@@ -145,7 +158,21 @@ export interface Settings {
   instructions?: string;
   /** The text before the last change, so a change can be undone. */
   instructionsPrev?: string;
+  /** Which browser notifications to show (one open tab shows them). Stored here so every tab agrees. */
+  notify?: NotifySettings;
 }
+
+/** Browser notification switches, one per kind of event. */
+export interface NotifySettings {
+  needs: boolean; // a new Needs you item (a decision a session asked for)
+  blocked: boolean; // a session waits on a permission answer in herdr
+  stuck: boolean; // a session is stuck or looping
+  overlap: boolean; // two sessions touch the same thing
+  promiseDue: boolean; // a promise became overdue
+  monitor: boolean; // a monitor raised an alert
+  updated: boolean; // ShiftBoss installed a new version
+}
+export const DEFAULT_NOTIFY: NotifySettings = { needs: true, blocked: true, stuck: true, overlap: true, promiseDue: true, monitor: true, updated: true };
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
 export function resolveLead<T extends { name: string }>(sessions: T[], base: string): T | null {

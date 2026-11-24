@@ -9,7 +9,7 @@ import { setupInfo } from './setup';
 import { safeUrl } from './guard';
 import { isMode, MODE_LABEL, type Actor, type Mode } from './gate';
 import { HerdrError } from './herdr';
-import { NotFound } from './db';
+import { checkDirection, NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
 import { checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
@@ -77,7 +77,7 @@ export function makeApi(engine: Engine) {
       if (p === '/api/tasks' && req.method === 'POST') {
         const b = await body<any>(req);
         const t = store.addTask({ title: str(b.title, 'title', 300), ask: optStr(b.ask), requester: optStr(b.requester, 100), source: optStr(b.source, 200),
-          sourceUrl: safeUrl(b.sourceUrl), session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2' });
+          sourceUrl: safeUrl(b.sourceUrl), session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2', direction: checkDirection(b.direction) });
         if (b.who === 'you' && t.session) store.vetTask(t.id);
         engine.pushFeed('shiftboss', `filed ${t.id}: ${t.title}`);
         return done(json(t, 201));
@@ -101,6 +101,9 @@ export function makeApi(engine: Engine) {
         if (b.held !== undefined) patch.held = !!b.held;
         if (b.title !== undefined) patch.title = str(b.title, 'title', 300);
         if (b.ask !== undefined) patch.ask = String(b.ask);
+        // A person fixing a missing link ("Add link"), or a session adding it later. null or "" clears it.
+        if (b.sourceUrl !== undefined) patch.sourceUrl = safeUrl(b.sourceUrl);
+        if (b.direction !== undefined) patch.direction = checkDirection(b.direction) ?? null;
         if (patch.session && patch.stage === undefined) { const cur = store.getTask(r[1]); if (cur?.stage === 0) patch.stage = 1; }
         const who = optStr(b.who, 100) ?? 'session';
         const updated = store.updateTask(r[1], patch, who);
@@ -130,7 +133,10 @@ export function makeApi(engine: Engine) {
       if (r && write) {
         const b = await body<any>(req);
         const kind = (['ask', 'promise', 'sent', 'draft'].includes(b.kind) ? b.kind : 'sent') as SlackMsg['kind'];
+        const link = safeUrl(b.url);
         store.addSlack(r[1], str(b.who, 'who', 100), str(b.text, 'text', 4000), kind);
+        // The thread's permalink: fills a task that has no source link yet (never replaces one).
+        if (link && !store.getTask(r[1])?.sourceUrl) store.updateTask(r[1], { sourceUrl: link }, optStr(b.who, 100) ?? 'session');
         return done(json({ ok: true }, 201));
       }
       r = m(/^\/api\/slack\/(\d+)\/approve$/);
@@ -178,12 +184,16 @@ export function makeApi(engine: Engine) {
       // ----- promises -----
       if (p === '/api/promises' && write) {
         const b = await body<any>(req);
-        const pr = store.addPromise({ to: str(b.to, 'to', 100), where: optStr(b.where, 200), said: str(b.said, 'said', 1000), keptWhen: optStr(b.keptWhen, 300), taskId: optStr(b.taskId, 20) ?? null, dueAt: dueIso(b.dueAt) });
+        const pr = store.addPromise({ to: str(b.to, 'to', 100), where: optStr(b.where, 200), said: str(b.said, 'said', 1000), keptWhen: optStr(b.keptWhen, 300), taskId: optStr(b.taskId, 20) ?? null, dueAt: dueIso(b.dueAt),
+          url: safeUrl(b.url), direction: checkDirection(b.direction) });
         return done(json(pr, 201));
       }
       r = m(/^\/api\/promises\/(\d+)$/);
       if (r && req.method === 'PATCH') {
         const b = await body<any>(req);
+        if (b.url !== undefined || b.direction !== undefined) {
+          store.updatePromiseSource(Number(r[1]), { url: b.url === undefined ? undefined : safeUrl(b.url), direction: checkDirection(b.direction) }, optStr(b.who, 100) ?? 'you');
+        }
         if (b.taskId !== undefined) store.linkPromise(Number(r[1]), str(b.taskId, 'taskId', 20));
         if (b.state !== undefined) {
           if (!['open', 'ready', 'waiting', 'due', 'kept'].includes(b.state)) throw new Error('state must be open|ready|waiting|due|kept');
@@ -448,7 +458,7 @@ export function makeApi(engine: Engine) {
         // saves waiting for the loop; if the tab is at a startup or permission prompt, it waits for the owner.
         let prompted = false, waiting: string | null = null;
         if (s) {
-          try { await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} is setting up ShiftBoss and sent you back ${days} day(s). Run one pass now: intake_begin returns readFrom ${st.since}. Read the whole gap oldest first (Slack and Gmail, as docs/INTAKE.md says), paging until you reach now, file what is open, then intake_checkpoint.`); prompted = true; }
+          try { await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} is setting up ShiftBoss and sent you back ${days} day(s). Run one pass now: intake_begin returns readFrom ${st.since}. Read the whole gap oldest first (Slack and Gmail, as docs/INTAKE.md says), paging until you reach now, file what is open (every item with its permalink and direction), then intake_checkpoint.`); prompted = true; }
           catch (e) { waiting = /blocked|interactive|not ready/i.test((e as Error).message) ? 'waiting on a prompt in herdr' : (e as Error).message.slice(0, 200); }
         }
         engine.pushFeed('you', `sent the intake back ${days} day(s)`);
@@ -480,7 +490,7 @@ export function makeApi(engine: Engine) {
       if (p === '/api/intake' && write) {
         const b = await body<any>(req);
         store.addIntake({ src: str(b.src, 'src', 200), who: optStr(b.who, 100) ?? '', text: str(b.text, 'text', 2000), verdict: str(b.verdict, 'verdict', 100), taskId: optStr(b.taskId, 20) ?? null,
-          url: safeUrl(b.url) });
+          url: safeUrl(b.url), direction: checkDirection(b.direction) });
         return done(json({ ok: true }, 201));
       }
       r = m(/^\/api\/intake\/(\d+)\/resolve$/);

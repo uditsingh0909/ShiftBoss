@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Approvals } from '../approvals';
 import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
 import { act, ago, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
+import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
@@ -196,6 +197,11 @@ export function Promises() {
               </div>
               <blockquote style={{ margin: 0, fontSize: 18, lineHeight: 1.45 }}>“{p.said}”</blockquote>
               {p.keptWhen && <span className="dim" style={{ fontSize: 13 }}>Kept when: {p.keptWhen}</span>}
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <DirectionChip d={p.direction} />
+                {p.link ? <SourceButton url={p.link.url} via={p.link.via} what={p.said} /> : <NoSourceLink />}
+                {!p.url && <AddLink path={`/api/promises/${p.id}`} field="url" direction={p.direction} what={'the promise to ' + p.to} />}
+              </div>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 {(() => {
                   const t = snap.tasks.find((x) => x.id === p.taskId);

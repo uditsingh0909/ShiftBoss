@@ -30,6 +30,9 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `server/fleet.ts` | Pure rules for starting many sessions and replacing one through a handoff (names, handoff check, prompts); the engine runs the replacement state machine |
 | `server/config.ts` | Defaults + `shiftboss.config.json` (gitignored) + `SHIFTBOSS_*` env overrides |
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
+| `shared/notify.ts` | Pure rules for browser notifications: which snapshot items notify, which are new, the tab title |
+| `web/notify.tsx` | Browser notifications (one leader tab, no service worker) and the Notifications settings section |
+| `web/source.tsx` | "Open in Slack" button, ↓/↑ direction chip, "No source link" marker and the "Add link" field |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
 | `mcp/server.ts` | MCP server (`shiftboss`), 26 tools over the HTTP API |
 | `server/monitors.ts` | Pure rules for monitors (schedule, alerting, due-check selection, prompts); the engine sends checks only through `Engine.sendMonitorCheck` |

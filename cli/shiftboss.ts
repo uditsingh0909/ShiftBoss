@@ -6,16 +6,21 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 const HELP = `shiftboss: tell ShiftBoss what happened
 
-  shiftboss task add "<title>" [--ask TEXT] [--from NAME] [--source WHERE] [--url URL] [--session NAME] [--prio P1|P2|P3]
+  shiftboss task add "<title>" [--ask TEXT] [--from NAME] [--source WHERE] [--url URL] [--direction inbound|outbound] [--session NAME] [--prio P1|P2|P3]
   shiftboss task stage <T-n> queued|progress|pr|dev|live|told
   shiftboss task assign <T-n> <session>
   shiftboss task note <T-n> "<text>" [--src Session|GitHub|Slack] [--who NAME]
-  shiftboss slack <T-n> "<text>" --kind ask|promise|draft|sent [--who NAME]
+  shiftboss task link <T-n> <URL> [--direction inbound|outbound]     set a missing source link
+  shiftboss slack <T-n> "<text>" --kind ask|promise|draft|sent [--who NAME] [--url THREAD-PERMALINK]
   shiftboss slack sent <message-id>
-  shiftboss promise "<what was said>" --to NAME [--where CHANNEL] [--when "kept when…"] [--task T-n] [--due 2026-12-01]
+  shiftboss promise "<what was said>" --to NAME [--where CHANNEL] [--when "kept when…"] [--task T-n] [--due 2026-12-01] [--url URL] [--direction inbound|outbound]
+  shiftboss promise link <id> <URL> [--direction inbound|outbound]   set a missing link
   shiftboss need "<question>" --answers "Yes,Not now" [--kind Decision|"Production write"|"Live customers"|Money|Access] [--body TEXT] [--session NAME] [--task T-n]
   shiftboss intake begin | checkpoint <ISO time> | pause [--until ISO] | resume [--from-now]
-  shiftboss intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" [--who NAME] [--task T-n] [--url PERMALINK]
+  shiftboss intake --src WHERE --text "<message>" --verdict "filed T-n|dropped|answered|to lead" --url PERMALINK --direction inbound|outbound [--who NAME] [--task T-n]
+
+  Anything from Slack or Gmail carries --url (the permalink) and --direction: inbound when someone
+  wrote to the owner, outbound when the owner or a session said or sent it.
   shiftboss audit --text "<what was sent>" [--where Slack|Jira|GitHub|Email] [--channel C] [--by SESSION] [--approval TEXT]
   shiftboss decide "<what the lead decided>"
   shiftboss import <tasks.json>     (re-runnable: matched on extId)
@@ -80,9 +85,10 @@ async function main() {
   switch (cmd) {
     case 'task': {
       if (sub === 'add') {
-        const t = await call('POST', '/api/tasks', { title: a1, ask: flags.ask, requester: flags.from, source: flags.source, sourceUrl: flags.url, session: flags.session, prio: flags.prio });
+        const t = await call('POST', '/api/tasks', { title: a1, ask: flags.ask, requester: flags.from, source: flags.source, sourceUrl: flags.url, direction: flags.direction, session: flags.session, prio: flags.prio });
         return console.log(t.id);
       }
+      if (sub === 'link') { await call('PATCH', `/api/tasks/${a1}`, { sourceUrl: a2, direction: flags.direction, who }); return console.log(`${a1} linked`); }
       if (sub === 'stage') { await call('PATCH', `/api/tasks/${a1}`, { stage: a2, who }); return console.log(`${a1} → ${a2}`); }
       if (sub === 'assign') { await call('PATCH', `/api/tasks/${a1}`, { session: a2, who }); return console.log(`${a1} → ${a2}`); }
       if (sub === 'note') { await call('POST', `/api/tasks/${a1}/events`, { src: flags.src ?? 'Session', who, text: a2 }); return console.log('noted'); }
@@ -90,11 +96,12 @@ async function main() {
     }
     case 'slack': {
       if (sub === 'sent') { await call('POST', `/api/slack/${a1}/sent`, {}); return console.log('marked sent'); }
-      await call('POST', `/api/tasks/${sub}/slack`, { who, text: a1, kind: flags.kind ?? 'sent' });
+      await call('POST', `/api/tasks/${sub}/slack`, { who, text: a1, kind: flags.kind ?? 'sent', url: flags.url });
       return console.log('saved');
     }
     case 'promise': {
-      const p = await call('POST', '/api/promises', { said: sub, to: flags.to, where: flags.where, keptWhen: flags.when, taskId: flags.task, dueAt: flags.due });
+      if (sub === 'link') { await call('PATCH', `/api/promises/${a1}`, { url: a2, direction: flags.direction, who }); return console.log(`promise ${a1} linked`); }
+      const p = await call('POST', '/api/promises', { said: sub, to: flags.to, where: flags.where, keptWhen: flags.when, taskId: flags.task, dueAt: flags.due, url: flags.url, direction: flags.direction });
       return console.log('promise ' + p.id);
     }
     case 'need': {
@@ -106,7 +113,7 @@ async function main() {
       if (sub === 'checkpoint') { await call('POST', '/api/intake/checkpoint', { readUntil: a1 }); return console.log('checkpoint saved: ' + a1); }
       if (sub === 'pause') { const st = await call('POST', '/api/intake/pause', { until: flags.until }); return console.log(st.resumeAt ? 'paused until ' + st.resumeAt : 'paused'); }
       if (sub === 'resume') { await call('POST', '/api/intake/resume', { catchUp: flags['from-now'] === undefined }); return console.log(flags['from-now'] === undefined ? 'resumed, catching up' : 'resumed from now'); }
-      await call('POST', '/api/intake', { src: flags.src, who: flags.who, text: flags.text, verdict: flags.verdict, taskId: flags.task, url: flags.url });
+      await call('POST', '/api/intake', { src: flags.src, who: flags.who, text: flags.text, verdict: flags.verdict, taskId: flags.task, url: flags.url, direction: flags.direction });
       return console.log('logged');
     }
     case 'audit': {

@@ -1,7 +1,7 @@
 // Validate a settings update before it is stored. Any session can call PUT /api/settings, and one
 // bad value (a string where a number goes) used to crash every screen.
 import { z } from 'zod';
-import type { Settings } from '../shared/types';
+import { DEFAULT_NOTIFY, type Settings } from '../shared/types';
 
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Patch = z.object({
@@ -18,6 +18,9 @@ const Patch = z.object({
   mode: z.enum(['dry', 'ask', 'safe', 'auto']).optional(),
   instructions: z.string().max(4000).optional(),
   instructionsPrev: z.string().max(4000).optional(),
+  notify: z.object({
+    needs: z.boolean(), blocked: z.boolean(), stuck: z.boolean(), overlap: z.boolean(), promiseDue: z.boolean(), monitor: z.boolean(), updated: z.boolean(),
+  }).partial().optional(),
 }).strip();
 
 export function mergeSettings(cur: Settings, input: unknown): Settings {
@@ -30,6 +33,7 @@ export function mergeSettings(cur: Settings, input: unknown): Settings {
   const next: Settings = {
     ...cur, ...b,
     thresholds: { ...cur.thresholds, ...b.thresholds }, switches: { ...cur.switches, ...b.switches }, budgets: { ...cur.budgets, ...b.budgets },
+    notify: { ...DEFAULT_NOTIFY, ...cur.notify, ...b.notify },
     leadSession: (b.leadSession ?? cur.leadSession).trim(), herdrWorkspace: (b.herdrWorkspace ?? cur.herdrWorkspace).trim(),
   };
   if (next.thresholds.warn >= next.thresholds.replace) throw new Error('The context warning must be below the replace line');
