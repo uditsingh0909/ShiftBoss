@@ -44,6 +44,8 @@ h2 { margin: 0; font-weight: 500; letter-spacing: -0.02em; }
 .pill:active { transform: scale(.98); }
 .pill:disabled { opacity: .4; cursor: default; }
 .pill.sm { height: 32px; padding: 0 14px; font-size: 12px; }
+.pill.xs { height: 26px; padding: 0 10px; gap: 6px; font-size: 11px; }
+.pill.amber-b { border-color: rgba(245,165,36,.5); color: var(--amber); }
 .pill.w { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .pill.w:hover { background: #fff; }
 .pill.r { border-color: rgba(255,90,79,.45); color: var(--red); }
@@ -157,6 +159,21 @@ input[type="checkbox"] { accent-color: #F4F4F5; width: 16px; height: 16px; flex:
 .kcard:hover { border-color: rgba(255,255,255,.16); transform: translateY(-2px); }
 .stage-col { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
 .kcard.drag-over { border-color: rgba(255,255,255,.4); }
+/* quick actions on task cards and list rows: on hover or keyboard focus, always on touch screens */
+.kq { display: none; gap: 6px; flex-wrap: wrap; align-items: center; }
+.kcard:hover .kq, .kcard:focus-within .kq { display: flex; }
+.kq .pick-field { height: 26px; border-radius: 999px; font-size: 11px; padding: 0 26px 0 10px; background-position: right 9px center; border-color: rgba(255,255,255,.12); background-color: transparent; }
+.tlist { display: grid; grid-template-columns: 64px minmax(0,1fr) 170px 110px 90px 70px; gap: 16px; align-items: center; position: relative; }
+.tlist .kq { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding-left: 16px; background: #121212; flex-wrap: nowrap; }
+.tlist:hover .kq, .tlist:focus-within .kq { display: flex; }
+@media (hover: none) {
+  .kcard .kq { display: flex; }
+  .tlist .kq { display: flex; position: static; transform: none; grid-column: 1 / -1; padding-left: 0; background: none; flex-wrap: wrap; }
+}
+@media (max-width: 900px) {
+  .tlist { grid-template-columns: 56px minmax(0,1fr) 48px; gap: 12px; }
+  .tlist .kq { position: static; transform: none; grid-column: 1 / -1; padding-left: 0; background: none; flex-wrap: wrap; }
+}
 @media (max-width: 900px) {
   .page { padding: 20px 16px 64px; gap: 32px; }
   h1.hero { font-size: 40px; }

@@ -1,13 +1,50 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, usePage, useSnap } from '../lib';
+import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, toast, usePage, useSnap } from '../lib';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
 
 function StagePips({ stage }: { stage: number }) {
   return <span className="row" style={{ gap: 3 }} aria-label={'Stage: ' + STAGES[stage]}>{STAGES.map((_, i) => <span key={i} style={{ width: 12, height: 4, borderRadius: 999, background: i <= stage ? (stage >= 5 ? C.green : C.fg) : C.ghost }} />)}</span>;
+}
+
+/**
+ * Move, assign, hold and brief a task without opening it. Shown on hover or keyboard focus, always on
+ * touch screens. Moving backwards, or to Requester told (which closes its promises), takes a second click.
+ */
+function QuickActions({ t, ready }: { t: Task; ready: boolean }) {
+  const snap = useSnap()!;
+  const [confirm, setConfirm] = useState<number | null>(null);
+  const patch = (body: object, ok: string) => act(() => api('PATCH', `/api/tasks/${t.id}`, { ...body, who: 'you' }), ok);
+  const go = (to: number) => {
+    const risky = to < t.stage || to === 6;
+    if (risky && confirm !== to) { setConfirm(to); return; }
+    setConfirm(null);
+    void patch({ stage: to }, `${t.id} → ${STAGES[to]}`);
+  };
+  const stepBtn = (to: number, glyph: string) => {
+    const asking = confirm === to;
+    return (
+      <button type="button" className={'pill xs' + (asking ? ' amber-b' : '')} style={asking ? undefined : { width: 26, padding: 0, justifyContent: 'center' }}
+        aria-label={asking ? `Click again to move ${t.id} to ${STAGES[to]}` : `Move ${t.id} to ${STAGES[to]}`} title={STAGES[to]}
+        onClick={() => go(to)} onBlur={() => setConfirm((c) => (c === to ? null : c))}>
+        {asking ? (to === 6 ? 'Again: closes promises' : 'Again: move back') : glyph}
+      </button>
+    );
+  };
+  return (
+    <div className="kq row" role="group" aria-label={`Quick actions for ${t.id}`}>
+      {t.stage > 0 && stepBtn(t.stage - 1, '←')}
+      {t.stage < 6 && stepBtn(t.stage + 1, '→')}
+      <button type="button" className="pill xs" onClick={() => void patch({ held: !t.held }, t.held ? `${t.id} resumed` : `${t.id} on hold`)}>{t.held ? 'Resume' : 'Hold'}</button>
+      <Pick width={128} label={`Session for ${t.id}`} value={t.session ?? ''}
+        onChange={(v) => { if (v !== (t.session ?? '')) void patch({ session: v || null }, v ? `${t.id} assigned to ${v}` : `${t.id} unassigned`); }}
+        options={[{ value: '', label: 'Unassigned' }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} placeholder="Assign…" />
+      {t.session && t.stage <= 1 && !ready && <button type="button" className="pill xs w" onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Brief sent to ' + t.session)}>Send brief</button>}
+    </div>
+  );
 }
 
 function NewTask({ onDone }: { onDone: () => void }) {
@@ -55,11 +92,18 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
         <Dot color={t.session ? C.fg : C.amber} /><span className="mono ellipsis dim" style={{ fontSize: 11, flex: 1 }}>{t.session ?? 'unassigned'}</span>
         <span className="mono faint" style={{ fontSize: 11 }}>{ago(t.updatedAt)}</span>
         {t.sourceUrl && <a href={safeHref(t.sourceUrl)} target="_blank" rel="noreferrer" className="mono dim" style={{ fontSize: 11 }} aria-label={`Open ${t.id} in ${/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'its source'}`}>{/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'Link'} ↗</a>}
-        {ready.includes(t.id) && <button type="button" className="pill sm w" style={{ height: 24, padding: '0 10px', fontSize: 11 }} onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Sent to ' + t.session)}>Send</button>}
-        {t.stage < 6 && <button type="button" aria-label={`Move ${t.id} to ${STAGES[t.stage + 1]}`} onClick={() => move(t.id, t.stage + 1)} style={{ width: 24, height: 24, borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', cursor: 'pointer', fontSize: 12 }}>→</button>}
+        {ready.includes(t.id) && <button type="button" className="pill xs w" onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Sent to ' + t.session)}>Send</button>}
       </span>
+      <QuickActions t={t} ready={ready.includes(t.id)} />
     </div>
   );
+  // Dropping a card backwards, or on Requester told, asks first, like the task page does.
+  const drop = (id: string, stage: number) => {
+    const t = snap.tasks.find((x) => x.id === id);
+    if (!t || t.stage === stage) return;
+    if (stage < t.stage || stage === 6) toast(`Move ${id} ${stage === 6 ? 'to Requester told? That closes its promises.' : 'back to ' + STAGES[stage] + '?'}`, { label: 'Move', run: () => void move(id, stage) });
+    else void move(id, stage);
+  };
 
   return (
     <div className="page">
@@ -83,7 +127,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
             return (
               <div key={label} className="col stage-col" style={{ gap: 8, minWidth: 0, minHeight: 200, maxHeight: 'max(420px, calc(100vh - 300px))', overflowY: 'auto', borderRadius: 18, padding: 4, outline: over === i ? '1px dashed rgba(255,255,255,0.3)' : 'none' }}
                 onDragOver={(e) => { e.preventDefault(); setOver(i); }} onDragLeave={() => setOver(null)}
-                onDrop={(e) => { e.preventDefault(); if (dragId) void move(dragId, i); setOver(null); }}>
+                onDrop={(e) => { e.preventDefault(); if (dragId) drop(dragId, i); setOver(null); }}>
                 <div className="row" style={{ gap: 10, padding: '6px 4px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: -4, zIndex: 1, background: '#050505' }}>
                   <Dot color={stageColor(i)} /><span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span><span className="mono faint" style={{ marginLeft: 'auto', fontSize: 12 }}>{cards.length}</span>
                 </div>
@@ -96,14 +140,15 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
       ) : (
         <section className="shell rise"><div className="core col" style={{ padding: 12, gap: 0 }}>
           {page.shown.map((t) => (
-            <a key={t.id} href={href('task', t.id)} className="trow" style={{ display: 'grid', gridTemplateColumns: '64px minmax(0,1fr) 170px 110px 90px 70px', gap: 16, alignItems: 'center' }}>
-              <span className="mono faint" style={{ fontSize: 12 }}>{t.id}</span>
-              <span className="col" style={{ gap: 4, minWidth: 0 }}><span className="ellipsis">{t.title}</span><span className="ellipsis faint" style={{ fontSize: 12 }}>{[t.requester, t.source].filter(Boolean).join(' · ') || '—'}</span></span>
-              <span className="mono ellipsis dim" style={{ fontSize: 12 }}>{t.session ?? 'unassigned'}</span>
-              <StagePips stage={t.stage} />
-              <span className="mono" style={{ fontSize: 12, color: prioColor(t.prio) }}>{t.prio}</span>
-              <span className="mono faint" style={{ fontSize: 12, textAlign: 'right' }}>{ago(t.updatedAt)}</span>
-            </a>
+            <div key={t.id} className="trow tlist">
+              <a href={href('task', t.id)} className="mono faint" style={{ fontSize: 12 }}>{t.id}</a>
+              <a href={href('task', t.id)} className="col" style={{ gap: 4, minWidth: 0 }}><span className="ellipsis">{t.title}</span><span className="ellipsis faint" style={{ fontSize: 12 }}>{[t.requester, t.source].filter(Boolean).join(' · ') || '—'}</span></a>
+              <span className="mono ellipsis dim hide-sm" style={{ fontSize: 12 }}>{t.session ?? 'unassigned'}</span>
+              <span className="hide-sm"><StagePips stage={t.stage} /></span>
+              <span className="mono" style={{ fontSize: 12, color: prioColor(t.prio) }}>{t.held ? 'held · ' : ''}{t.prio}</span>
+              <span className="mono faint hide-sm" style={{ fontSize: 12, textAlign: 'right' }}>{ago(t.updatedAt)}</span>
+              <QuickActions t={t} ready={ready.includes(t.id)} />
+            </div>
           ))}
           <More page={page} />
           {!list.length && <Empty text="No tasks yet. Add one, or let the intake session file them with: shiftboss task add" />}
