@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Settings } from '../../shared/types';
 import { act, ago, api, C, Card, Dot, Empty, Hero, hhmm, Seg, toast, useSnap } from '../lib';
+import { IntakeControl } from '../intake-control';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
@@ -164,6 +165,31 @@ function LaneRow({ name, lane, slots }: { name: string; lane: string; slots: num
   );
 }
 
+/** One settings section: title and explanation on the left, controls in a two-column grid on the right. */
+function SettingsSection({ title, text, children }: { title: string; text: string; children: ReactNode }) {
+  return (
+    <section className="shell rise" aria-label={title}>
+      <div className="core settings-section">
+        <div className="col" style={{ gap: 6 }}>
+          <h2 style={{ fontSize: 18 }}>{title}</h2>
+          <span className="dim" style={{ fontSize: 13, lineHeight: 1.55 }}>{text}</span>
+        </div>
+        <div className="settings-controls">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function Field({ id, label, hint, wide, children }: { id: string; label: string; hint?: string; wide?: boolean; children: ReactNode }) {
+  return (
+    <div className="col" style={{ gap: 6, gridColumn: wide ? '1 / -1' : undefined, minWidth: 0 }}>
+      <label htmlFor={id} style={{ fontSize: 13 }}>{label}</label>
+      {children}
+      {hint && <span className="faint" style={{ fontSize: 12 }}>{hint}</span>}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const snap = useSnap()!;
   const [st, setSt] = useState<Settings>(snap.settings);
@@ -185,61 +211,58 @@ export function SettingsPage() {
         <button type="button" className="pill" disabled={!dirty} onClick={() => { setSt(JSON.parse(base)); }}>Discard</button>
         <button type="button" className="pill w" disabled={!dirty} onClick={() => void save()}>Save</button>
       </Hero>
-      <section className="grid12">
-        <Card span={6}>
-          <span className="label">Thresholds</span>
+      <div className="col" style={{ gap: 16 }}>
+        <SettingsSection title="General" text="Where ShiftBoss looks, and which session leads.">
+          <Field id="lead-session" label="Lead session" hint="Always the big card on Sessions. Its replacements (name-v2, name-v3 …) take over automatically.">
+            <input id="lead-session" className="field mono" value={st.leadSession ?? ''} placeholder="lead-manager" onChange={(e) => setSt({ ...st, leadSession: e.target.value })} />
+          </Field>
+          <Field id="herdr-ws" label="herdr workspace" hint="Only show sessions in this workspace. Empty means every workspace.">
+            <input id="herdr-ws" className="field mono" value={st.herdrWorkspace} placeholder="all workspaces" onChange={(e) => setSt({ ...st, herdrWorkspace: e.target.value })} />
+          </Field>
+          <Field id="handoffs-dir" label="Handoffs folder" hint="One file per session, named after it. Used for the handoff age." wide>
+            <input id="handoffs-dir" className="field mono" value={st.handoffsDir} placeholder="C:/path/to/handoffs" onChange={(e) => setSt({ ...st, handoffsDir: e.target.value })} />
+          </Field>
+        </SettingsSection>
+
+        <SettingsSection title="Warnings" text="When a session counts as heavy, stuck or looping, and how many decisions may wait on you.">
           <Range id="th-warn" label="Warn when context reaches" value={T.warn} min={50} max={90} unit="%" onChange={th('warn')} />
           <Range id="th-replace" label="Ask to replace the session at" value={T.replace} min={70} max={95} unit="%" onChange={th('replace')} />
-          <Range id="th-cap" label="Most open questions at once" value={T.needsCap} min={1} max={6} onChange={th('needsCap')} />
-          <Range id="th-stale" label="Handoff counts as stale after" value={T.staleMin} min={10} max={120} unit=" min" onChange={th('staleMin')} />
           <Range id="th-stuck" label="Session counts as stuck after" value={T.stuckMin} min={5} max={60} unit=" min" onChange={th('stuckMin')} />
-          <Range id="th-loop" label="Same command repeated this many times is a loop" value={T.loopRepeats} min={2} max={6} onChange={th('loopRepeats')} />
-        </Card>
-        <div className="col" style={{ gridColumn: 'span 6', gap: 16 }}>
-          <Card span={6} delay={60}>
-            <span className="label">Switches</span>
+          <Range id="th-loop" label="Same command this many times is a loop" value={T.loopRepeats} min={2} max={6} onChange={th('loopRepeats')} />
+          <Range id="th-stale" label="Handoff counts as stale after" value={T.staleMin} min={10} max={120} unit=" min" onChange={th('staleMin')} />
+          <Range id="th-cap" label="Most open questions at once" value={T.needsCap} min={1} max={6} onChange={th('needsCap')} />
+        </SettingsSection>
+
+        <SettingsSection title="Automation" text="What ShiftBoss may do on its own.">
+          <div style={{ gridColumn: '1 / -1', gap: 22 }} className="col">
             <Switch label="Send queued tasks automatically when a session frees a slot" on={st.switches.autoDispatch} onChange={sw('autoDispatch')}
               warn="When on, ShiftBoss prompts sessions on its own without asking you first." />
             <Switch label="Quiet hours" hint="Hold non-urgent prompts and nudges." on={st.switches.quietHours} onChange={sw('quietHours')} />
-          </Card>
-          <Card span={6} delay={120}>
-            <span className="label">Budgets</span>
-            <span className="faint" style={{ fontSize: 12 }}>Only used when Claude Code's own usage numbers are not available.</span>
-            {([['fiveHourTokens', 'Tokens per 5-hour window'], ['weeklyTokens', 'Tokens per week']] as const).map(([k, lbl]) => (
-              <div key={k} className="col" style={{ gap: 6 }}>
-                <label htmlFor={'bud-' + k} style={{ fontSize: 13 }}>{lbl}</label>
-                <input id={'bud-' + k} className="field mono" type="number" min={0} step={1000} value={st.budgets[k]} onChange={(e) => bud(k)(Math.max(0, Number(e.target.value) || 0))} />
-              </div>
-            ))}
-          </Card>
-          <Card span={6} delay={180}>
-            <span className="label">Places</span>
-            <div className="col" style={{ gap: 6 }}>
-              <label htmlFor="herdr-ws" style={{ fontSize: 13 }}>herdr workspace</label>
-              <input id="herdr-ws" className="field mono" value={st.herdrWorkspace} onChange={(e) => setSt({ ...st, herdrWorkspace: e.target.value })} />
-            </div>
-            <div className="col" style={{ gap: 6 }}>
-              <label htmlFor="lead-session" style={{ fontSize: 13 }}>Lead session</label>
-              <span className="faint" style={{ fontSize: 12 }}>Always the big card on Sessions. Its replacements (name-v2, name-v3 …) take over automatically.</span>
-              <input id="lead-session" className="field mono" value={st.leadSession ?? ''} placeholder="lead-manager" onChange={(e) => setSt({ ...st, leadSession: e.target.value })} />
-            </div>
-            <div className="col" style={{ gap: 6 }}>
-              <label htmlFor="handoffs-dir" style={{ fontSize: 13 }}>Handoffs folder</label>
-              <input id="handoffs-dir" className="field mono" value={st.handoffsDir} onChange={(e) => setSt({ ...st, handoffsDir: e.target.value })} />
-            </div>
-            <div className="col" style={{ gap: 6 }}>
-              <label htmlFor="watched-channels" style={{ fontSize: 13 }}>Watched Slack channels</label>
-              <span className="faint" style={{ fontSize: 12 }}>One per line. Intake reads new top-level messages here.</span>
-              <textarea id="watched-channels" className="field mono" rows={8} defaultValue={(st.watchedChannels ?? []).join('\n')} onBlur={(e) => setSt({ ...st, watchedChannels: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) })} />
-            </div>
-          </Card>
-        </div>
-        <Card delay={240}>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span className="label">Lanes and slots</span><span className="faint" style={{ fontSize: 12 }}>Each row saves on its own</span></div>
-          {snap.sessions.map((s) => <LaneRow key={s.name} name={s.name} lane={s.lane} slots={s.slots} />)}
-          {!snap.sessions.length && <Empty text="No sessions running in herdr." />}
-        </Card>
-      </section>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="Intake" text="The session that reads Slack and meeting notes, and the channels it watches.">
+          <div style={{ gridColumn: '1 / -1' }}><IntakeControl compact /></div>
+          <Field id="watched-channels" label="Watched Slack channels" hint="One per line. The intake reads new top-level messages here." wide>
+            <textarea id="watched-channels" className="field mono" rows={5} defaultValue={(st.watchedChannels ?? []).join('\n')} onBlur={(e) => setSt({ ...st, watchedChannels: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) })} />
+          </Field>
+        </SettingsSection>
+
+        <SettingsSection title="Usage budgets" text="Only used when Claude Code's own usage numbers are not available (no status line tap).">
+          {([['fiveHourTokens', 'Tokens per 5-hour window'], ['weeklyTokens', 'Tokens per week']] as const).map(([k, lbl]) => (
+            <Field key={k} id={'bud-' + k} label={lbl}>
+              <input id={'bud-' + k} className="field mono" type="number" min={0} step={1000} value={st.budgets[k]} onChange={(e) => bud(k)(Math.max(0, Number(e.target.value) || 0))} />
+            </Field>
+          ))}
+        </SettingsSection>
+
+        <SettingsSection title="Lanes and slots" text="What each session works on, and how many tasks it may hold at once. Each row saves on its own.">
+          <div style={{ gridColumn: '1 / -1' }} className="col divide">
+            {snap.sessions.map((s) => <div key={s.name} style={{ padding: '10px 0' }}><LaneRow name={s.name} lane={s.lane} slots={s.slots} /></div>)}
+            {!snap.sessions.length && <Empty text="No sessions running in herdr." />}
+          </div>
+        </SettingsSection>
+      </div>
     </div>
   );
 }

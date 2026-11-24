@@ -19,6 +19,8 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .page { max-width: 1600px; margin: 0 auto; padding: 28px 48px 140px; display: flex; flex-direction: column; gap: 48px; overflow-x: clip; }
 .grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .grid12 > * { min-width: 0; }
+.grid12 > .stretch { align-self: stretch; }
+.grid12 > .stretch > .core { min-height: 0; }
 .shell { background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 28px; padding: 6px; transition: border-color .6s var(--ease); }
 .shell:hover { border-color: rgba(255,255,255,.12); }
 .shell.alert-red { border-color: rgba(255,90,79,.25); } .shell.alert-amber { border-color: rgba(245,165,36,.25); }
@@ -63,6 +65,10 @@ textarea.field { height: auto; padding: 12px 16px; resize: vertical; line-height
 .fresh { animation: lineIn .5s var(--ease); }
 @keyframes slideIn { from { opacity: 0; transform: translateX(48px); filter: blur(4px) } to { opacity: 1; transform: none; filter: none } }
 .slide-in { animation: slideIn .7s var(--ease) both; }
+/* settings: title + text on the left, controls on the right */
+.settings-section { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 32px; padding: 28px; }
+.settings-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; align-content: start; }
+@media (max-width: 900px) { .settings-section { grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 20px; } .settings-controls { grid-template-columns: minmax(0, 1fr); } }
 /* shortcuts row, top right of every page */
 .shortcuts-wrap { max-width: 1600px; margin: 0 auto; padding: 20px 48px 0; display: flex; justify-content: flex-end; }
 .shortcuts { gap: 8px 20px; font-size: 12px; flex-wrap: wrap; justify-content: flex-end; }

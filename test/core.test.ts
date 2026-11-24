@@ -54,19 +54,21 @@ describe('store', () => {
   });
   test('intake pause, catch-up resume and checkpoint', () => {
     const s = mem();
-    s.intakeCheckpoint('2026-11-25T01:00:00Z');
-    expect(s.intakeState().since).toBe('2026-11-25T01:00:00.000Z');
+    const t1 = new Date(Date.now() - 3 * 3600e3).toISOString();
+    const t3 = new Date(Date.now() - 3600e3).toISOString();
+    s.intakeCheckpoint(t1);
+    expect(s.intakeState().since).toBe(t1);
     s.pauseIntake(null);
     expect(s.intakeBegin().paused).toBe(true);
     const caught = s.resumeIntake(true);
     expect(caught.paused).toBe(false);
-    expect(caught.since).toBe('2026-11-25T01:00:00.000Z'); // reads the gap
-    expect(caught.catchUpFrom).toBe('2026-11-25T01:00:00.000Z');
-    s.intakeCheckpoint('2026-11-25T03:00:00Z');
+    expect(caught.since).toBe(t1); // reads the gap
+    expect(caught.catchUpFrom).toBe(t1);
+    s.intakeCheckpoint(t3);
     expect(s.intakeState().catchUpFrom).toBeNull();
     s.pauseIntake(null);
     const skipped = s.resumeIntake(false);
-    expect(Date.parse(skipped.since!)).toBeGreaterThan(Date.parse('2026-11-25T03:00:00Z')); // gap skipped
+    expect(Date.parse(skipped.since!)).toBeGreaterThan(Date.parse(t3)); // gap skipped
     expect(() => s.pauseIntake('2000-01-01T00:00:00Z')).toThrow();
     expect(() => s.intakeCheckpoint('not a time')).toThrow();
   });

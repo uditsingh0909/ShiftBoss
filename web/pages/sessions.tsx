@@ -9,9 +9,9 @@ const lineColor = (k: string) => (k === 'tool' ? C.fg : k === 'out' ? C.faint : 
 const lastSay = (s: Session) => { const t = s.lines.filter((l) => l.kind === 'say').at(-1)?.text; return t ? t.split(/(?<=[.!?])\s/)[0].slice(0, 120) : null; };
 const prefix = (k: string) => (k === 'tool' ? '⏺ ' : k === 'out' ? '  ⎿ ' : k === 'you' ? 'you › ' : '· ');
 
-function Lines({ s, n, height, stamps }: { s: Session; n: number; height: number; stamps?: boolean }) {
+function Lines({ s, n, height, stamps, grow }: { s: Session; n: number; height: number; stamps?: boolean; grow?: boolean }) {
   return (
-    <div className="term" style={{ height }}>
+    <div className="term" style={grow ? { flex: '1 1 0', minHeight: height } : { height }}>
       <div className="scroll" style={{ height: '100%', padding: stamps ? '16px 18px' : '10px 12px' }} role="log" aria-live="polite" tabIndex={0}>
         <div className="col" style={{ gap: 2 }}>
           {s.lines.slice(-n).map((l, i) => (
@@ -55,7 +55,7 @@ export function CommandCenter() {
 
       <section className="grid12">
         {hero ? (
-          <Card span={8} tone={hero.status === 'blocked' ? 'amber' : undefined} pad={28}>
+          <Card span={8} className="stretch" tone={hero.status === 'blocked' ? 'amber' : undefined} pad={28}>
             <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
               <span className="eyebrow" style={{ borderColor: statusColor(hero.status), color: statusColor(hero.status) }}>{hero === lead ? (hero.status === 'blocked' ? 'Lead · needs you' : 'Lead') : hero.status === 'blocked' ? 'Needs you' : 'Fullest context'}</span>
               <span className="mono dim" style={{ fontSize: 12 }}>{hero.name} · {hero.model ?? 'model unknown'}</span>
@@ -72,7 +72,7 @@ export function CommandCenter() {
                 </div>
               </div>
             )}
-            <Lines s={hero} n={10} height={230} />
+            <Lines s={hero} n={40} height={230} grow />
             <div className="row" style={{ gap: 28, flexWrap: 'wrap' }}>
               {[['Context', Math.round(hero.contextPct) + '%'], ['Tokens today', fmtTok(hero.tokensToday)], ['Last tool', hero.lastTool ?? '—'], ['Active', ago(hero.lastActivity)]].map(([k, v]) => (
                 <div key={k} className="col" style={{ gap: 4 }}><span className="label">{k}</span><span className="mono" style={{ fontSize: 15 }}>{v}</span></div>
