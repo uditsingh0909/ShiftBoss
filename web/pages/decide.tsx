@@ -125,7 +125,7 @@ export function NeedsYou() {
               <div key={n.id} className="col" style={{ gap: 4 }}>
                 <span className="ellipsis" style={{ fontSize: 13 }}>{n.title}</span>
                 <span className="row mono" style={{ fontSize: 12, gap: 8 }}>
-                  <span style={{ color: C.green }}>{n.answer}</span><span className="faint">· {hhmm(n.answeredAt)} · {n.auto ? 'in herdr' : n.sentAt ? 'sent' : 'sending…'}</span>
+                  <span style={{ color: C.green }}>{n.answer}</span><span className="faint">· {hhmm(n.answeredAt)} · {n.auto ? 'in herdr' : n.sentAt ? (n.session ? 'sent' : 'recorded') : n.session && !snap.sessions.some((x) => x.name === n.session) ? `waiting for ${n.session}` : 'sending…'}</span>
                   {!n.auto && <button type="button" className="pill sm" style={{ height: 26, marginLeft: 'auto', fontSize: 11 }} onClick={() => void undoNeed(n.id)}
                     title={n.sentAt ? 'Opens it again and tells the session to ignore your answer' : 'Not sent yet: takes it back quietly'}>{n.sentAt ? 'Reopen' : 'Undo'}</button>}
                 </span>

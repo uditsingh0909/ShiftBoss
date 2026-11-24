@@ -89,7 +89,7 @@ server.registerTool('ask_owner', {
   inputSchema: {
     question: z.string().min(1).max(300), answers: z.array(z.string().min(1).max(60)).min(1).max(4),
     kind: z.enum(['Decision', 'Production write', 'Live customers', 'Money', 'Access']).optional(),
-    detail: z.string().max(2000).optional(), session: ME.describe('Your session name, so the answer is sent back to you'), task: TASK.optional(),
+    detail: z.string().max(2000).optional(), session: z.string().min(1).max(100).describe('Your session name (required): the answer is sent back to this session as a prompt'), task: TASK.optional(),
   },
 }, wrap(async (a) => { const n = await call('POST', '/api/needs', { title: a.question, answers: a.answers, kind: a.kind ?? 'Decision', body: a.detail, session: a.session, taskId: a.task }); return `asked (item ${n.id}); the answer will arrive as a prompt`; }));
 

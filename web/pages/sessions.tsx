@@ -1,7 +1,7 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { resolveLead, type Session } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, Seg, toneColor, useSnap } from '../lib';
+import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, safeHref, Seg, toneColor, useSnap } from '../lib';
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
 const lineColor = (k: string) => (k === 'tool' ? C.fg : k === 'out' ? C.faint : k === 'you' ? C.amber : k === 'sys' ? C.red : C.dim);
@@ -334,7 +334,7 @@ export function SessionPage({ name }: { name: string }) {
         </Card>
         <Card span={6} delay={60}>
           <span className="label">Pull requests seen</span>
-          {s.prUrls.length ? s.prUrls.slice(-5).map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="mono dim ellipsis" style={{ fontSize: 13 }}>{u.replace('https://github.com/', '')} ↗</a>) : <Empty text="None in this transcript." />}
+          {s.prUrls.length ? s.prUrls.slice(-5).map((u) => <a key={u} href={safeHref(u)} target="_blank" rel="noreferrer" className="mono dim ellipsis" style={{ fontSize: 13 }}>{u.replace('https://github.com/', '')} ↗</a>) : <Empty text="None in this transcript." />}
         </Card>
       </section>
     </div>

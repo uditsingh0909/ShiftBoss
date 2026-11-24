@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { Store } from './db';
 import { Engine } from './engine';
 import { Herdr } from './herdr';
+import { checkRequest } from './guard';
 
 // One bad poll must never take the whole control room down: log it and keep serving.
 process.on('unhandledRejection', (e) => console.error(new Date().toISOString(), 'unhandled rejection:', e));
@@ -24,7 +25,12 @@ const server = Bun.serve({
   development: process.env.NODE_ENV !== 'production',
   routes: { '/': app },
   async fetch(req) {
-    const res = await api(req, new URL(req.url));
+    const url = new URL(req.url);
+    if (url.pathname.startsWith('/api/')) {
+      const bad = checkRequest(req, cfg.port);
+      if (bad) return Response.json({ error: bad }, { status: 403 });
+    }
+    const res = await api(req, url);
     return res ?? new Response('Not found', { status: 404 });
   },
 });

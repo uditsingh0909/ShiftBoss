@@ -196,3 +196,9 @@ export function Pick({ id, value, options, onChange, placeholder, free, width, l
     </div>
   );
 }
+
+/** An href from stored data: only http(s), so a stored `javascript:` link can never run. */
+export function safeHref(u: string | null | undefined): string | undefined {
+  if (!u) return undefined;
+  try { const p = new URL(u).protocol; return p === 'https:' || p === 'http:' ? u : undefined; } catch { return undefined; }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { C, Dot, href, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap } from './lib';
 import { Audit, NeedsYou, Promises } from './pages/decide';
@@ -124,6 +124,25 @@ function Palette({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** One screen failing to render must not black out the app: show what broke and a way back. */
+class Boundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="page">
+        <section className="shell alert-red"><div className="core col" style={{ gap: 12 }}>
+          <span className="label">This screen hit an error</span>
+          <span className="mono" style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{this.state.error.message}</span>
+          <span className="dim" style={{ fontSize: 13 }}>The rest of ShiftBoss still works. Reload the page, or go back to Sessions.</span>
+          <div className="row" style={{ gap: 8 }}><a className="pill sm w" href="#/">Back to Sessions</a><button type="button" className="pill sm" onClick={() => location.reload()}>Reload</button></div>
+        </div></section>
+      </div>
+    );
+  }
+}
+
 function App() {
   const { snap, connected } = useLiveSnapshot();
   const route = useRoute();
@@ -162,7 +181,7 @@ function App() {
       )}
       {!connected && snap && <div role="status" className="mono faint" style={{ textAlign: 'center', padding: 8, fontSize: 12 }}>Reconnecting…</div>}
       <Shortcuts top={top ?? ''} />
-      <main key={route.join('/')}>{page}</main>
+      <main key={route.join('/')}><Boundary>{page}</Boundary></main>
       <Nav route={route} onSearch={() => setPalette(true)} connected={connected} />
       {palette && <Palette onClose={() => setPalette(false)} />}
       {snap && <Tour page={top === '' && !(!snap.onboarding.doneAt && !snap.tasks.length) ? 'home' : top || 'welcome'} />}

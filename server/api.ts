@@ -5,6 +5,8 @@ import type { Engine } from './engine';
 import { existsSync, statSync } from 'node:fs';
 import { buildReport, type Audience } from './report';
 import { setupInfo } from './setup';
+import { safeUrl } from './guard';
+import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -59,7 +61,7 @@ export function makeApi(engine: Engine) {
       if (p === '/api/tasks' && req.method === 'POST') {
         const b = await body<any>(req);
         const t = store.addTask({ title: str(b.title, 'title', 300), ask: optStr(b.ask), requester: optStr(b.requester, 100), source: optStr(b.source, 200),
-          sourceUrl: optStr(b.sourceUrl, 500) ?? null, session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2' });
+          sourceUrl: safeUrl(b.sourceUrl), session: optStr(b.session, 100) ?? null, prio: ['P1', 'P2', 'P3'].includes(b.prio) ? b.prio : 'P2' });
         engine.pushFeed('shiftboss', `filed ${t.id}: ${t.title}`);
         return done(json(t, 201));
       }
@@ -134,8 +136,8 @@ export function makeApi(engine: Engine) {
             const stage = Number(t.stage);
             if (!Number.isInteger(stage) || stage < 0 || stage > 6) throw new Error(`stage for ${t.extId} must be 0-6`);
             const r = store.importTask({ extId: str(t.extId, 'extId', 200), title: str(t.title, 'title', 300), ask: optStr(t.ask), requester: optStr(t.requester, 100), source: optStr(t.source, 200),
-              sourceUrl: optStr(t.sourceUrl, 500) ?? null, session: optStr(t.session, 100) ?? null, stage: stage as Stage, prio: ['P1', 'P2', 'P3'].includes(t.prio) ? t.prio : 'P2', held: !!t.held,
-              links: Array.isArray(t.links) ? t.links.filter((l: any) => typeof l?.url === 'string').slice(0, 10) : [] });
+              sourceUrl: safeUrl(t.sourceUrl), session: optStr(t.session, 100) ?? null, stage: stage as Stage, prio: ['P1', 'P2', 'P3'].includes(t.prio) ? t.prio : 'P2', held: !!t.held,
+              links: Array.isArray(t.links) ? t.links.filter((l: any) => typeof l?.url === 'string').slice(0, 10).map((l: any) => ({ ...l, url: safeUrl(l.url)! })) : [] });
             r.created ? created++ : updated++;
           }
         });
@@ -322,7 +324,7 @@ export function makeApi(engine: Engine) {
       if (p === '/api/intake' && write) {
         const b = await body<any>(req);
         store.addIntake({ src: str(b.src, 'src', 200), who: optStr(b.who, 100) ?? '', text: str(b.text, 'text', 2000), verdict: str(b.verdict, 'verdict', 100), taskId: optStr(b.taskId, 20) ?? null,
-          url: optStr(b.url, 500) && /^https:\/\//.test(b.url) ? b.url.trim() : null });
+          url: safeUrl(b.url) });
         return done(json({ ok: true }, 201));
       }
       if (p === '/api/intake/days') return json(store.intakeCountsByDay());
@@ -343,9 +345,7 @@ export function makeApi(engine: Engine) {
 
       // ----- settings, report, dispatcher -----
       if (p === '/api/settings' && req.method === 'PUT') {
-        const b = await body<Settings>(req);
-        const cur = store.settings();
-        const next: Settings = { ...cur, ...b, thresholds: { ...cur.thresholds, ...b.thresholds }, switches: { ...cur.switches, ...b.switches }, budgets: { ...cur.budgets, ...b.budgets } };
+        const next = mergeSettings(store.settings(), await body<unknown>(req));
         store.saveSettings(next);
         return done(json(next));
       }

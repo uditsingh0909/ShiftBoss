@@ -1,7 +1,7 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
-import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, usePage, useSnap } from '../lib';
+import { act, ago, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, usePage, useSnap } from '../lib';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
@@ -54,7 +54,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
       <span className="row" style={{ gap: 8 }}>
         <Dot color={t.session ? C.fg : C.amber} /><span className="mono ellipsis dim" style={{ fontSize: 11, flex: 1 }}>{t.session ?? 'unassigned'}</span>
         <span className="mono faint" style={{ fontSize: 11 }}>{ago(t.updatedAt)}</span>
-        {t.sourceUrl && <a href={t.sourceUrl} target="_blank" rel="noreferrer" className="mono dim" style={{ fontSize: 11 }} aria-label={`Open ${t.id} in ${/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'its source'}`}>{/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'Link'} ↗</a>}
+        {t.sourceUrl && <a href={safeHref(t.sourceUrl)} target="_blank" rel="noreferrer" className="mono dim" style={{ fontSize: 11 }} aria-label={`Open ${t.id} in ${/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'its source'}`}>{/slack\.com/.test(t.sourceUrl) ? 'Slack' : 'Link'} ↗</a>}
         {ready.includes(t.id) && <button type="button" className="pill sm w" style={{ height: 24, padding: '0 10px', fontSize: 11 }} onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Sent to ' + t.session)}>Send</button>}
         {t.stage < 6 && <button type="button" aria-label={`Move ${t.id} to ${STAGES[t.stage + 1]}`} onClick={() => move(t.id, t.stage + 1)} style={{ width: 24, height: 24, borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', cursor: 'pointer', fontSize: 12 }}>→</button>}
       </span>
@@ -162,7 +162,7 @@ export function TaskPage({ id }: { id: string }) {
         <Card span={7} pad={28}>
           <span className="label">The ask</span>
           {t.ask ? <blockquote style={{ margin: 0, paddingLeft: 20, borderLeft: '2px solid rgba(255,255,255,0.14)', fontSize: 20, lineHeight: 1.5 }}>{t.ask}</blockquote> : <Empty text="No ask recorded." />}
-          {t.sourceUrl && <a className="mono faint" style={{ fontSize: 12 }} href={t.sourceUrl} target="_blank" rel="noreferrer">open the source ↗</a>}
+          {t.sourceUrl && <a className="mono faint" style={{ fontSize: 12 }} href={safeHref(t.sourceUrl)} target="_blank" rel="noreferrer">open the source ↗</a>}
           <span className="label" style={{ marginTop: 8 }}>What done means</span>
           {[['Merged, review bot approved', 3], ['Live on dev and checked', 4], ['Live on prod', 5], ['Requester told', 6]].map(([text, need]) => {
             const ok = t.stage >= (need as number);
@@ -254,7 +254,7 @@ export function Intake() {
               <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(m.at)}</span>
               <span className="mono dim ellipsis" style={{ width: 180, fontSize: 12, flex: 'none' }}>{m.src}</span>
               <span className="col" style={{ flex: 1, minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
-              {m.url ? <a href={m.url} target="_blank" rel="noreferrer" className="pill sm" style={{ height: 28, fontSize: 11 }} aria-label={'Open in ' + (/slack\.com/.test(m.url) ? 'Slack' : 'source') + ': ' + m.text}>{/slack\.com/.test(m.url) ? 'Slack' : /mail\.google/.test(m.url) ? 'Gmail' : 'Open'} ↗</a>
+              {m.url ? <a href={safeHref(m.url)} target="_blank" rel="noreferrer" className="pill sm" style={{ height: 28, fontSize: 11 }} aria-label={'Open in ' + (/slack\.com/.test(m.url) ? 'Slack' : 'source') + ': ' + m.text}>{/slack\.com/.test(m.url) ? 'Slack' : /mail\.google/.test(m.url) ? 'Gmail' : 'Open'} ↗</a>
                 : <span className="mono faint" style={{ fontSize: 11, width: 64, textAlign: 'center' }} title="The intake did not record a link for this one">no link</span>}
               {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber, minWidth: 80, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, minWidth: 80, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
             </div>

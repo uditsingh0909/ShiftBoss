@@ -152,13 +152,26 @@ export class Engine {
   }
 
   /** Deliver answers whose undo window has passed. */
+  private waitingAnswers = new Set<number>();
   private async flushAnswers() {
     for (const n of this.store.pendingAnswers(10_000)) {
-      const s = n.session ? this.sessions.find((x) => x.name === n.session) : null;
-      try {
-        if (s) await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
+      // No session asked: there is nobody to send it to, so record it and say so.
+      if (!n.session) {
         this.store.markSent(n.id);
-        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', s ? `Sent the answer to ${s.name}` : 'Answer recorded; no running session to send it to');
+        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', 'Answer recorded; no session asked, so nobody was prompted');
+        continue;
+      }
+      const s = this.sessions.find((x) => x.name === n.session);
+      // herdr missed a poll, or the session is restarting: keep the answer and try again next tick.
+      if (!this.herdrOk || !s) {
+        if (!this.waitingAnswers.has(n.id)) { this.waitingAnswers.add(n.id); this.pushFeed('shiftboss', `holding your answer for ${n.session} until it is running again`); }
+        continue;
+      }
+      try {
+        await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
+        this.store.markSent(n.id);
+        this.waitingAnswers.delete(n.id);
+        if (n.taskId) this.store.addEvent(n.taskId, 'ShiftBoss', 'shiftboss', `Sent the answer to ${s.name}`);
       } catch (e) {
         this.pushFeed('shiftboss', `could not send answer to ${n.session}: ${(e as Error).message}`);
       }
