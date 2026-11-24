@@ -31,7 +31,8 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `server/config.ts` | Defaults + `shiftboss.config.json` (gitignored) + `SHIFTBOSS_*` env overrides |
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
-| `mcp/server.ts` | MCP server (`shiftboss`), 21 tools over the HTTP API |
+| `mcp/server.ts` | MCP server (`shiftboss`), 26 tools over the HTTP API |
+| `server/monitors.ts` | Pure rules for monitors (schedule, alerting, due-check selection, prompts); the engine sends checks only through `Engine.sendMonitorCheck` |
 | `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
 | `server/update.ts` | Self-update: fetch, fast-forward only, reinstall packages if needed, build check, roll back, exit 75 for run.sh |
 | `server/outside.ts` | Claude sessions outside herdr, for bringing them in with `--resume` |
@@ -40,6 +41,7 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `cli/statusline-tap.cjs` | Status line tap: copies Claude Code's status JSON to `data/status/`, then runs the user's own command |
 | `desktop/` | Tauri 2 app (Windows built; macOS/Linux on hold). Reuses a running server or starts the compiled sidecar |
 | `docs/INTAKE.md` | Instructions the intake session follows |
+| `docs/MONITOR.md` | Instructions the monitor session follows |
 | `web/tour.tsx` | First-visit guided tour per page |
 | `scripts/run.sh` | Restart loop; exits if ShiftBoss already answers on its port |
 | `test/core.test.ts` | Unit tests |

@@ -8,6 +8,7 @@ import { replayTour, Tour } from './tour';
 import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
+import { Monitors } from './pages/monitors';
 
 const NAV = [
   ['', 'Sessions'], ['tasks', 'Tasks'], ['intake', 'Intake'], ['promises', 'Promises'], ['needs', 'Needs you'],
@@ -79,6 +80,8 @@ function Palette({ onClose }: { onClose: () => void }) {
       { group: 'Go to', label: 'Daily report', meta: 'copy and send', to: href('report') },
       { group: 'Go to', label: 'Sent as you', meta: 'audit log', to: href('audit') },
       { group: 'Go to', label: 'Settings', meta: 'lanes, slots, thresholds', to: href('settings') },
+      { group: 'Go to', label: 'Monitors', meta: 'watch what shipped, checked on a schedule', to: href('monitors') },
+      { group: 'Do', label: 'New monitor', meta: 'watch something you shipped for a few days', to: href('monitors') },
       { group: 'Go to', label: 'Connect', meta: 'MCP tools, status line, intake setup', to: href('setup') },
       { group: 'Do', label: 'Get started', meta: 'set up, bring in current work', to: href('welcome') },
       { group: 'Do', label: 'Bring sessions into herdr', meta: 'from the CLI, TUI or desktop app', to: href('welcome') },
@@ -170,6 +173,7 @@ function App() {
   else if (top === 'settings') page = <SettingsPage />;
   else if (top === 'welcome') page = <Welcome />;
   else if (top === 'setup') page = <SetupPage />;
+  else if (top === 'monitors') page = <Monitors />;
   // A fresh install (nothing on the board, setup never finished) opens on Get started.
   else if (!snap.onboarding.doneAt && !snap.tasks.length && !top) page = <Welcome />;
   else page = <CommandCenter />;

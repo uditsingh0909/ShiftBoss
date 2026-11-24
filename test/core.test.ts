@@ -18,6 +18,7 @@ import { listOutside, readOutside, suggestName } from '../server/outside';
 import { needsInstall, Updater } from '../server/update';
 import { actionKey, decide } from '../server/gate';
 import { join } from 'node:path';
+import { checksLeft, checksTotal, effectiveState, isAlerting, nextDueAfter, pickDue } from '../server/monitors';
 import type { Session } from '../shared/types';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
 
@@ -746,3 +747,179 @@ describe('instructions from the CLI', () => {
     expect(store.settings().instructions).toBe('- Review PRs before merge\n- Ask before deploys');
   });
 });
+
+describe('monitors', () => {
+  const H = 3600e3;
+  const T0 = Date.parse('2026-11-20T10:00:00Z');
+  const add = (s: Store, over: Partial<{ durationDays: number; intervalHours: number }> = {}) =>
+    s.addMonitor({ title: 'New store', prompt: 'Texts send; bad = any failed', durationDays: 1, intervalHours: 6, ...over }, T0);
+
+  test('schedule maths: totals, checks left, next due keeps to the schedule but never bursts', () => {
+    expect(checksTotal(1, 6)).toBe(4);
+    expect(checksTotal(3, 24)).toBe(3);
+    expect(checksTotal(14, 1)).toBe(336);
+    expect(checksTotal(1, 24)).toBe(1);
+    expect(checksLeft(T0, T0 + 24 * H, 6)).toBe(4);
+    expect(checksLeft(T0 + 18 * H, T0 + 24 * H, 6)).toBe(1);
+    expect(checksLeft(T0 + 24 * H, T0 + 24 * H, 6)).toBe(0);
+    expect(checksLeft(null, T0 + 24 * H, 6)).toBe(0);
+    expect(nextDueAfter(T0, 6, T0 + H)).toBe(T0 + 6 * H); // on time: keep the schedule
+    expect(nextDueAfter(T0, 6, T0 + 20 * H)).toBe(T0 + 20 * H); // came back late: one check now, not three
+  });
+
+  test('alerting: a bad check, or two errors in a row; a good check clears it', () => {
+    expect(isAlerting(['bad'])).toBe(true);
+    expect(isAlerting(['error'])).toBe(false);
+    expect(isAlerting(['error', 'error'])).toBe(true);
+    expect(isAlerting(['error', 'ok', 'error'])).toBe(false);
+    expect(isAlerting(['ok', 'bad'])).toBe(false);
+    expect(effectiveState('paused', ['bad'])).toBe('paused');
+    expect(effectiveState('finished', ['bad'])).toBe('finished');
+    expect(effectiveState('active', ['warn'])).toBe('active');
+    const s = mem();
+    const m = add(s, { durationDays: 3 });
+    s.reportMonitor(m.id, { verdict: 'bad', summary: '3 texts failed' }, T0 + H);
+    expect(s.getMonitor(m.id).state).toBe('alerting');
+    s.reportMonitor(m.id, { verdict: 'ok', summary: 'all sent' }, T0 + 2 * H);
+    expect(s.getMonitor(m.id).state).toBe('active');
+  });
+
+  test('a monitor runs its checks on schedule and finishes after its duration', () => {
+    const s = mem();
+    const m = add(s);
+    expect(m).toMatchObject({ state: 'active', nextDueAt: new Date(T0).toISOString(), checksLeft: 4, checksDone: 0 });
+    for (let i = 0; i < 4; i++) {
+      const at = T0 + i * 6 * H + 60e3;
+      expect(s.getMonitor(m.id).nextDueAt).toBe(new Date(T0 + i * 6 * H).toISOString());
+      s.startMonitorCheck(m.id, at);
+      const r = s.reportMonitor(m.id, { verdict: 'ok', summary: 'fine ' + i }, at + 60e3);
+      expect(r.check.sentAt).not.toBeNull();
+    }
+    const done = s.getMonitor(m.id);
+    expect(done).toMatchObject({ state: 'finished', finishReason: 'ended', checksDone: 4, checksLeft: 0, nextDueAt: null, lastSummary: 'fine 3' });
+    expect(() => s.checkMonitorNow(m.id)).toThrow(/finished/);
+    // Lengthening a monitor that ran out reopens it.
+    expect(s.updateMonitor(m.id, { durationDays: 3 }, T0 + 25 * H).state).toBe('active');
+  });
+
+  test('days up with nothing in flight finishes; a check in flight may still report first', () => {
+    const s = mem();
+    const a = add(s), b = add(s);
+    s.startMonitorCheck(b.id, T0 + 23 * H);
+    expect(s.finishMonitors(T0 + 24 * H).map((x) => x.id)).toEqual([a.id]);
+    expect(s.getMonitor(b.id).state).toBe('active');
+    s.reportMonitor(b.id, { verdict: 'ok', summary: 'fine' }, T0 + 24.5 * H);
+    expect(s.getMonitor(b.id).state).toBe('finished');
+  });
+
+  test('one check in flight at a time; no report in 30 min is an error, two in a row alert', () => {
+    const s = mem();
+    const a = add(s), b = add(s);
+    const c = s.startMonitorCheck(a.id, T0);
+    expect(() => s.startMonitorCheck(b.id, T0)).toThrow(/in flight/);
+    expect(s.monitorInFlight()!.id).toBe(c.id);
+    expect(s.timeoutMonitorChecks(30 * 60e3, T0 + 29 * 60e3)).toEqual([]);
+    const [t] = s.timeoutMonitorChecks(30 * 60e3, T0 + 31 * 60e3);
+    expect(t.monitor.lastVerdict).toBe('error');
+    expect(t.monitor.lastSummary).toContain('no report');
+    expect(t.becameAlerting).toBe(false);
+    expect(s.monitorInFlight()).toBeNull();
+    expect(s.getMonitor(a.id).nextDueAt).toBe(new Date(T0 + 6 * H).toISOString());
+    s.startMonitorCheck(a.id, T0 + 6 * H);
+    const [t2] = s.timeoutMonitorChecks(30 * 60e3, T0 + 7 * H);
+    expect(t2.becameAlerting).toBe(true);
+    expect(s.getMonitor(a.id).state).toBe('alerting');
+    // A failed send drops the claim, so the check is still due.
+    const c3 = s.startMonitorCheck(b.id, T0 + 7 * H);
+    s.abandonMonitorCheck(c3.id);
+    expect(s.monitorInFlight()).toBeNull();
+    expect(s.getMonitor(b.id).inFlight).toBeNull();
+  });
+
+  test('pause, resume, stop and check now', () => {
+    const s = mem();
+    const m = add(s, { durationDays: 3 });
+    s.startMonitorCheck(m.id, T0);
+    s.reportMonitor(m.id, { verdict: 'ok', summary: 'fine' }, T0 + 60e3);
+    expect(s.setMonitorState(m.id, 'pause', T0 + H).state).toBe('paused');
+    expect(() => s.checkMonitorNow(m.id)).toThrow(/paused/);
+    expect(s.setMonitorState(m.id, 'resume', T0 + 10 * H).nextDueAt).toBe(new Date(T0 + 10 * H).toISOString()); // missed while paused: due now
+    expect(s.checkMonitorNow(m.id, T0 + 10.5 * H).nextDueAt).toBe(new Date(T0 + 10.5 * H).toISOString());
+    expect(s.setMonitorState(m.id, 'stop', T0 + 11 * H)).toMatchObject({ state: 'finished', finishReason: 'stopped' });
+    expect(() => s.setMonitorState(m.id, 'resume')).toThrow();
+    expect(s.updateMonitor(m.id, { durationDays: 14 }, T0 + 12 * H).state).toBe('finished'); // stopped stays stopped
+  });
+
+  test('due-check selection: watched, due, oldest first, nothing in flight, not backing off', () => {
+    const list = [
+      { id: 1, state: 'active' as const, nextDueAt: new Date(T0 + H).toISOString(), inFlight: null },
+      { id: 2, state: 'alerting' as const, nextDueAt: new Date(T0 - H).toISOString(), inFlight: null },
+      { id: 3, state: 'paused' as const, nextDueAt: new Date(T0 - H).toISOString(), inFlight: null },
+      { id: 4, state: 'finished' as const, nextDueAt: null, inFlight: null },
+      { id: 5, state: 'active' as const, nextDueAt: new Date(T0 - 2 * H).toISOString(), inFlight: { checkId: 1, sentAt: '' } },
+      { id: 6, state: 'active' as const, nextDueAt: new Date(T0).toISOString(), inFlight: null },
+      { id: 7, state: 'active' as const, nextDueAt: new Date(T0 - 3 * H).toISOString(), inFlight: null },
+    ];
+    expect(pickDue(list, T0).map((m) => m.id)).toEqual([7, 2, 6]);
+    expect(pickDue(list, T0, new Map([[7, T0 + 60e3]])).map((m) => m.id)).toEqual([2, 6]);
+  });
+
+  test('the engine sends one check to an idle monitor session, never to a blocked or busy one', async () => {
+    const store = mem();
+    store.saveSettings({ ...store.settings(), mode: 'auto' }); // sending is what this test is about
+    const sent: string[] = [];
+    let fail = false;
+    const herdr = { prompt: async (_p: string, t: string) => { if (fail) throw new Error('herdr hiccup'); sent.push(t); } };
+    const e = new Engine(loadConfig(), store, herdr as any);
+    e.herdrOk = true;
+    const a = store.addMonitor({ title: 'Store A', prompt: 'look', durationDays: 1, intervalHours: 6, links: { pr: 'https://github.com/acme/api/pull/1' } });
+    store.addMonitor({ title: 'Store B', prompt: 'look', durationDays: 1, intervalHours: 6 });
+    e.sessions = [session({ name: 'monitor', status: 'blocked' })];
+    await e.runMonitors();
+    expect(sent.length).toBe(0); // waiting on a prompt: never type into it
+    e.sessions = [session({ name: 'monitor', status: 'working' })];
+    await e.runMonitors();
+    expect(sent.length).toBe(0);
+    e.sessions = [session({ name: 'monitor', status: 'idle' })];
+    await e.runMonitors();
+    await e.runMonitors();
+    expect(sent.length).toBe(1); // one in flight: the second waits
+    expect(sent[0]).toContain('monitor ' + a.id);
+    expect(sent[0]).toContain('monitor_report');
+    expect(sent[0]).toContain('https://github.com/acme/api/pull/1');
+    expect(sent[0]).toContain('check 1 of 4');
+    store.reportMonitor(a.id, { verdict: 'ok', summary: 'fine' });
+    fail = true;
+    await e.runMonitors(); // B fails to send: claim dropped, retried later, engine fine
+    expect(store.monitorInFlight()).toBeNull();
+    fail = false;
+    await e.runMonitors();
+    expect(sent.length).toBe(1); // backing off for a minute
+    await e.runMonitors(Date.now() + 61e3);
+    expect(sent.length).toBe(2);
+    expect(sent[1]).toContain('Store B');
+    expect(e.snapshot().monitors.length).toBe(2);
+  });
+});
+
+describe('monitor checks go through the gate', () => {
+  test('Dry run records a due check once and sends nothing; Ask first waits; approving sends it', async () => {
+    const store = mem();
+    const sent: string[] = [];
+    const e = new Engine(loadConfig(), store, { prompt: async (_p: string, t: string) => { sent.push(t); } } as any);
+    e.herdrOk = true;
+    e.sessions = [session({ name: 'monitor', status: 'idle' })];
+    store.addMonitor({ title: 'Store A', prompt: 'look', durationDays: 1, intervalHours: 6 });
+    await e.runMonitors();
+    await e.runMonitors();
+    expect(sent).toEqual([]);
+    expect(store.listActions().filter((a) => a.kind === 'monitor-check' && a.state === 'dry').length).toBe(1);
+    store.saveSettings({ ...store.settings(), mode: 'ask' });
+    store.settleDryActions(true);
+    const waiting = store.listActions().find((a) => a.kind === 'monitor-check' && a.state === 'waiting')!;
+    await e.approveAction(waiting.id);
+    expect(sent.length).toBe(1);
+    expect(sent[0]).toContain('Store A');
+  });
+});
+

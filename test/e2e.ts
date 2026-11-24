@@ -35,6 +35,7 @@ const routes: [string, string, string][] = [
   ['overlap', '#/overlap', 'Overlap check'], ['tasks', '#/tasks', 'in flight'], ['intake', '#/intake', 'messages read today'],
   ['needs', '#/needs', 'Needs you'], ['promises', '#/promises', 'waiting on you'], ['audit', '#/audit', 'in your name'],
   ['report', '#/report', 'Copy'], ['settings', '#/settings', 'Save'], ['welcome', '#/welcome', 'Set up ShiftBoss'], ['setup', '#/setup', 'Connect your sessions'],
+  ['monitors', '#/monitors', 'watched'],
 ];
 if (session) routes.push(['session', '#/session/' + encodeURIComponent(session), session]);
 if (task) routes.push(['task', '#/task/' + task, task]);

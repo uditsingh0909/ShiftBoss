@@ -2,7 +2,8 @@
 // (auto "needs you" items for blocked panes, dispatch), and builds the snapshot the UI streams.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AgentStatus, EnvVersion, Limits, MergedPr, Replacement, Session, Snapshot } from '../shared/types';
+import { MONITOR_SESSION, resolveLead, type AgentStatus, type EnvVersion, type Limits, type MergedPr, type Replacement, type Session, type Snapshot } from '../shared/types';
+import { MONITOR_REPORT_TIMEOUT_MS, MONITOR_RETRY_MS, monitorPrompt, pickDue } from './monitors';
 import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
@@ -101,6 +102,7 @@ export class Engine {
       await this.flushAnswers();
       this.dispatch(settings.switches.autoDispatch);
       await this.advanceReplacements();
+      await this.runMonitors();
       this.emit();
     } catch (e) {
       this.pushFeed('shiftboss', 'poll failed: ' + (e as Error).message); // next tick retries
@@ -324,9 +326,12 @@ export class Engine {
         await this.herdr.interrupt(pane(p.session).paneId); this.pushFeed(who, 'interrupted ' + p.session); return 'interrupted';
       }
       case 'monitor-check': {
-        const f = (this as any).sendMonitorCheck;
-        if (typeof f !== 'function') throw new Error('Monitors are not available in this version');
-        return f.call(this, p.monitorId);
+        const s = this.monitorSession();
+        if (!s) throw new Error('No monitor session is running');
+        if (s.status !== 'idle' && s.status !== 'done') throw new Error(`${s.name} is busy; approve again when it is idle`);
+        if (this.store.monitorInFlight()) throw new Error('Another check is still running; approve again in a few minutes');
+        await this.sendMonitorCheck(p.monitorId, s);
+        return 'check sent';
       }
     }
   }
@@ -668,6 +673,77 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     }
   }
 
+  // ---------- monitors ----------
+  /** The monitor session: `monitor`, or its newest replacement (monitor-v2, …). */
+  monitorSession(): Session | null { return resolveLead(this.sessions, MONITOR_SESSION); }
+  /** A monitor whose send just failed waits a minute before the next try, so one bad row cannot spin. */
+  private monitorRetryAt = new Map<number, number>();
+  private sendingMonitor = false;
+
+  /**
+   * One pass over the monitors, every tick: finish the ones whose days are up, turn checks with no report
+   * after 30 min into errors, then send at most one due check, and only to an idle monitor session with
+   * nothing in flight. Each step is caught on its own, so one bad monitor never stops the others.
+   */
+  async runMonitors(nowMs = Date.now()) {
+    try {
+      for (const m of this.store.finishMonitors(nowMs)) this.pushFeed('monitor', `finished watching ${m.title} (${m.checksDone} check${m.checksDone === 1 ? '' : 's'}, last: ${m.lastVerdict ?? 'none'})`);
+      for (const { monitor: m, becameAlerting } of this.store.timeoutMonitorChecks(MONITOR_REPORT_TIMEOUT_MS, nowMs)) {
+        this.pushFeed('monitor', `no report for ${m.title} within ${MONITOR_REPORT_TIMEOUT_MS / 60e3} min; recorded as an error`);
+        if (becameAlerting) this.pushFeed('monitor', `${m.title} is alerting: two checks in a row could not be done`);
+      }
+    } catch (e) { this.pushFeed('monitor', 'could not update monitors: ' + (e as Error).message.slice(0, 200)); }
+    if (!this.herdrOk || this.sendingMonitor) return;
+    const s = this.monitorSession();
+    if (!s || (s.status !== 'idle' && s.status !== 'done')) return; // working, or blocked on a prompt: never type into it
+    let due;
+    try {
+      if (this.store.monitorInFlight()) return; // one check at a time
+      due = pickDue(this.store.listMonitors(0, nowMs), nowMs, this.monitorRetryAt);
+    } catch (e) { this.pushFeed('monitor', 'could not read monitors: ' + (e as Error).message.slice(0, 200)); return; }
+    for (const m of due) {
+      // The gate: in Dry run the check is only recorded, in Ask first it waits for approval. A check the owner
+      // asked for with Check now is theirs and runs. Held checks are skipped until decided.
+      const key = actionKey('monitor-check', { monitorId: m.id });
+      const owner = this.ownerMonitorChecks.delete(m.id);
+      if (!owner && this.store.hasOpenAction(key)) continue;
+      try {
+        const g = await this.act('monitor-check', { monitorId: m.id }, { actor: owner ? 'owner' : 'auto', by: 'monitor', summary: `run the monitor check for ${m.title}`, detail: m.prompt });
+        if (g.status !== 'done') continue;
+        this.monitorRetryAt.delete(m.id);
+        return;
+      } catch (e) {
+        this.monitorRetryAt.set(m.id, nowMs + MONITOR_RETRY_MS);
+        this.pushFeed('monitor', `could not send the check for ${m.title}: ${(e as Error).message.slice(0, 200)} (trying again in a minute)`);
+      }
+    }
+  }
+
+  /**
+   * The only place a monitor check leaves ShiftBoss: claim the check, then type its prompt into the
+   * monitor session. On failure the claim is dropped (the check stays due) and the error is thrown.
+   */
+  /** Monitors whose next check the owner asked for (Check now): that one is theirs and skips the gate. */
+  ownerMonitorChecks = new Set<number>();
+
+  async sendMonitorCheck(monitorId: number, session: Session, nowMs = Date.now()): Promise<void> {
+    if (session.status === 'blocked') throw new Error(`${session.name} is waiting on a prompt in herdr`);
+    this.sendingMonitor = true;
+    try {
+      const m = this.store.getMonitor(monitorId);
+      const prev = this.store.monitorChecks(monitorId, 5).find((c) => c.reportedAt);
+      const text = monitorPrompt(m, prev ? { at: prev.reportedAt!, verdict: prev.verdict, summary: prev.summary } : null, setupInfo(this.cfg.port).repoPath);
+      const check = this.store.startMonitorCheck(monitorId, nowMs);
+      try {
+        await this.herdr.prompt(session.paneId, text);
+      } catch (e) {
+        this.store.abandonMonitorCheck(check.id);
+        throw e;
+      }
+      this.pushFeed('monitor', `asked ${session.name} to check ${m.title}`);
+    } finally { this.sendingMonitor = false; }
+  }
+
   snapshot(): Snapshot {
     const settings = this.store.settings();
     const tasks = this.store.listTasks();
@@ -694,6 +770,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       replacements: this.store.listReplacements(),
       actions: this.store.listActions(),
       threadChecks: this.store.openThreadChecks(),
+      monitors: this.store.listMonitors(864e5),
     };
   }
 }
