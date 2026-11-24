@@ -27,7 +27,7 @@ function QuickActions({ t, ready }: { t: Task; ready: boolean }) {
   const stepBtn = (to: number, glyph: string) => {
     const asking = confirm === to;
     return (
-      <button type="button" className={'pill xs' + (asking ? ' amber-b' : '')} style={asking ? undefined : { width: 26, padding: 0, justifyContent: 'center' }}
+      <button type="button" className={'pill xs' + (asking ? ' amber-b' : ' icon')}
         aria-label={asking ? `Click again to move ${t.id} to ${STAGES[to]}` : `Move ${t.id} to ${STAGES[to]}`} title={STAGES[to]}
         onClick={() => go(to)} onBlur={() => setConfirm((c) => (c === to ? null : c))}>
         {asking ? (to === 6 ? 'Again: closes promises' : 'Again: move back') : glyph}
@@ -311,7 +311,7 @@ export function Intake() {
               <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(m.at)}</span>
               <span className="mono dim ellipsis" style={{ width: 180, fontSize: 12, flex: 'none' }}>{m.src}</span>
               <span className="col" style={{ flex: 1, minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
-              {m.url ? <a href={safeHref(m.url)} target="_blank" rel="noreferrer" className="pill sm" style={{ height: 28, fontSize: 11 }} aria-label={'Open in ' + (/slack\.com/.test(m.url) ? 'Slack' : 'source') + ': ' + m.text}>{/slack\.com/.test(m.url) ? 'Slack' : /mail\.google/.test(m.url) ? 'Gmail' : 'Open'} ↗</a>
+              {m.url ? <a href={safeHref(m.url)} target="_blank" rel="noreferrer" className="pill xs" aria-label={'Open in ' + (/slack\.com/.test(m.url) ? 'Slack' : 'source') + ': ' + m.text}>{/slack\.com/.test(m.url) ? 'Slack' : /mail\.google/.test(m.url) ? 'Gmail' : 'Open'} ↗</a>
                 : <span className="mono faint" style={{ fontSize: 11, width: 64, textAlign: 'center' }} title="The intake did not record a link for this one">no link</span>}
               {m.taskId ? <a href={href('task', m.taskId)} className="mono" style={{ fontSize: 12, color: C.amber, minWidth: 80, textAlign: 'right' }}>{m.verdict}</a> : <span className="mono" style={{ fontSize: 12, minWidth: 80, textAlign: 'right', color: m.verdict === 'to lead' ? C.fg : C.faint }}>{m.verdict}</span>}
             </div>

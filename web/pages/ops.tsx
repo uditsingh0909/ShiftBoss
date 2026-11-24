@@ -109,9 +109,9 @@ function LaneRow({ name, lane, slots }: { name: string; lane: string; slots: num
       <label htmlFor={id} className="label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>Lane for {name}</label>
       <input id={id} className="field" style={{ height: 36, flex: '1 1 200px', width: 'auto' }} value={l} onChange={(e) => setL(e.target.value)} placeholder="What this session works on" />
       <div className="row" style={{ gap: 6 }} role="group" aria-label={'Slots for ' + name}>
-        <button type="button" className="pill sm" aria-label="Fewer slots" disabled={s <= 0} onClick={() => setS(Math.max(0, s - 1))} style={{ width: 32, padding: 0, justifyContent: 'center' }}>−</button>
+        <button type="button" className="pill sm icon" aria-label="Fewer slots" disabled={s <= 0} onClick={() => setS(Math.max(0, s - 1))}>−</button>
         <span className="mono" style={{ width: 64, textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{s} slot{s === 1 ? '' : 's'}</span>
-        <button type="button" className="pill sm" aria-label="More slots" disabled={s >= 6} onClick={() => setS(Math.min(6, s + 1))} style={{ width: 32, padding: 0, justifyContent: 'center' }}>+</button>
+        <button type="button" className="pill sm icon" aria-label="More slots" disabled={s >= 6} onClick={() => setS(Math.min(6, s + 1))}>+</button>
       </div>
       <button type="submit" className={'pill sm' + (dirty ? ' w' : '')} disabled={!dirty}>Save</button>
     </form>

@@ -45,6 +45,8 @@ h2 { margin: 0; font-weight: 500; letter-spacing: -0.02em; }
 .pill:disabled { opacity: .4; cursor: default; }
 .pill.sm { height: 32px; padding: 0 14px; font-size: 12px; }
 .pill.xs { height: 26px; padding: 0 10px; gap: 6px; font-size: 11px; }
+.pill.icon { width: 40px; padding: 0; justify-content: center; }
+.pill.sm.icon { width: 32px; } .pill.xs.icon { width: 26px; }
 .pill.amber-b { border-color: rgba(245,165,36,.5); color: var(--amber); }
 .pill.w { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .pill.w:hover { background: #fff; }

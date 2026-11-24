@@ -59,7 +59,7 @@ export function Toaster() {
   return (
     <div className="toast rise row" role="status" style={{ gap: 14 }}>
       <span>{t.text}</span>
-      {t.action && <button type="button" className="pill sm w" style={{ height: 28 }} onClick={() => { t.action!.run(); setT(null); }}>{t.action.label}</button>}
+      {t.action && <button type="button" className="pill xs w" onClick={() => { t.action!.run(); setT(null); }}>{t.action.label}</button>}
     </div>
   );
 }

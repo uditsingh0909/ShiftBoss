@@ -136,7 +136,7 @@ function App() {
         <main key={route.join('/')}><Boundary>{page}</Boundary></main>
       </AppFrame>
       {palette && <Palette onClose={() => setPalette(false)} />}
-      {snap && <Tour page={top === '' && !(!snap.onboarding.doneAt && !snap.tasks.length) ? 'home' : top || 'welcome'} />}
+      {snap && <Tour page={!top && !(!snap.onboarding.doneAt && !snap.tasks.length) ? 'home' : top || 'welcome'} />}
       <Toaster />
     </SnapshotCtx.Provider>
   );
