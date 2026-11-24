@@ -5,6 +5,10 @@ import { Store } from './db';
 import { Engine } from './engine';
 import { Herdr } from './herdr';
 
+// One bad poll must never take the whole control room down: log it and keep serving.
+process.on('unhandledRejection', (e) => console.error(new Date().toISOString(), 'unhandled rejection:', e));
+process.on('uncaughtException', (e) => console.error(new Date().toISOString(), 'uncaught exception:', e));
+
 const cfg = loadConfig();
 const store = new Store(cfg.dataDir);
 const engine = new Engine(cfg, store, new Herdr(cfg.herdrBin));

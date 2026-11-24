@@ -76,6 +76,8 @@ export class Engine {
       await this.flushAnswers();
       this.dispatch(settings.switches.autoDispatch);
       this.emit();
+    } catch (e) {
+      this.pushFeed('foreman', 'poll failed: ' + (e as Error).message); // next tick retries
     } finally {
       this.busy = false;
     }
@@ -247,6 +249,7 @@ export class Engine {
         let pr;
         try { pr = await fetchPr(url); } catch { continue; }
         if (!pr) continue;
+        try {
         const ids = taskIdsIn(`${pr.title}
 ${pr.body}
 ${pr.branch}`).filter((id) => this.store.getTask(id));
@@ -270,6 +273,9 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
         // Finished with this PR once it is closed, live on prod, or merged in a repo Foreman cannot see deploys for.
         const done = pr.state === 'CLOSED' || onProd || (pr.state === 'MERGED' && !shipsHere);
         this.store.savePrLink({ url, taskIds: ids, state: pr.state, mergeSha: pr.mergeSha, repo: pr.repo, number: pr.number, done });
+        } catch (e) {
+          this.pushFeed('github', `skipped ${url}: ${(e as Error).message}`); // retried next pass
+        }
       }
     } finally {
       this.ghBusy = false;

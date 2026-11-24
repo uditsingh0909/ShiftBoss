@@ -20,7 +20,8 @@ export class Store {
   constructor(dir: string, file = 'foreman.db') {
     if (file !== ':memory:') mkdirSync(dir, { recursive: true });
     this.db = new Database(file === ':memory:' ? ':memory:' : join(dir, file), { create: true });
-    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+    // busy_timeout: wait up to 5 s for another connection (CLI checks, sqlite tools) instead of failing.
+    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
     this.migrate();
   }
 
