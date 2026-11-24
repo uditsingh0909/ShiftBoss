@@ -252,6 +252,20 @@ export function makeApi(engine: Engine) {
         return done(json({ ok: true, name }, 202));
       }
       // ----- first-run onboarding -----
+      if (p === '/api/onboarding' && req.method === 'GET') {
+        // Everything a setup run (Claude, the CLI or the Get started screen) needs to decide the next step.
+        const snap = engine.snapshot();
+        const ob = store.onboarding();
+        const intake = snap.sessions.find((x) => /intake/i.test(x.name));
+        return json({
+          setup: setupInfo(engine.cfg.port), onboarding: ob, owner: engine.cfg.ownerName, herdrOk: snap.herdrOk, herdrError: snap.herdrError,
+          settings: { leadSession: snap.settings.leadSession ?? '', herdrWorkspace: snap.settings.herdrWorkspace ?? '', watchedChannels: snap.settings.watchedChannels ?? [] },
+          sessions: snap.sessions.map((x) => ({ name: x.name, status: x.status, cwd: x.cwd, tasks: snap.tasks.filter((t) => t.session === x.name).length, askedAt: ob.asked[x.name] ?? null, usesTools: x.usesShiftbossTools })),
+          intake: { running: intake?.name ?? null, state: snap.intakeState },
+          board: { tasks: snap.tasks.length, promises: snap.promises.length },
+        });
+      }
+
       if (p === '/api/onboarding/ask' && write) {
         // Ask running sessions to put their current work on the board. Never touches their work.
         const b = await body<any>(req);

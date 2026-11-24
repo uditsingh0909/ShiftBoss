@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { configPath } from '../shared/port';
 
 // Everything specific to one team lives in shiftboss.config.json (gitignored).
 // The defaults below are safe for anyone.
@@ -38,8 +39,7 @@ const defaults: Config = {
 };
 
 export function loadConfig(): Config {
-  const path = process.env.SHIFTBOSS_CONFIG
-    ?? (process.env.SHIFTBOSS_DATA_DIR ? join(process.env.SHIFTBOSS_DATA_DIR, 'shiftboss.config.json') : join(import.meta.dir, '..', 'shiftboss.config.json'));
+  const path = configPath();
   const user = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>) : {};
   const cfg = { ...defaults, ...user, contextWindows: { ...defaults.contextWindows, ...(user.contextWindows ?? {}) } };
   if (process.env.SHIFTBOSS_PORT) cfg.port = Number(process.env.SHIFTBOSS_PORT);

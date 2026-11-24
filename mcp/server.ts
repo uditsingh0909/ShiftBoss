@@ -6,7 +6,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const BASE = `http://127.0.0.1:${process.env.SHIFTBOSS_PORT ?? '4400'}`;
+import { resolvePort } from '../shared/port';
+
+const BASE = `http://127.0.0.1:${resolvePort()}`;
 
 async function call(method: string, path: string, body?: unknown): Promise<any> {
   let res: Response;
@@ -125,5 +127,55 @@ server.registerTool('my_tasks', {
   const rows = s.tasks.filter((t: any) => t.stage < 6 && (!session || t.session === session));
   return rows.length ? rows.map((t: any) => `${t.id} [${names[t.stage]}${t.held ? ', held' : ''}] ${t.title}${session ? '' : ' — ' + (t.session ?? 'unassigned')}`).join('\n') : 'No open tasks.';
 }));
+
+// ----- setup and onboarding: the same steps as the Get started screen, which updates live -----
+server.registerTool('setup_status', {
+  title: 'ShiftBoss setup status',
+  description: 'What is connected (MCP, status line, intake), the lead session, every running session with its task count and whether it was asked to register its work, and what is left to do. Start any setup or onboarding here.',
+  inputSchema: {},
+}, wrap(async () => JSON.stringify(await call('GET', '/api/onboarding'), null, 2)));
+
+server.registerTool('setup_lead', {
+  title: 'Set the lead session',
+  description: 'Set the session that coordinates the others (its base name; name-v2 replacements take over automatically), and optionally the herdr workspace to show.',
+  inputSchema: { lead: z.string().max(100), workspace: z.string().max(40).optional().describe('herdr workspace id, empty for every workspace') },
+}, wrap(async ({ lead, workspace }) => {
+  const snap = await call('GET', '/api/snapshot');
+  await call('PUT', '/api/settings', { ...snap.settings, leadSession: lead, ...(workspace !== undefined ? { herdrWorkspace: workspace } : {}) });
+  return `lead session: ${lead}`;
+}));
+
+server.registerTool('onboarding_ask', {
+  title: 'Ask sessions to register their work',
+  description: 'Sends each named session one prompt asking it to put its current tasks, their stage and its promises on the board, without changing its work. all_unasked picks every session (except the intake) not asked yet and with no tasks. Confirm the list with the owner first: this prompts their sessions.',
+  inputSchema: { sessions: z.array(z.string().max(100)).max(50).optional(), all_unasked: z.boolean().optional() },
+}, wrap(async ({ sessions, all_unasked }) => {
+  let names = sessions ?? [];
+  if (all_unasked) {
+    const o = await call('GET', '/api/onboarding');
+    names = o.sessions.filter((x: any) => !/intake/i.test(x.name) && !x.askedAt && !x.tasks).map((x: any) => x.name);
+  }
+  if (!names.length) return 'Nobody to ask.';
+  const r = await call('POST', '/api/onboarding/ask', { sessions: names });
+  return `asked ${r.asked}${r.failed.length ? `; could not reach ${r.failed.join(', ')}` : ''}`;
+}));
+
+server.registerTool('onboarding_backfill', {
+  title: 'Send the intake back in time',
+  description: 'The intake session reads Slack and Gmail from this many days ago up to now and files what is still open.',
+  inputSchema: { days: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(7), z.literal(14)]) },
+}, wrap(async ({ days }) => { const r = await call('POST', '/api/onboarding/backfill', { days }); return `intake reads from ${r.since}${r.prompted ? '' : ' (no intake session running yet; it starts from there when one does)'}`; }));
+
+server.registerTool('onboarding_done', {
+  title: 'Finish setup',
+  description: 'Marks setup finished, so the UI stops opening on Get started.',
+  inputSchema: {},
+}, wrap(async () => { await call('POST', '/api/onboarding/done', { done: true }); return 'setup finished'; }));
+
+server.registerTool('session_spawn', {
+  title: 'Start a Claude Code session',
+  description: 'Opens a new herdr tab in the folder and starts Claude Code, with an optional model and first prompt. A folder Claude has not opened before asks "trust this folder?" in herdr first; only the owner answers that.',
+  inputSchema: { name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku']).optional(), prompt: z.string().max(8000).optional() },
+}, wrap(async ({ name, cwd, model, prompt }) => { await call('POST', '/api/sessions/spawn', { name, cwd, model: model ?? null, prompt: prompt ?? null }); return `starting ${name}; watch the ShiftBoss feed for "ready" or "waiting for you"`; }));
 
 await server.connect(new StdioServerTransport());

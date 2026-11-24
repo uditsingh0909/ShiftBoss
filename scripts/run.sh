@@ -3,7 +3,8 @@
 # Usage: bash scripts/run.sh   (from the shiftboss folder; Windows startup runs it hidden)
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p data
-PORT="${SHIFTBOSS_PORT:-4400}"
+# The port from SHIFTBOSS_PORT, else the config file, else 4400 (shared/port.ts).
+PORT="$(bun shared/port.ts 2>/dev/null || echo 4400)"
 # Already running (another loop, or started by hand): leave it alone.
 if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/"; then
   echo "$(date -u +%FT%TZ) ShiftBoss already answering on ${PORT}; not starting a second copy" >> data/server.log

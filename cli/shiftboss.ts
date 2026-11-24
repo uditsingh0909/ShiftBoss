@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // The CLI sessions use to write to ShiftBoss. Every command is one HTTP call to the local server.
-const PORT = process.env.SHIFTBOSS_PORT ?? '4400';
+import { resolvePort } from '../shared/port';
+const PORT = resolvePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const HELP = `shiftboss: tell ShiftBoss what happened
@@ -19,6 +20,14 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss decide "<what the lead decided>"
   shiftboss import <tasks.json>     (re-runnable: matched on extId)
   shiftboss status
+
+Setup and onboarding (the same steps as the Get started screen, which updates live):
+  shiftboss setup status [--json]                 what is connected, sessions, what is left to do
+  shiftboss setup lead <session> [--workspace W]  set the lead session (and herdr workspace)
+  shiftboss setup ask <session...> | --all        ask running sessions to put their work on the board
+  shiftboss setup backfill <1|2|3|7|14>           send the intake back that many days
+  shiftboss setup done                            mark setup finished
+  shiftboss session spawn <name> --cwd DIR [--model sonnet|opus|haiku] [--prompt TEXT]
 `;
 
 function parse(argv: string[]) {
@@ -89,6 +98,50 @@ async function main() {
       const tasks = JSON.parse(await Bun.file(sub).text());
       const r = await call('POST', '/api/import', { tasks });
       return console.log(`${r.created} added, ${r.updated} updated`);
+    }
+    case 'setup': {
+      const o = await call('GET', '/api/onboarding');
+      if (sub === 'status' || !sub) {
+        if ('json' in flags || pos.includes('--json')) return console.log(JSON.stringify(o, null, 2));
+        const tick = (b: boolean) => (b ? '[x]' : '[ ]');
+        console.log(`ShiftBoss on port ${o.setup.port}, owner ${o.owner}${o.herdrOk ? '' : `  (herdr not answering: ${o.herdrError})`}`);
+        console.log(`${tick(o.setup.mcp.registered && o.setup.mcp.pointsHere)} MCP tools registered${o.setup.mcp.registered && !o.setup.mcp.pointsHere ? ' (points at another install)' : ''}`);
+        console.log(`${tick(o.setup.statusTap.configured)} status line tap (optional)`);
+        console.log(`${tick(!!o.settings.leadSession)} lead session: ${o.settings.leadSession || 'not set'}`);
+        console.log(`${tick(!!o.intake.running)} intake session: ${o.intake.running ?? 'not running'}${o.intake.state.paused ? ' (paused)' : ''}`);
+        console.log(`${tick(!!o.onboarding.backfillFrom)} intake read back from: ${o.onboarding.backfillFrom ?? 'not yet'}`);
+        console.log(`${tick(!!o.onboarding.doneAt)} setup finished
+`);
+        console.log(`Sessions (${o.sessions.length}):`);
+        for (const x of o.sessions) console.log(`  ${x.name.padEnd(36)} ${x.status.padEnd(8)} ${String(x.tasks).padStart(3)} tasks  ${x.askedAt ? 'asked' : 'not asked'}`);
+        console.log(`
+Board: ${o.board.tasks} tasks, ${o.board.promises} promises. UI: http://127.0.0.1:${o.setup.port}/#/welcome`);
+        return;
+      }
+      if (sub === 'lead') {
+        const snap = await call('GET', '/api/snapshot');
+        await call('PUT', '/api/settings', { ...snap.settings, leadSession: a1 ?? '', ...(flags.workspace !== undefined ? { herdrWorkspace: flags.workspace } : {}) });
+        return console.log(`lead session: ${a1}`);
+      }
+      if (sub === 'ask') {
+        const names = 'all' in flags || pos.includes('--all')
+          ? o.sessions.filter((x: any) => !/intake/i.test(x.name) && !x.askedAt && !x.tasks).map((x: any) => x.name)
+          : pos.slice(2);
+        if (!names.length) return console.log('Nobody left to ask.');
+        const r = await call('POST', '/api/onboarding/ask', { sessions: names });
+        return console.log(`asked ${r.asked}: ${names.filter((n: string) => !r.failed.includes(n)).join(', ')}${r.failed.length ? `
+could not reach: ${r.failed.join(', ')}` : ''}`);
+      }
+      if (sub === 'backfill') { const r = await call('POST', '/api/onboarding/backfill', { days: Number(a1) }); return console.log(`intake reads from ${r.since}${r.prompted ? ' (asked it to start now)' : ' (no intake session running yet)'}`); }
+      if (sub === 'done') { await call('POST', '/api/onboarding/done', { done: true }); return console.log('setup finished'); }
+      break;
+    }
+    case 'session': {
+      if (sub === 'spawn') {
+        await call('POST', '/api/sessions/spawn', { name: a1, cwd: flags.cwd, model: flags.model || null, prompt: flags.prompt || null });
+        return console.log(`starting ${a1}; it appears in herdr within a few seconds (a new folder asks "trust this folder?" there first)`);
+      }
+      break;
     }
     case 'status': {
       const s = await call('GET', '/api/snapshot');

@@ -150,6 +150,13 @@ export function resolveLead<T extends { name: string }>(sessions: T[], base: str
   return best;
 }
 
+/** First-run setup: which sessions were asked to register their work, and how far back the intake was sent. */
+export interface Onboarding {
+  doneAt: string | null;
+  asked: Record<string, string>; // session name -> when it was asked
+  backfillFrom: string | null;
+}
+
 export interface Snapshot {
   now: string;
   herdrOk: boolean;
@@ -166,6 +173,7 @@ export interface Snapshot {
   releases: { envs: EnvVersion[]; merged: MergedPr[]; freeze: boolean | null };
   settings: Settings;
   intakeState: IntakeState;
+  onboarding: Onboarding;
   owner: string;
   feed: { at: string; who: string; text: string }[];
 }
