@@ -16,7 +16,7 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dim { color: var(--dim); } .faint { color: var(--faint); }
 .red { color: var(--red); } .amber { color: var(--amber); } .green { color: var(--green); }
-.page { max-width: 1600px; margin: 0 auto; padding: 56px 48px 140px; display: flex; flex-direction: column; gap: 48px; overflow-x: clip; }
+.page { max-width: 1600px; margin: 0 auto; padding: 28px 48px 140px; display: flex; flex-direction: column; gap: 48px; overflow-x: clip; }
 .grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .grid12 > * { min-width: 0; }
 .shell { background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 28px; padding: 6px; transition: border-color .6s var(--ease); }
@@ -63,6 +63,11 @@ textarea.field { height: auto; padding: 12px 16px; resize: vertical; line-height
 .fresh { animation: lineIn .5s var(--ease); }
 @keyframes slideIn { from { opacity: 0; transform: translateX(48px); filter: blur(4px) } to { opacity: 1; transform: none; filter: none } }
 .slide-in { animation: slideIn .7s var(--ease) both; }
+/* shortcuts row, top right of every page */
+.shortcuts-wrap { max-width: 1600px; margin: 0 auto; padding: 20px 48px 0; display: flex; justify-content: flex-end; }
+.shortcuts { gap: 8px 20px; font-size: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.shortcuts a { color: var(--dim); transition: color .4s var(--ease); }
+.shortcuts a:hover, .shortcuts a[aria-current="page"] { color: var(--fg); }
 /* bottom island nav */
 .navwrap { position: fixed; left: 0; right: 0; bottom: 24px; z-index: 10; display: flex; justify-content: center; pointer-events: none; padding: 0 16px; }
 .nav { pointer-events: auto; gap: 4px; padding: 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.08); background: rgba(10,10,10,.78); backdrop-filter: blur(18px); flex-wrap: wrap; justify-content: center; }
@@ -80,7 +85,9 @@ textarea.field { height: auto; padding: 12px 16px; resize: vertical; line-height
 .stage-col { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
 .kcard.drag-over { border-color: rgba(255,255,255,.4); }
 @media (max-width: 900px) {
-  .page { padding: 32px 16px 140px; gap: 32px; }
+  .page { padding: 20px 16px 140px; gap: 32px; }
+  .shortcuts-wrap { padding: 16px 16px 0; justify-content: flex-start; }
+  .shortcuts { justify-content: flex-start; }
   h1.hero { font-size: 40px; }
   .grid12 > * { grid-column: span 12 !important; }
   .hide-sm { display: none !important; }

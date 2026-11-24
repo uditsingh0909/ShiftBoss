@@ -46,10 +46,6 @@ export function CommandCenter() {
           <h1 className="hero">{snap.sessions.length} sessions running.<br /><span className="faint">{blocked.length} need{blocked.length === 1 ? 's' : ''} you, {near.length} near the limit.</span></h1>
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
-          <nav aria-label="Shortcuts" className="row mono" style={{ gap: '8px 20px', fontSize: 12, flexWrap: 'wrap' }}>
-            <a className="dim" href={href('roster')}>All sessions ↗</a><a className="dim" href={href('health')}>Health ↗</a><a className="dim" href={href('overlap')}>Overlaps ↗</a>
-            <a className="dim" href={href('report')}>Daily report ↗</a><a className="dim" href={href('audit')}>Sent as you ↗</a>
-          </nav>
           <Seg label="Filter" value={filter} options={['All', 'Working', 'Needs you', 'Near limit', 'Idle'] as const} onChange={setFilter} />
         </div>
       </section>

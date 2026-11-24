@@ -45,6 +45,20 @@ function Nav({ route, onSearch, connected }: { route: string[]; onSearch: () => 
   );
 }
 
+const SHORTCUTS = [['roster', 'All sessions'], ['health', 'Health'], ['overlap', 'Overlaps'], ['report', 'Daily report'], ['audit', 'Sent as you']] as const;
+
+function Shortcuts({ top }: { top: string }) {
+  return (
+    <div className="shortcuts-wrap">
+      <nav aria-label="Shortcuts" className="shortcuts row mono">
+        {SHORTCUTS.map(([k, label]) => (
+          <a key={k} href={href(k)} aria-current={top === k ? 'page' : undefined}>{label} ↗</a>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
 function Palette({ onClose }: { onClose: () => void }) {
   const snap = useSnap();
   const [q, setQ] = useState('');
@@ -137,6 +151,7 @@ function App() {
         </div>
       )}
       {!connected && snap && <div role="status" className="mono faint" style={{ textAlign: 'center', padding: 8, fontSize: 12 }}>Reconnecting…</div>}
+      <Shortcuts top={top ?? ''} />
       <main key={route.join('/')}>{page}</main>
       <Nav route={route} onSearch={() => setPalette(true)} connected={connected} />
       {palette && <Palette onClose={() => setPalette(false)} />}
