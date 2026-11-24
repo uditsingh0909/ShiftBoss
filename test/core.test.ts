@@ -9,7 +9,7 @@ import type { Session } from '../shared/types';
 
 const mem = () => new Store('', ':memory:');
 const session = (over: Partial<Session> = {}): Session => ({
-  name: 's1', paneId: 'w5:p1', sessionId: 'x', status: 'working', cwd: 'D:\\Ditra', model: 'claude-opus-5-5', contextTokens: 0, contextWindow: 1e6, contextPct: 20,
+  name: 's1', paneId: 'w5:p1', sessionId: 'x', status: 'working', cwd: 'C:\\work', model: 'claude-opus-5-5', contextTokens: 0, contextWindow: 1e6, contextPct: 20,
   tokensToday: 0, tokens5h: 0, lastActivity: new Date().toISOString(), lastTool: null, lines: [], heat: [], filesTouched: [], lane: '', slots: 2, handoffPath: null, handoffAgeMin: null, prUrls: [], ...over,
 });
 
@@ -71,7 +71,7 @@ describe('herdr', () => {
 
 describe('status line footer', () => {
   test('reads context, 5h and 7d', () => {
-    const f = parseFooter('  udit@ditra.ai | Opus 5.5 | ctx 16% | 5h 9% (4h 2m) | 7d 41% (3d 2h)')!;
+    const f = parseFooter('  someone@example.com | Opus 5.5 | ctx 16% | 5h 9% (4h 2m) | 7d 41% (3d 2h)')!;
     expect(f.ctxPct).toBe(16);
     expect(f.fiveHourPct).toBe(9);
     expect(f.weeklyPct).toBe(41);
@@ -128,18 +128,18 @@ describe('health and overlaps', () => {
 describe('report', () => {
   test('plain report lists what went live today', () => {
     const s = mem();
-    s.addTask({ title: 'Recordings back at Hugh White' });
+    s.addTask({ title: 'Recordings back at the north store' });
     s.updateTask('T-1', { stage: 5 });
     const r = buildReport('plain', s.listTasks(), []);
-    expect(r.text).toContain('Recordings back at Hugh White');
+    expect(r.text).toContain('Recordings back at the north store');
   });
 });
 
 describe('overlap ignore list', () => {
   test('shared memory and handoff files are not overlaps', () => {
     expect(overlapsOf([
-      { name: 'a', files: ['C:\\Users\\u\\.claude\\projects\\x\\memory\\MEMORY.md', 'D:\\Ditra\\handoffs\\lead.md'] },
-      { name: 'b', files: ['C:/Users/u/.claude/projects/x/memory/MEMORY.md', 'D:/Ditra/handoffs/lead.md'] },
+      { name: 'a', files: ['C:\\Users\\u\\.claude\\projects\\x\\memory\\MEMORY.md', 'C:\\work\\handoffs\\lead.md'] },
+      { name: 'b', files: ['C:/Users/u/.claude/projects/x/memory/MEMORY.md', 'C:/work/handoffs/lead.md'] },
     ], []).length).toBe(0);
   });
 });
@@ -151,7 +151,7 @@ describe('github auto-advance', () => {
     expect(taskIdsIn('UTF-8 and DT-12 are not tasks')).toEqual([]);
   });
   test('parses PR links', () => {
-    expect(parsePrUrl('https://github.com/ditra-ai/capture-service/pull/3376')).toEqual({ repo: 'ditra-ai/capture-service', number: 3376 });
+    expect(parsePrUrl('https://github.com/acme/api/pull/3376')).toEqual({ repo: 'acme/api', number: 3376 });
     expect(parsePrUrl('https://example.com/x')).toBeNull();
   });
   test('stage from PR state and deploys, never told', () => {

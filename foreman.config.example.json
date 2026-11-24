@@ -1,7 +1,8 @@
 {
+  "ownerName": "Your name",
   "port": 4400,
   "herdrWorkspace": "w5",
-  "handoffsDir": "D:/Ditra/handoffs",
+  "handoffsDir": "C:/path/to/handoffs",
   "contextWindows": { "opus": 1000000, "sonnet": 1000000, "haiku": 200000 },
   "lanes": {
     "general-tasks": { "lane": "console, analytics, anything unowned", "slots": 2 },

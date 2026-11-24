@@ -56,12 +56,12 @@ export function Releases() {
 // ---------------------------------------------------------------- Report
 
 type Report = { sections: { title: string; tone: 'green' | 'amber' | 'dim'; lines: string[] }[]; text: string };
-const AUD = { 'For Subhash': 'plain', 'For the team': 'team', 'For me': 'me' } as const;
+const AUD = { 'Plain words': 'plain', 'For the team': 'team', 'For me': 'me' } as const;
 type AudLabel = keyof typeof AUD;
 
 export function Report() {
   const snap = useSnap()!;
-  const [aud, setAud] = useState<AudLabel>('For Subhash');
+  const [aud, setAud] = useState<AudLabel>('Plain words');
   const [rep, setRep] = useState<Report | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
@@ -221,6 +221,11 @@ export function SettingsPage() {
             <div className="col" style={{ gap: 6 }}>
               <label htmlFor="handoffs-dir" style={{ fontSize: 13 }}>Handoffs folder</label>
               <input id="handoffs-dir" className="field mono" value={st.handoffsDir} onChange={(e) => setSt({ ...st, handoffsDir: e.target.value })} />
+            </div>
+            <div className="col" style={{ gap: 6 }}>
+              <label htmlFor="watched-channels" style={{ fontSize: 13 }}>Watched Slack channels</label>
+              <span className="faint" style={{ fontSize: 12 }}>One per line. Intake reads new top-level messages here.</span>
+              <textarea id="watched-channels" className="field mono" rows={8} defaultValue={(st.watchedChannels ?? []).join('\n')} onBlur={(e) => setSt({ ...st, watchedChannels: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) })} />
             </div>
           </Card>
         </div>

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 // Everything specific to one team lives in foreman.config.json (gitignored).
 // The defaults below are safe for anyone.
 export interface Config {
+  ownerName: string; // who answers Needs-you items; used in prompts sent to sessions
   port: number;
   dataDir: string;
   transcriptsDir: string;
@@ -20,6 +21,7 @@ export interface Config {
 }
 
 const defaults: Config = {
+  ownerName: 'The owner',
   port: 4400,
   dataDir: join(import.meta.dir, '..', 'data'),
   transcriptsDir: join(homedir(), '.claude', 'projects'),

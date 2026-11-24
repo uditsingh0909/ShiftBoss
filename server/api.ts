@@ -108,7 +108,7 @@ export function makeApi(engine: Engine) {
         const t = store.getTask(msg.task_id);
         const s = t?.session ? engine.sessions.find((x) => x.name === t.session) : null;
         if (!s) return fail('The session that owns this draft is not running, so nobody can post it', 409);
-        await engine.herdr.prompt(s.paneId, `Udit approved your draft for ${t!.id}. Post it exactly as written, then run: foreman slack sent ${id}\n\n${msg.text}`);
+        await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} approved your draft for ${t!.id}. Post it exactly as written, then run: foreman slack sent ${id}\n\n${msg.text}`);
         store.addEvent(t!.id, 'Slack', 'you', 'Approved the draft; ' + s.name + ' will post it');
         return done(json({ ok: true }));
       }
@@ -189,7 +189,7 @@ export function makeApi(engine: Engine) {
         const { was } = store.undoAnswer(Number(r[1]));
         if (was.sentAt) {
           const s = was.session ? engine.sessions.find((x) => x.name === was.session) : null;
-          if (s) await engine.herdr.prompt(s.paneId, `Udit took back his answer "${was.answer}" to "${was.title}". Do not act on it; wait for a new answer.`);
+          if (s) await engine.herdr.prompt(s.paneId, `${engine.cfg.ownerName} took back the answer "${was.answer}" to "${was.title}". Do not act on it; wait for a new answer.`);
         }
         if (was.taskId) store.addEvent(was.taskId, 'Foreman', 'you', `Took back the answer "${was.answer}"`);
         engine.pushFeed('you', `took back: ${was.title}`);

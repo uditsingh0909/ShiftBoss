@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Foreman as MCP tools. A thin layer over the same local HTTP API the CLI uses, so a
 // session can report progress without remembering commands.
-// Register once (user scope):  claude mcp add --scope user foreman -- bun D:/Ditra/foreman/mcp/server.ts
+// Register once (user scope):  claude mcp add --scope user foreman -- bun <path-to-foreman>/mcp/server.ts
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -65,7 +65,7 @@ server.registerTool('task_get', {
 
 server.registerTool('slack_draft', {
   title: 'Draft a Slack reply for approval',
-  description: 'Save a reply you want to post in the task\'s Slack thread. Udit approves it in Foreman; you are then asked to post it. Use kind "sent" only to record something already posted.',
+  description: 'Save a reply you want to post in the task\'s Slack thread. The owner approves it in Foreman; you are then asked to post it. Use kind "sent" only to record something already posted.',
   inputSchema: { task: TASK, text: z.string().min(1).max(4000), kind: z.enum(['draft', 'sent', 'ask', 'promise']).optional(), who: ME },
 }, wrap(async ({ task, text, kind, who }) => { await call('POST', `/api/tasks/${task}/slack`, { who: who ?? 'session', text, kind: kind ?? 'draft' }); return (kind ?? 'draft') + ' saved on ' + task; }));
 
@@ -77,13 +77,13 @@ server.registerTool('slack_sent', {
 
 server.registerTool('promise_add', {
   title: 'Record a promise',
-  description: 'Record a line sent from Udit\'s account that says what we will do or tell someone, so it is tracked until kept.',
+  description: 'Record a line sent from the owner\'s account that says what we will do or tell someone, so it is tracked until kept.',
   inputSchema: { said: z.string().min(1).max(1000), to: z.string().min(1).max(100), where: z.string().max(200).optional(), kept_when: z.string().max(300).optional(), task: TASK.optional() },
 }, wrap(async (a) => { const p = await call('POST', '/api/promises', { said: a.said, to: a.to, where: a.where, keptWhen: a.kept_when, taskId: a.task }); return 'promise ' + p.id; }));
 
-server.registerTool('ask_udit', {
-  title: 'Ask Udit for a decision',
-  description: 'Put a real decision in front of Udit (production writes, money, live customers, access). He answers with one of `answers`, and the answer comes back to you as your next prompt. Do not use for things you can decide yourself.',
+server.registerTool('ask_owner', {
+  title: 'Ask the owner for a decision',
+  description: 'Put a real decision in front of the person who runs Foreman (production writes, money, live customers, access). They answer with one of `answers`, and the answer comes back to you as your next prompt. Do not use for things you can decide yourself.',
   inputSchema: {
     question: z.string().min(1).max(300), answers: z.array(z.string().min(1).max(60)).min(1).max(4),
     kind: z.enum(['Decision', 'Production write', 'Live customers', 'Money', 'Access']).optional(),
@@ -99,7 +99,7 @@ server.registerTool('intake_log', {
 
 server.registerTool('decide', {
   title: 'Log a lead decision',
-  description: 'Lead only: record something you decided yourself, so Udit can see it without being asked.',
+  description: 'Lead only: record something you decided yourself, so the owner can see it without being asked.',
   inputSchema: { text: z.string().min(1).max(500) },
 }, wrap(async ({ text }) => { await call('POST', '/api/decisions', { text }); return 'logged'; }));
 

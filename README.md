@@ -34,7 +34,7 @@ existing status line with the tap and Foreman reads the same numbers:
 
 ```json
 "statusLine": { "type": "command",
-  "command": "node D:/Ditra/foreman/cli/statusline-tap.cjs node C:/Users/you/.claude/statusline-command.js" }
+  "command": "node <path-to-foreman>/cli/statusline-tap.cjs node C:/Users/you/.claude/statusline-command.js" }
 ```
 
 The tap writes `data/status/<session-id>.json` and passes the input on, so what you see in
@@ -49,18 +49,18 @@ Three ways, all over the same local API:
    moves to On dev or Live. Tasks only move forward, and never to "Requester told".
 2. **MCP tools.** `claude mcp add --scope user foreman -- bun <path>/mcp/server.ts` gives every session
    `task_stage`, `task_note`, `task_add`, `task_get`, `my_tasks`, `slack_draft`, `slack_sent`,
-   `promise_add`, `ask_udit`, `intake_log`, `decide`.
+   `promise_add`, `ask_owner`, `intake_log`, `decide`.
 3. **CLI**, below.
 
-Every session can run the CLI (`bun D:/Ditra/foreman/cli/foreman.ts …`, or link it as `foreman`):
+Every session can run the CLI (`bun <path-to-foreman>/cli/foreman.ts …`, or link it as `foreman`):
 
 ```
-foreman task add "Name every screen" --from Temgire --source "#platform" --session general-tasks --prio P1
+foreman task add "Name every screen" --from Sam --source "#platform" --session general-tasks --prio P1
 foreman task stage T-12 pr        # queued | progress | pr | dev | live | told
 foreman slack T-12 "Live on dev: every screen named" --kind draft --who general-tasks
-foreman promise "I'll update here when it's live" --to Temgire --where "#platform" --task T-12
+foreman promise "I'll update here when it's live" --to Sam --where "#platform" --task T-12
 foreman need "Restore recordings at 9 stores?" --answers "Yes,Not now" --kind "Production write" --task T-13
-foreman intake --src "#platform" --who Temgire --text "Can we show chat time?" --verdict "filed T-12" --task T-12
+foreman intake --src "#platform" --who Sam --text "Can we show chat time?" --verdict "filed T-12" --task T-12
 ```
 
 `docs/INTAKE.md` is the prompt for the intake session that reads Slack and meeting notes and

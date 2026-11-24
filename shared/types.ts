@@ -118,6 +118,8 @@ export interface Settings {
   budgets: { fiveHourTokens: number; weeklyTokens: number };
   herdrWorkspace: string;
   handoffsDir: string;
+  /** Slack channels intake reads for new top-level messages, e.g. "#proj-vdp-plus". */
+  watchedChannels: string[];
 }
 
 export interface Snapshot {
@@ -135,5 +137,6 @@ export interface Snapshot {
   limits: Limits;
   releases: { envs: EnvVersion[]; merged: MergedPr[]; freeze: boolean | null };
   settings: Settings;
+  owner: string;
   feed: { at: string; who: string; text: string }[];
 }

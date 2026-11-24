@@ -203,7 +203,7 @@ export function TaskPage({ id }: { id: string }) {
         <Card span={5}>
           <div className="row" style={{ justifyContent: 'space-between' }}><span className="label">Slack thread</span><span className="mono faint" style={{ fontSize: 12 }}>{sent} sent</span></div>
           {d.slack.map((m) => {
-            const us = /udit/i.test(m.who) || m.who === 'you';
+            const us = m.who === 'you' || m.who.toLowerCase().startsWith(snap.owner.toLowerCase());
             const tc = m.kind === 'draft' || m.kind === 'promise' ? C.amber : m.kind === 'sent' ? C.green : C.faint;
             return (
               <div key={m.id} className="col well" style={{ gap: 8, padding: 14, borderStyle: m.kind === 'draft' ? 'dashed' : 'solid', borderColor: m.kind === 'draft' ? 'rgba(245,165,36,0.45)' : undefined }}>

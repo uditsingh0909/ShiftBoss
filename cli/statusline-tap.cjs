@@ -6,7 +6,7 @@
 //
 // settings.json:
 //   "statusLine": { "type": "command",
-//     "command": "node D:/Ditra/foreman/cli/statusline-tap.cjs node C:/Users/you/.claude/statusline-command.js" }
+//     "command": "node <path-to-foreman>/cli/statusline-tap.cjs node C:/Users/you/.claude/statusline-command.js" }
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');

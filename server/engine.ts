@@ -143,7 +143,7 @@ export class Engine {
     for (const n of this.store.pendingAnswers(10_000)) {
       const s = n.session ? this.sessions.find((x) => x.name === n.session) : null;
       try {
-        if (s) await this.herdr.prompt(s.paneId, `Udit's answer to "${n.title}": ${n.answer}`);
+        if (s) await this.herdr.prompt(s.paneId, `${this.cfg.ownerName}'s answer to "${n.title}": ${n.answer}`);
         this.store.markSent(n.id);
         if (n.taskId) this.store.addEvent(n.taskId, 'Foreman', 'foreman', s ? `Sent the answer to ${s.name}` : 'Answer recorded; no running session to send it to');
       } catch (e) {
@@ -301,6 +301,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       limits: this.limits(),
       releases: this.releases,
       settings,
+      owner: this.cfg.ownerName,
       feed: this.feed.slice(0, 40),
     };
   }
