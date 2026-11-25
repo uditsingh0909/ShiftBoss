@@ -135,6 +135,9 @@ function Timeline({ checks }: { checks: MonitorCheck[] }) {
 function MonitorCard({ m, onChanged }: { m: Full; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(m.state === 'alerting');
+  const [dismissing, setDismissing] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
+  const [note, setNote] = useState('');
   const run = (fn: () => Promise<unknown>, ok: string) => act(async () => { await fn(); onChanged(); }, ok);
   const checkNow = async () => {
     try {
@@ -173,9 +176,38 @@ function MonitorCard({ m, onChanged }: { m: Full; onChanged: () => void }) {
       )}
       {m.state === 'alerting' && (
         <div className="row well" style={{ gap: 8, flexWrap: 'wrap', padding: '10px 12px' }}>
-          <span style={{ fontSize: 13, flex: '1 1 220px' }}>Fixed it? Ask for a fresh check, or mark it fixed if it was a false alarm.</span>
+          <span style={{ fontSize: 13, flex: '1 1 220px' }}>Fixed it? Ask for a fresh check. Not a problem (intentional, known)? Dismiss it with a note.</span>
           <button type="button" className="pill sm w" disabled={!!m.inFlight} onClick={() => void checkNow()}>{m.inFlight ? 'Checking…' : 'Check if it is fixed'}</button>
-          <button type="button" className="pill sm" onClick={() => void action('resolve')}>Mark fixed</button>
+          <button type="button" className="pill sm" aria-expanded={dismissing} onClick={() => { setDismissing(!dismissing); setNote(''); }}>Dismiss…</button>
+          {dismissing && (
+            <form className="row" style={{ gap: 8, flex: '1 1 100%', flexWrap: 'wrap' }} onSubmit={(e) => { e.preventDefault(); void run(() => api('PATCH', `/api/monitors/${m.id}`, { action: 'resolve', note: note.trim() || undefined }), 'Dismissed').then(() => setDismissing(false)); }}>
+              <label htmlFor={'dn' + m.id} className="sr-only">Why</label>
+              <input id={'dn' + m.id} className="field" autoFocus maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: '1 1 260px', minWidth: 0 }}
+                placeholder='Why? e.g. "the rejected texts are intentional: test numbers"' />
+              <button type="submit" className="pill sm w">Dismiss</button>
+              <button type="button" className="pill sm" onClick={() => setDismissing(false)}>Cancel</button>
+              <span className="faint" style={{ fontSize: 12, flex: '1 1 100%' }}>The note is kept on this monitor and the monitor session is told it on every later check, so it stops reporting this as bad.</span>
+            </form>
+          )}
+        </div>
+      )}
+      {(m.notes.length > 0 || addingNote) && (
+        <div className="col" style={{ gap: 6 }}>
+          <span className="label">Your notes · told to every check</span>
+          {m.notes.map((n) => (
+            <div key={n.id} className="row" style={{ gap: 10, fontSize: 13, alignItems: 'flex-start' }}>
+              <span style={{ flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{n.text} <span className="faint" style={{ fontSize: 12 }}>· {n.by}, {when(n.at)}</span></span>
+              <button type="button" className="pill xs" aria-label={'Remove note: ' + n.text} onClick={() => void run(() => api('DELETE', `/api/monitors/${m.id}/notes/${n.id}`), 'Note removed')}>Remove</button>
+            </div>
+          ))}
+          {addingNote && (
+            <form className="row" style={{ gap: 8, flexWrap: 'wrap' }} onSubmit={(e) => { e.preventDefault(); if (note.trim()) void run(() => api('POST', `/api/monitors/${m.id}/notes`, { text: note.trim() }), 'Noted').then(() => { setAddingNote(false); setNote(''); }); }}>
+              <label htmlFor={'an' + m.id} className="sr-only">Note</label>
+              <input id={'an' + m.id} className="field" autoFocus maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: '1 1 260px', minWidth: 0 }} placeholder="Something the monitor should know, e.g. what is expected" />
+              <button type="submit" className="pill sm w" disabled={!note.trim()}>Add</button>
+              <button type="button" className="pill sm" onClick={() => setAddingNote(false)}>Cancel</button>
+            </form>
+          )}
         </div>
       )}
       {m.resolvedAt && m.state !== 'alerting' && (!m.lastCheckAt || m.lastCheckAt <= m.resolvedAt) && <span className="faint" style={{ fontSize: 12 }}>Marked fixed {when(m.resolvedAt)} · the next check confirms it</span>}
@@ -185,6 +217,7 @@ function MonitorCard({ m, onChanged }: { m: Full; onChanged: () => void }) {
         {m.state === 'paused' && <button type="button" className="pill sm w" onClick={() => void action('resume')}>Resume</button>}
         {m.state !== 'finished' && <button type="button" className="pill sm" onClick={() => { if (confirm(`Stop watching "${m.title}"? No more checks will run.`)) void action('stop'); }}>Stop</button>}
         {m.state !== 'finished' && <button type="button" className="pill sm" aria-pressed={m.informLead} onClick={() => void flipLead()}>{m.informLead ? 'Stop telling the lead' : 'Tell the lead'}</button>}
+        <button type="button" className="pill sm" aria-expanded={addingNote} onClick={() => { setAddingNote(!addingNote); setDismissing(false); setNote(''); }}>Add note</button>
         <button type="button" className="pill sm" aria-expanded={editing} onClick={() => setEditing(!editing)}>Edit</button>
         <button type="button" className="pill sm" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide checks' : `All checks (${m.checks.length})`}</button>
       </div>

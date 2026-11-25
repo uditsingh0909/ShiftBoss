@@ -416,19 +416,25 @@ server.registerTool('session_lane', {
 
 server.registerTool('replacement_cancel', {
   title: 'Cancel a replacement',
-  description: 'Stops a session replacement that has not finished.',
-  inputSchema: { id: z.number().int() },
-}, wrap(async ({ id }) => { await call('POST', `/api/replacements/${id}/cancel`, {}); return `replacement ${id} cancelled`; }));
+  description: 'Stops a session replacement that has not finished. With dismiss: true, removes a finished one (done, failed or cancelled) from the Replacements list instead.',
+  inputSchema: { id: z.number().int(), dismiss: z.boolean().optional() },
+}, wrap(async ({ id, dismiss }) => {
+  if (dismiss) { await call('POST', `/api/replacements/${id}/dismiss`, {}); return `replacement ${id} removed from the list`; }
+  await call('POST', `/api/replacements/${id}/cancel`, {}); return `replacement ${id} cancelled`;
+}));
 
 server.registerTool('monitor_update', {
   title: 'Change a monitor',
-  description: 'Pause, resume or stop a monitor, run its check now (e.g. to see if a fix worked), resolve (mark an alerting monitor fixed without a check), turn telling the lead on or off, or edit its title, prompt, days or interval.',
-  inputSchema: { id: z.number().int(), action: z.enum(['pause', 'resume', 'stop', 'check_now', 'resolve']).optional(), tell_lead: z.boolean().optional(), title: z.string().max(200).optional(), prompt: z.string().max(4000).optional(),
+  description: 'Pause, resume or stop a monitor, run its check now (e.g. to see if a fix worked), resolve (dismiss an alerting monitor without a check; with note, e.g. "that is intentional", which every later check is told), add a note on its own (note without action), turn telling the lead on or off, or edit its title, prompt, days or interval.',
+  inputSchema: { id: z.number().int(), action: z.enum(['pause', 'resume', 'stop', 'check_now', 'resolve']).optional(), tell_lead: z.boolean().optional(), note: z.string().max(1000).optional(), title: z.string().max(200).optional(), prompt: z.string().max(4000).optional(),
     days: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(14)]).optional(), every_hours: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)]).optional() },
-}, wrap(async ({ id, action, title, prompt, days, every_hours, tell_lead }) => {
+}, wrap(async ({ id, action, title, prompt, days, every_hours, tell_lead, note }) => {
   if (action === 'check_now') { const r = await call('POST', `/api/monitors/${id}/check-now`, {}); return r.waiting ? 'queued: ' + r.waiting : 'check queued; the monitor session gets it when it is idle'; }
   const e: any = {};
   if (title) e.title = title; if (prompt) e.prompt = prompt; if (days) e.durationDays = days; if (every_hours) e.intervalHours = every_hours; if (action) e.action = action; if (tell_lead !== undefined) e.informLead = tell_lead;
+  if (note && action === 'resolve') e.note = note;
+  else if (note) await call('POST', `/api/monitors/${id}/notes`, { text: note });
+  if (!Object.keys(e).length) return note ? `note added to monitor ${id}` : 'nothing to change';
   await call('PATCH', `/api/monitors/${id}`, e);
   return `monitor ${id} updated`;
 }));

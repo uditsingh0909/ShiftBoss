@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { checksLeft, effectiveState, nextDueAfter } from './monitors';
-import type { ActionItem, Direction, Monitor, MonitorCheck, MonitorLinks, MonitorVerdict, Onboarding, Replacement, ReplacementState,
+import type { ActionItem, Direction, Dismissal, Monitor, MonitorCheck, MonitorLinks, MonitorNote, MonitorVerdict, Onboarding, Replacement, ReplacementState,
   AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
 import { DEFAULT_NOTIFY } from '../shared/types';
@@ -128,7 +128,11 @@ export class Store {
         links TEXT NOT NULL DEFAULT '[]');
       CREATE INDEX IF NOT EXISTS monitor_checks_monitor ON monitor_checks(monitor_id, id);
     `);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS monitor_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        at TEXT NOT NULL, by_who TEXT NOT NULL, text TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS dismissals (key TEXT PRIMARY KEY, at TEXT NOT NULL, what TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', by_who TEXT NOT NULL);`);
     const rcols = this.db.query('PRAGMA table_info(replacements)').all() as { name: string }[];
+    if (!rcols.some((c) => c.name === 'dismissed_at')) this.db.exec('ALTER TABLE replacements ADD COLUMN dismissed_at TEXT');
     if (!rcols.some((c) => c.name === 'closed_at')) {
       this.db.exec('ALTER TABLE replacements ADD COLUMN closed_at TEXT');
       // Replacements finished before auto-close existed stay the owner's to close: only recent ones (2 h) are closed for them.
@@ -412,8 +416,24 @@ export class Store {
   private rowRepl = (r: any): Replacement => ({
     id: r.id, oldName: r.old_name, newName: r.new_name, cwd: r.cwd, model: r.model, handoffPath: r.handoff_path, sessionId: r.session_id,
     transcriptPath: r.transcript_path, state: r.state, startedAt: r.started_at, updatedAt: r.updated_at, requestedAt: r.requested_at,
-    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'), closedAt: r.closed_at ?? null,
+    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'), closedAt: r.closed_at ?? null, dismissedAt: r.dismissed_at ?? null,
   });
+  /** Hide a finished replacement from the list. One still under way must be cancelled instead. */
+  dismissReplacement(id: number) {
+    const r = this.getReplacement(id);
+    if (!r) throw new NotFound('No replacement ' + id);
+    if (!['done', 'failed', 'cancelled'].includes(r.state)) throw new Error('This replacement is still under way: cancel it instead.');
+    this.db.query('UPDATE replacements SET dismissed_at = ? WHERE id = ?').run(now(), id);
+  }
+  // ---------- dismissed Needs attention items ----------
+  dismiss(d: { key: string; what: string; note?: string; by: string }) {
+    this.db.query('INSERT OR REPLACE INTO dismissals (key, at, what, note, by_who) VALUES (?, ?, ?, ?, ?)').run(d.key, now(), d.what, d.note ?? '', d.by);
+  }
+  undismiss(key: string) { if (!this.db.query('DELETE FROM dismissals WHERE key = ?').run(key).changes) throw new NotFound('Not dismissed'); }
+  listDismissed(): Dismissal[] {
+    this.db.query('DELETE FROM dismissals WHERE at < ?').run(new Date(Date.now() - 14 * 864e5).toISOString());
+    return this.db.query('SELECT key, at, what, note, by_who AS by FROM dismissals ORDER BY at DESC LIMIT 200').all() as Dismissal[];
+  }
   /** Done replacements whose old session ShiftBoss has not closed yet, oldest first. */
   replacementsToClose(): Replacement[] {
     return this.db.query("SELECT * FROM replacements WHERE state = 'done' AND closed_at IS NULL AND prompted_at IS NOT NULL ORDER BY id").all().map(this.rowRepl);
@@ -432,7 +452,7 @@ export class Store {
   /** Still running, finished or failed in the last day, newest first. */
   listReplacements(): Replacement[] {
     const since = new Date(Date.now() - 864e5).toISOString();
-    return this.db.query(`SELECT * FROM replacements WHERE state NOT IN ('done', 'failed', 'cancelled') OR updated_at >= ? ORDER BY id DESC LIMIT 100`).all(since).map(this.rowRepl);
+    return this.db.query(`SELECT * FROM replacements WHERE dismissed_at IS NULL AND (state NOT IN ('done', 'failed', 'cancelled') OR updated_at >= ?) ORDER BY id DESC LIMIT 100`).all(since).map(this.rowRepl);
   }
   /** The replacement still under way for this session, if any. */
   activeReplacementFor(oldName: string): Replacement | null {
@@ -617,6 +637,7 @@ export class Store {
       checksDone: count, checksLeft: finished ? 0 : checksLeft(r.next_due_at ? Date.parse(r.next_due_at) : null, Date.parse(r.ends_at), r.interval_hours),
       inFlight: fl ? { checkId: fl.id, sentAt: fl.sent_at } : null,
       informLead: !!r.inform_lead, resolvedAt: r.resolved_at ?? null,
+      notes: this.db.query('SELECT id, at, by_who AS by, text FROM monitor_notes WHERE monitor_id = ? ORDER BY id').all(r.id) as MonitorNote[],
     };
   }
   getMonitor(id: number): Monitor {
@@ -630,6 +651,14 @@ export class Store {
       ? this.db.query('SELECT * FROM monitors ORDER BY id DESC').all()
       : this.db.query("SELECT * FROM monitors WHERE state != 'finished' OR finished_at >= ? ORDER BY id DESC").all(new Date(nowMs - finishedWithinMs).toISOString());
     return rows.map((r) => this.rowMonitor(r));
+  }
+  addMonitorNote(id: number, text: string, by: string): MonitorNote {
+    this.getMonitor(id);
+    const res = this.db.query('INSERT INTO monitor_notes (monitor_id, at, by_who, text) VALUES (?, ?, ?, ?)').run(id, now(), by, text);
+    return this.db.query('SELECT id, at, by_who AS by, text FROM monitor_notes WHERE id = ?').get(Number(res.lastInsertRowid)) as MonitorNote;
+  }
+  deleteMonitorNote(id: number, noteId: number) {
+    if (!this.db.query('DELETE FROM monitor_notes WHERE id = ? AND monitor_id = ?').run(noteId, id).changes) throw new NotFound('No note ' + noteId);
   }
   monitorChecks(id: number, limit = 200): MonitorCheck[] {
     return this.db.query('SELECT * FROM monitor_checks WHERE monitor_id = ? ORDER BY id DESC LIMIT ?').all(id, limit).map(this.rowCheck);

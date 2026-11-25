@@ -63,6 +63,7 @@ export function monitorPrompt(m: Monitor, prev: { at: string; verdict: MonitorVe
     '> ' + m.prompt.replace(/\n/g, '\n> '),
     links.length ? 'Links:\n' + links.map((l) => `- ${l.label}: ${l.url}`).join('\n') : '',
     m.taskId ? `ShiftBoss task: ${m.taskId}` : '',
+    m.notes?.length ? 'Notes from the owner (known and intended; do not report these as bad):\n' + m.notes.map((n) => '- ' + n.text).join('\n') : '',
     `This is check ${m.checksDone + 1} of ${total}; ${after === 0 ? 'it is the last one' : `${after} more after this one, every ${m.intervalHours} h`}.`,
     prev ? `Last check (${prev.at}, ${prev.verdict ?? 'no verdict'}): ${prev.summary}` : 'This is the first check: note the numbers you see, so later checks can compare.',
     'Check it now with read-only tools only. Never change production, data or settings, and never post or message anyone.',

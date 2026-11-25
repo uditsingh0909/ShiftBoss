@@ -325,6 +325,19 @@ export function makeApi(engine: Engine) {
           return results.some((x) => x.id) ? json({ results }, 202) : json({ error: results.map((x) => x.error).join('; '), results }, 400);
         }));
       }
+      r = m(/^\/api\/replacements\/(\d+)\/dismiss$/);
+      if (r && write) { store.dismissReplacement(Number(r[1])); return done(json({ ok: true })); }
+      // ----- Needs attention: dismiss with a note, until it changes -----
+      if (p === '/api/dismiss' && write) {
+        const b = await body<any>(req);
+        const key = str(b.key, 'key', 200), what = str(b.what, 'what', 300), note = optStr(b.note, 1000) ?? '';
+        const by = req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session');
+        store.dismiss({ key, what, note, by });
+        engine.pushFeed(by, `dismissed "${what}"` + (note ? ': ' + note : ''));
+        return done(json({ ok: true }));
+      }
+      r = m(/^\/api\/dismiss\/(.+)$/);
+      if (r && req.method === 'DELETE') { store.undismiss(decodeURIComponent(r[1])); return done(json({ ok: true })); }
       r = m(/^\/api\/replacements\/(\d+)\/cancel$/);
       if (r && write) { engine.cancelReplacement(Number(r[1])); return done(json({ ok: true })); }
       // ----- approvals and mode (server/gate.ts) -----
@@ -383,12 +396,23 @@ export function makeApi(engine: Engine) {
         if (b.action !== undefined) {
           if (!['pause', 'resume', 'stop', 'resolve'].includes(b.action)) throw new Error('action must be pause, resume, stop or resolve');
           mon = store.setMonitorState(id, b.action);
+          const note = optStr(b.note, 1000);
+          if (note) { store.addMonitorNote(id, note, req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session')); mon = store.getMonitor(id); }
           if (b.action !== 'resume' && b.action !== 'resolve') engine.ownerMonitorChecks.delete(id);
           const who = req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session');
           engine.pushFeed(who, b.action === 'resolve' ? `marked ${mon.title} fixed` : `${b.action === 'pause' ? 'paused' : b.action === 'resume' ? 'resumed' : 'stopped'} the monitor for ${mon.title}`);
         }
         return done(json(mon));
       }
+      r = m(/^\/api\/monitors\/(\d+)\/notes$/);
+      if (r && write) {
+        const b = await body<any>(req);
+        const n = store.addMonitorNote(Number(r[1]), str(b.text, 'note', 1000), req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session'));
+        engine.pushFeed(n.by, `noted on ${store.getMonitor(Number(r[1])).title}: ${n.text}`);
+        return done(json(n, 201));
+      }
+      r = m(/^\/api\/monitors\/(\d+)\/notes\/(\d+)$/);
+      if (r && req.method === 'DELETE') { store.deleteMonitorNote(Number(r[1]), Number(r[2])); return done(json({ ok: true })); }
       r = m(/^\/api\/monitors\/(\d+)\/check-now$/);
       if (r && write) {
         const id = Number(r[1]);

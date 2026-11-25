@@ -239,6 +239,8 @@ export interface Replacement {
   missing: string[];
   /** When ShiftBoss closed the old session's pane (or found it already gone). Null while it is still open. */
   closedAt: string | null;
+  /** Hidden from the Replacements list by the owner. */
+  dismissedAt: string | null;
 }
 
 /** An action ShiftBoss held back: waiting for approval, or recorded in Dry run. */
@@ -303,7 +305,12 @@ export interface Monitor {
   informLead: boolean;
   /** When the owner (or a session) marked the last alert fixed; checks before it no longer count for alerting. */
   resolvedAt: string | null;
+  /** The owner's notes, e.g. why an alert was dismissed ("that is intentional"). Every later check is told them. */
+  notes: MonitorNote[];
 }
+export interface MonitorNote { id: number; at: string; by: string; text: string }
+/** Something in Needs attention the owner dismissed, with an optional note. Hidden until it changes. */
+export interface Dismissal { key: string; at: string; what: string; note: string; by: string }
 
 export interface Snapshot {
   now: string;
@@ -333,4 +340,6 @@ export interface Snapshot {
   replacements: Replacement[];
   /** Monitors being watched (active, paused, alerting) and those finished in the last day. */
   monitors: Monitor[];
+  /** Needs attention items the owner dismissed (last 14 days). */
+  dismissed: Dismissal[];
 }

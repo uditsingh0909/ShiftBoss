@@ -32,53 +32,88 @@ function Lines({ s, n, height, stamps, grow }: { s: Session; n: number; height: 
 
 const ext = (to: string) => (/^https?:/.test(to) ? { target: '_blank', rel: 'noreferrer' } : {});
 
-type Alert = { key: string; tone: 'red' | 'amber'; what: string; detail: string; to: string; action?: { label: string; run: () => void } };
+type Alert = { key: string; tone: 'red' | 'amber'; what: string; detail: string; to: string; action?: { label: string; run: () => void };
+  /** How dismissing works for this one; default: hide it (with the note) until it changes. */
+  dismiss?: (note: string) => Promise<unknown> };
 
-/** Everything that needs attention right now, in one strip, worst first, each with its next step. */
+/** Everything that needs attention right now, in one strip, worst first, each with its next step. Each can be dismissed with a note. */
 function Alerts() {
   const snap = useSnap()!;
   const th = snap.settings.thresholds;
   const st = snap.intakeState;
-  const out: Alert[] = [];
-  if (!snap.herdrOk) out.push({ key: 'herdr', tone: 'red', what: 'herdr is not answering', detail: snap.herdrError ?? 'Sessions cannot be read', to: href('setup') });
+  const all: Alert[] = [];
+  // Keys carry the state, so a dismissed item comes back when it changes (a new verdict, a new promise due …).
+  if (!snap.herdrOk) all.push({ key: 'herdr', tone: 'red', what: 'herdr is not answering', detail: snap.herdrError ?? 'Sessions cannot be read', to: href('setup') });
   for (const n of snap.needs.filter((x) => !x.answer)) {
     const focus = n.session ? { label: 'Open in herdr', run: () => void act(() => api('POST', `/api/sessions/${encodeURIComponent(n.session!)}/focus`), 'Opened in herdr') } : undefined;
-    out.push({ key: 'need' + n.id, tone: n.kind === 'Decision' ? 'amber' : 'red', what: `${n.session ?? 'A session'} needs you`, detail: n.title + ' · ' + ago(n.createdAt), to: href('needs'), action: n.auto ? focus : undefined });
+    all.push({ key: 'need' + n.id, tone: n.kind === 'Decision' ? 'amber' : 'red', what: `${n.session ?? 'A session'} needs you`, detail: n.title + ' · ' + ago(n.createdAt), to: href('needs'), action: n.auto ? focus : undefined });
   }
   for (const h of snap.health.filter((x) => !['healthy', 'waiting'].includes(x.verdict)))
-    out.push({ key: 'h' + h.session, tone: ['lost', 'looping', 'burning'].includes(h.verdict) ? 'red' : 'amber', what: `${h.session} is ${h.verdict}`, detail: h.suggest || h.title, to: href('session', h.session) });
+    all.push({ key: `h:${h.session}:${h.verdict}`, tone: ['lost', 'looping', 'burning'].includes(h.verdict) ? 'red' : 'amber', what: `${h.session} is ${h.verdict}`, detail: h.suggest || h.title, to: href('session', h.session) });
   for (const s of snap.sessions.filter((x) => x.contextPct >= th.replace && !snap.health.some((h) => h.session === x.name && h.verdict === 'heavy')))
-    out.push({ key: 'ctx' + s.name, tone: 'red', what: `${s.name} is at ${Math.round(s.contextPct)}% context`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
-  for (const o of snap.overlaps) out.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
+    all.push({ key: 'ctx' + s.name, tone: 'red', what: `${s.name} is at ${Math.round(s.contextPct)}% context`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
+  for (const o of snap.overlaps) all.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
   const due = snap.promises.filter((p) => p.state === 'due');
-  if (due.length) out.push({ key: 'due', tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
+  if (due.length) all.push({ key: 'due:' + due.map((p) => p.id).join(','), tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
   for (const c of snap.threadChecks ?? [])
-    out.push({ key: 'thread' + c.id, tone: 'amber', what: `Sessions may be confused in ${c.src}`, detail: (c.who ? c.who + ': ' : '') + c.text, to: safeHref(c.url) ?? href('intake'),
-      action: { label: 'Dismiss', run: () => void act(() => api('POST', `/api/intake/${c.id}/resolve`), 'Dismissed') } });
+    all.push({ key: 'thread' + c.id, tone: 'amber', what: `Sessions may be confused in ${c.src}`, detail: (c.who ? c.who + ': ' : '') + c.text, to: safeHref(c.url) ?? href('intake'),
+      dismiss: async (note) => { await api('POST', `/api/intake/${c.id}/resolve`); if (note) await api('POST', '/api/dismiss', { key: 'thread' + c.id, what: `Sessions may be confused in ${c.src}`, note }); } });
   const held = snap.actions.filter((a) => a.state === 'waiting');
-  if (held.length) out.push({ key: 'approvals', tone: 'amber', what: `${held.length} action${held.length === 1 ? '' : 's'} waiting for your approval`, detail: held.slice(0, 2).map((a) => a.summary).join(' · '), to: href('needs') });
+  if (held.length) all.push({ key: 'approvals:' + held.map((a) => a.id).join(','), tone: 'amber', what: `${held.length} action${held.length === 1 ? '' : 's'} waiting for your approval`, detail: held.slice(0, 2).map((a) => a.summary).join(' · '), to: href('needs') });
   const silent = !st.paused && (!st.lastBeginAt || Date.now() - Date.parse(st.lastBeginAt) > 10 * 60e3);
-  if (silent) out.push({ key: 'intake', tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
+  if (silent) all.push({ key: 'intake:' + (st.lastBeginAt ?? 'never'), tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
     action: snap.sessions.some((x) => /intake/i.test(x.name)) ? { label: 'Check now', run: () => void act(() => api('POST', '/api/intake/run'), 'Intake is checking now') } : undefined });
   for (const m of (snap.monitors ?? []).filter((x) => x.state === 'alerting'))
-    out.push({ key: 'mon' + m.id, tone: 'red', what: `Monitor: ${m.title} ${m.lastVerdict === 'error' ? 'could not be checked twice in a row' : 'looks bad'}`, detail: (m.lastSummary ?? '') + ' · ' + ago(m.lastCheckAt), to: href('monitors'),
-      action: m.inFlight ? undefined : { label: 'Check if fixed', run: () => void act(() => api('POST', `/api/monitors/${m.id}/check-now`), 'Asked the monitor session for a fresh check') } });
+    all.push({ key: 'mon' + m.id, tone: 'red', what: `Monitor: ${m.title} ${m.lastVerdict === 'error' ? 'could not be checked twice in a row' : 'looks bad'}`, detail: (m.lastSummary ?? '') + ' · ' + ago(m.lastCheckAt), to: href('monitors'),
+      action: m.inFlight ? undefined : { label: 'Check if fixed', run: () => void act(() => api('POST', `/api/monitors/${m.id}/check-now`), 'Asked the monitor session for a fresh check') },
+      // Dismissing a monitor alert marks it fixed; the note goes to every later check ("that is intentional").
+      dismiss: (note) => api('PATCH', `/api/monitors/${m.id}`, { action: 'resolve', note: note || undefined }) });
   const watched = (snap.monitors ?? []).filter((x) => x.state === 'active' || x.state === 'alerting');
   if (watched.length && snap.herdrOk && !resolveLead(snap.sessions, MONITOR_SESSION))
-    out.push({ key: 'mon-session', tone: 'amber', what: 'No monitor session running', detail: `${watched.length} monitor${watched.length === 1 ? '' : 's'} not being checked`, to: href('monitors') });
-  out.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'red' ? -1 : 1));
+    all.push({ key: 'mon-session', tone: 'amber', what: 'No monitor session running', detail: `${watched.length} monitor${watched.length === 1 ? '' : 's'} not being checked`, to: href('monitors') });
+  all.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'red' ? -1 : 1));
+  const gone = new Map((snap.dismissed ?? []).map((d) => [d.key, d]));
+  const out = all.filter((x) => !gone.has(x.key));
+  const hidden = all.filter((x) => gone.has(x.key));
   const [idx, setIdx] = useState(0);
   const [hold, setHold] = useState(false);
+  const [noting, setNoting] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
   const n = out.length;
-  // Auto-advance every 6 s; hovering or focusing the strip holds it.
+  // Auto-advance every 6 s; hovering or focusing the strip (or writing a note) holds it.
   useEffect(() => {
-    if (n < 2 || hold) return;
+    if (n < 2 || hold || noting) return;
     const t = setInterval(() => setIdx((i) => (i + 1) % n), 6000);
     return () => clearInterval(t);
-  }, [n, hold]);
+  }, [n, hold, noting]);
+  const doDismiss = (x: Alert) => act(async () => {
+    if (x.dismiss) await x.dismiss(note.trim());
+    else await api('POST', '/api/dismiss', { key: x.key, what: x.what, note: note.trim() || undefined });
+    setNoting(null); setNote('');
+  }, 'Dismissed');
+  const hiddenLine = hidden.length > 0 && (
+    <div className="col" style={{ gap: 6 }}>
+      <button type="button" className="faint" style={{ fontSize: 12, alignSelf: 'flex-start', background: 'none', border: 0, padding: 0, cursor: 'pointer' }} aria-expanded={showHidden} onClick={() => setShowHidden(!showHidden)}>
+        {hidden.length} dismissed · {showHidden ? 'hide' : 'show'}
+      </button>
+      {showHidden && hidden.map((x) => {
+        const d = gone.get(x.key)!;
+        return (
+          <div key={x.key} className="row" style={{ gap: 10, fontSize: 12, flexWrap: 'wrap' }}>
+            <span className="dim" style={{ flex: '1 1 240px', minWidth: 0, overflowWrap: 'anywhere' }}>{x.what}{d.note ? <span className="faint"> · “{d.note}”</span> : null} <span className="faint">· {d.by}, {ago(d.at)}</span></span>
+            <button type="button" className="pill xs" onClick={() => act(() => api('DELETE', '/api/dismiss/' + encodeURIComponent(x.key)), 'Back in Needs attention')}>Undo</button>
+          </div>
+        );
+      })}
+    </div>
+  );
   if (!n) return (
-    <div className="rise row" aria-label="Needs attention" style={{ gap: 10, padding: '12px 18px', border: '1px solid var(--line)', borderRadius: 999, alignSelf: 'flex-start' }}>
-      <Dot color={C.green} /><span style={{ fontSize: 13 }} className="dim">All clear: nothing needs you, no health issues, no overlaps.</span>
+    <div className="col" style={{ gap: 8 }}>
+      <div className="rise row" aria-label="Needs attention" style={{ gap: 10, padding: '12px 18px', border: '1px solid var(--line)', borderRadius: 999, alignSelf: 'flex-start' }}>
+        <Dot color={C.green} /><span style={{ fontSize: 13 }} className="dim">All clear: nothing needs you, no health issues, no overlaps.</span>
+      </div>
+      {hiddenLine}
     </div>
   );
   const i = idx % n;
@@ -86,31 +121,44 @@ function Alerts() {
   const reds = out.filter((x) => x.tone === 'red').length;
   const go = (d: number) => setIdx((x) => (x % n + d + n) % n);
   return (
-    <section className={`shell rise alert-${a.tone}`} aria-label="Needs attention" aria-roledescription="carousel"
-      onMouseEnter={() => setHold(true)} onMouseLeave={() => setHold(false)} onFocus={() => setHold(true)} onBlur={() => setHold(false)}>
-      <div className="core row" style={{ gap: 14, padding: '12px 14px 12px 20px', flexWrap: 'wrap' }}>
-        <span className="row" style={{ gap: 8, flex: 'none' }}>
-          <Dot color={reds ? C.red : C.amber} blink />
-          <span className="label">{n} need{n === 1 ? 's' : ''} attention</span>
-        </span>
-        <a key={a.key} href={a.to} {...ext(a.to)} className="col alert-slide" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }} aria-live="polite">
-          <span className="row" style={{ gap: 8, fontSize: 14, minWidth: 0 }}><Dot color={a.tone === 'red' ? C.red : C.amber} /><span className="ellipsis">{a.what}</span></span>
-          <span className="faint ellipsis" style={{ fontSize: 12, paddingLeft: 16 }}>{a.detail}</span>
-        </a>
-        <span className="row" style={{ gap: 8, flex: 'none', marginLeft: 'auto' }}>
-          {a.action && <button type="button" className="pill sm w" onClick={a.action.run}>{a.action.label}</button>}
-          <a className="pill sm" href={a.to} {...ext(a.to)}>Open<Arrow /></a>
-          {n > 1 && <>
-            <span className="row hide-sm" style={{ gap: 4, margin: '0 4px' }} aria-hidden="true">
-              {out.slice(0, 12).map((x, k) => <span key={x.key} style={{ width: k === i ? 14 : 5, height: 5, borderRadius: 999, background: k === i ? C.fg : x.tone === 'red' ? 'rgba(255,90,79,.5)' : C.ghost, transition: 'width .5s var(--ease)' }} />)}
-            </span>
-            <span className="mono faint" style={{ fontSize: 11 }}>{i + 1}/{n}</span>
-            <button type="button" className="pill sm icon" aria-label="Previous alert" onClick={() => go(-1)}>‹</button>
-            <button type="button" className="pill sm icon" aria-label="Next alert" onClick={() => go(1)}>›</button>
-          </>}
-        </span>
-      </div>
-    </section>
+    <div className="col" style={{ gap: 8 }}>
+      <section className={`shell rise alert-${a.tone}`} aria-label="Needs attention" aria-roledescription="carousel"
+        onMouseEnter={() => setHold(true)} onMouseLeave={() => setHold(false)} onFocus={() => setHold(true)} onBlur={() => setHold(false)}>
+        <div className="core row" style={{ gap: 14, padding: '12px 14px 12px 20px', flexWrap: 'wrap' }}>
+          <span className="row" style={{ gap: 8, flex: 'none' }}>
+            <Dot color={reds ? C.red : C.amber} blink />
+            <span className="label">{n} need{n === 1 ? 's' : ''} attention</span>
+          </span>
+          <a key={a.key} href={a.to} {...ext(a.to)} className="col alert-slide" style={{ gap: 2, flex: '1 1 260px', minWidth: 0 }} aria-live="polite">
+            <span className="row" style={{ gap: 8, fontSize: 14, minWidth: 0 }}><Dot color={a.tone === 'red' ? C.red : C.amber} /><span className="ellipsis">{a.what}</span></span>
+            <span className="faint ellipsis" style={{ fontSize: 12, paddingLeft: 16 }}>{a.detail}</span>
+          </a>
+          <span className="row" style={{ gap: 8, flex: 'none', marginLeft: 'auto', flexWrap: 'wrap' }}>
+            {a.action && <button type="button" className="pill sm w" onClick={a.action.run}>{a.action.label}</button>}
+            <a className="pill sm" href={a.to} {...ext(a.to)}>Open<Arrow /></a>
+            <button type="button" className="pill sm" aria-expanded={noting === a.key} onClick={() => { setNoting(noting === a.key ? null : a.key); setNote(''); }}>Dismiss</button>
+            {n > 1 && <>
+              <span className="row hide-sm" style={{ gap: 4, margin: '0 4px' }} aria-hidden="true">
+                {out.slice(0, 12).map((x, k) => <span key={x.key} style={{ width: k === i ? 14 : 5, height: 5, borderRadius: 999, background: k === i ? C.fg : x.tone === 'red' ? 'rgba(255,90,79,.5)' : C.ghost, transition: 'width .5s var(--ease)' }} />)}
+              </span>
+              <span className="mono faint" style={{ fontSize: 11 }}>{i + 1}/{n}</span>
+              <button type="button" className="pill sm icon" aria-label="Previous alert" onClick={() => go(-1)}>‹</button>
+              <button type="button" className="pill sm icon" aria-label="Next alert" onClick={() => go(1)}>›</button>
+            </>}
+          </span>
+          {noting === a.key && (
+            <form className="row" style={{ gap: 8, flex: '1 1 100%', flexWrap: 'wrap' }} onSubmit={(e) => { e.preventDefault(); void doDismiss(a); }}>
+              <label htmlFor="dismiss-note" className="sr-only">Why (optional)</label>
+              <input id="dismiss-note" className="field" autoFocus maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: '1 1 260px', minWidth: 0 }}
+                placeholder={a.key.startsWith('mon') ? 'Why? e.g. "that is intentional" (the monitor is told on every later check)' : 'Why? (optional) e.g. "known, someone is on it"'} />
+              <button type="submit" className="pill sm w">Dismiss</button>
+              <button type="button" className="pill sm" onClick={() => setNoting(null)}>Cancel</button>
+            </form>
+          )}
+        </div>
+      </section>
+      {hiddenLine}
+    </div>
   );
 }
 
@@ -265,6 +313,7 @@ function ReplacementProgress({ r, compact }: { r: Replacement; compact?: boolean
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, color: note.tone, flex: '1 1 240px', overflowWrap: 'anywhere' }}>{note.text}</span>
         {cancellable(r.state) && <button type="button" className="pill sm" onClick={() => act(() => api('POST', `/api/replacements/${r.id}/cancel`), r.state === 'failed' ? 'Dismissed' : 'Cancelled')}>{r.state === 'failed' ? 'Dismiss' : 'Cancel'}</button>}
+        {(r.state === 'done' || r.state === 'cancelled') && <button type="button" className="pill sm" onClick={() => act(() => api('POST', `/api/replacements/${r.id}/dismiss`), 'Removed from the list')}>Dismiss</button>}
       </div>
       {!compact && <span className="mono faint" style={{ fontSize: 11, wordBreak: 'break-all' }}>handoff · {r.handoffPath}</span>}
     </div>
@@ -349,7 +398,12 @@ export function CommandCenter() {
       {snap.replacements.length > 0 && (
         <section className="shell rise" aria-label="Replacements">
           <div className="core col" style={{ gap: 18, padding: 22 }}>
-            <span className="label">Replacements · {snap.replacements.filter((r) => activeRepl(r.state)).length} under way</span>
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <span className="label" style={{ flex: 1 }}>Replacements · {snap.replacements.filter((r) => activeRepl(r.state)).length} under way</span>
+              {snap.replacements.filter((r) => r.state === 'done' || r.state === 'cancelled').length > 1 && (
+                <button type="button" className="pill xs" onClick={() => act(() => Promise.all(snap.replacements.filter((r) => r.state === 'done' || r.state === 'cancelled').map((r) => api('POST', `/api/replacements/${r.id}/dismiss`))), 'Cleared finished replacements')}>Clear finished</button>
+              )}
+            </div>
             {snap.replacements.slice(0, 8).map((r) => <ReplacementProgress key={r.id} r={r} compact />)}
           </div>
         </section>

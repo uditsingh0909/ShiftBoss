@@ -855,6 +855,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       replacements: this.store.listReplacements(),
       actions: this.store.listActions(),
       threadChecks: this.store.openThreadChecks(),
+      dismissed: this.store.listDismissed(),
       monitors: this.store.listMonitors(864e5),
     };
   }

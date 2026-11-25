@@ -71,7 +71,9 @@ Everything you can do in ShiftBoss, from the command line:
   shiftboss session screen <name>                 what its terminal shows now
   shiftboss session lane <name> "<lane>" [--slots N]
   shiftboss session cancel-replace <id>
-  shiftboss monitor pause|resume|stop|check|resolve <id>   (check = see if a fix worked; resolve = mark fixed)
+  shiftboss session dismiss-replace <id>          remove a finished replacement from the list
+  shiftboss monitor pause|resume|stop|check|resolve <id> [--note T]   (check = see if a fix worked; resolve = dismiss, the note is told to every later check)
+  shiftboss monitor note <id> "<text>"            a note every later check is told, e.g. what is intended
   shiftboss monitor edit <id> [--title T] [--prompt T] [--days N] [--every N] [--tell-lead=true|false]
   shiftboss intake run                            ask the intake for a pass now
   shiftboss intake resolve <id>                   dismiss a flagged thread
@@ -252,7 +254,8 @@ async function main() {
       return console.log('logged');
     }
     case 'monitor': {
-      if (['pause', 'resume', 'stop', 'resolve'].includes(sub)) { await call('PATCH', `/api/monitors/${a1}`, { action: sub }); return console.log(`monitor ${a1}: ${sub === 'resolve' ? 'marked fixed' : sub}`); }
+      if (sub === 'note') { if (!a1 || !a2) throw new Error('usage: shiftboss monitor note <id> "<text>"'); await call('POST', `/api/monitors/${a1}/notes`, { text: a2 }); return console.log(`noted on monitor ${a1}`); }
+      if (['pause', 'resume', 'stop', 'resolve'].includes(sub)) { await call('PATCH', `/api/monitors/${a1}`, { action: sub, note: flags.note }); return console.log(`monitor ${a1}: ${sub === 'resolve' ? 'marked fixed' : sub}`); }
       if (sub === 'check') { const r = await call('POST', `/api/monitors/${a1}/check-now`, {}); return console.log(r.waiting ? 'queued: ' + r.waiting : 'check queued; the monitor session gets it when it is idle'); }
       if (sub === 'edit') {
         const e: any = {};
@@ -334,6 +337,7 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
       if (sub === 'interrupt') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/interrupt`, {}); return console.log('interrupted ' + a1); }
       if (sub === 'screen') { const r = await call('GET', `/api/sessions/${encodeURIComponent(a1)}/screen`); return console.log(r.text); }
       if (sub === 'lane') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/meta`, { lane: a2 ?? '', ...(flags.slots ? { slots: Number(flags.slots) } : {}) }); return console.log(`${a1}: lane saved`); }
+      if (sub === 'dismiss-replace') { await call('POST', `/api/replacements/${a1}/dismiss`, {}); return console.log('removed from the list'); }
       if (sub === 'cancel-replace') { await call('POST', `/api/replacements/${a1}/cancel`, {}); return console.log('replacement cancelled'); }
       if (sub === 'outside') {
         const rows = await call('GET', '/api/outside-sessions?days=' + (Number(flags.days) || 14));

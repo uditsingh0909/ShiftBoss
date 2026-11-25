@@ -18,7 +18,7 @@ import { listOutside, readOutside, suggestName } from '../server/outside';
 import { needsInstall, Updater } from '../server/update';
 import { actionKey, decide } from '../server/gate';
 import { join } from 'node:path';
-import { checksLeft, checksTotal, effectiveState, isAlerting, nextDueAfter, pickDue } from '../server/monitors';
+import { checksLeft, checksTotal, effectiveState, isAlerting, monitorPrompt, nextDueAfter, pickDue } from '../server/monitors';
 import { DEFAULT_NOTIFY, type Session } from '../shared/types';
 import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
@@ -1165,6 +1165,31 @@ describe('monitors', () => {
     await e.closeReplaced(T + 32 * 60e3);
     expect(store.listActions().filter((a: any) => a.kind === 'close-old' && a.state === 'waiting').length).toBe(0);
     expect(closed).toEqual(['p-old']);
+  });
+
+  test('dismissing with notes: monitor notes reach every check, Needs attention items hide until undone, finished replacements leave the list', () => {
+    const s = mem();
+    const m = s.addMonitor({ title: 'Texting', prompt: 'texts send', durationDays: 1, intervalHours: 6 });
+    s.reportMonitor(m.id, { verdict: 'bad', summary: 'test numbers rejected' });
+    s.setMonitorState(m.id, 'resolve');
+    s.addMonitorNote(m.id, 'Rejected texts to test numbers are intentional', 'you');
+    const got = s.getMonitor(m.id);
+    expect(got.state).toBe('active');
+    expect(got.notes.map((n) => n.text)).toEqual(['Rejected texts to test numbers are intentional']);
+    const prompt = monitorPrompt(got, null, '/repo');
+    expect(prompt).toContain('do not report these as bad');
+    expect(prompt).toContain('- Rejected texts to test numbers are intentional');
+    s.deleteMonitorNote(m.id, got.notes[0].id);
+    expect(monitorPrompt(s.getMonitor(m.id), null, '/repo')).not.toContain('Notes from the owner');
+    s.dismiss({ key: 'h:w1:stuck', what: 'w1 is stuck', note: 'waiting on CI', by: 'you' });
+    expect(s.listDismissed()).toMatchObject([{ key: 'h:w1:stuck', note: 'waiting on CI', by: 'you' }]);
+    s.undismiss('h:w1:stuck');
+    expect(s.listDismissed()).toEqual([]);
+    const r = s.addReplacement({ oldName: 'a', newName: 'a-v2', cwd: '/x', model: null, handoffPath: '/x/h.md', sessionId: null, transcriptPath: null });
+    expect(() => s.dismissReplacement(r.id)).toThrow('still under way');
+    s.updateReplacement(r.id, { state: 'done' });
+    s.dismissReplacement(r.id);
+    expect(s.listReplacements().some((x) => x.id === r.id)).toBe(false);
   });
 
   test('telling the lead is routine: it runs in Safe auto, waits in Ask first', () => {

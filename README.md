@@ -499,9 +499,15 @@ first prompt pointing at [`docs/MONITOR.md`](docs/MONITOR.md). Then:
   so it can route or fix it. When it is fine again, the lead gets a second note. The note goes through
   the mode like any other action (it is routine, so it runs in Safe auto), and never into a lead that is
   waiting on a permission prompt.
-- **Fixed it?** An alerting monitor offers **Check if it is fixed** (a fresh check now) and **Mark fixed**
-  (for a false alarm: the bad check stops counting, the next check confirms). Sessions can do both:
-  `monitor_update` with `check_now` or `resolve`, or `shiftboss monitor check|resolve <id>`.
+- **Fixed it?** An alerting monitor offers **Check if it is fixed** (a fresh check now) and **Dismiss…**
+  with a note ("the rejected texts are intentional"): the bad check stops counting, and the note is kept on
+  the monitor and told to every later check, so it stops reporting that as bad. **Add note** works any time.
+  Sessions can do the same: `monitor_update` with `check_now`, `resolve` and `note`, or
+  `shiftboss monitor check|resolve <id> [--note T]` and `shiftboss monitor note <id> "<text>"`.
+
+Everything in *Needs attention* on Sessions has **Dismiss**, with an optional note. It stays hidden until it
+changes (a new verdict, another promise due), "N dismissed · show" lists them with **Undo**, and the feed
+records who dismissed what and why. Finished replacements have **Dismiss** and **Clear finished**.
 
 Each monitor shows its state (watching, alerting, paused, finished), the next check, the last result and
 every check so far. **Check now**, **Pause** / **Resume**, **Stop** and **Edit** act on it. A paused
