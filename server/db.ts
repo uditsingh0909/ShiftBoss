@@ -8,7 +8,7 @@ import type { ActionItem, Direction, Dismissal, Monitor, MonitorCheck, MonitorLi
 import { DEFAULT_NOTIFY, DEFAULT_SLACK } from '../shared/types';
 
 export const DEFAULT_SETTINGS: Settings = {
-  thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3, cacheWarnM: 500, cacheReplaceM: 1000 },
+  thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3, cacheWarnM: 500, cacheReplaceM: 1000, leadReplace: 40 },
   switches: { autoDispatch: false, quietHours: true },
   budgets: { fiveHourTokens: 0, weeklyTokens: 0 },
   herdrWorkspace: '',
@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notify: { ...DEFAULT_NOTIFY },
   closeOldAfterMin: 30, // a replaced session closes 30 min after its successor took over; 0 = never
   sessionsPerTab: 2, // two sessions side by side per herdr tab; 4 is tight on a laptop
+  autoReplace: true, // worn-out sessions (cache read past the line) are replaced through a handoff
 };
 
 const now = () => new Date().toISOString();

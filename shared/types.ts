@@ -166,7 +166,7 @@ export interface IntakeState {
 
 export interface Settings {
   /** cacheWarnM / cacheReplaceM: lifetime cache read, in millions of tokens. */
-  thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number; cacheWarnM?: number; cacheReplaceM?: number };
+  thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number };
   switches: { autoDispatch: boolean; quietHours: boolean };
   budgets: { fiveHourTokens: number; weeklyTokens: number };
   herdrWorkspace: string;
@@ -190,7 +190,9 @@ export interface Settings {
   /** Close a replaced session this many minutes after its successor has its first prompt. 0: never (you close it). */
   closeOldAfterMin?: number;
   /** How many sessions share one herdr tab as split panes: 1, 2 or 4 (2x2). New sessions fill the newest tab with room. */
-  sessionsPerTab?: 1 | 2 | 4;
+  sessionsPerTab?: 1 | 2 | 3 | 4;
+  /** Replace a worn-out session by itself (handoff first), by lifetime cache read with context as a backstop. Default on. */
+  autoReplace?: boolean;
   /** The ShiftBoss Slack bot: where its alerts go and which. The token is kept apart and never in the snapshot. */
   slack?: SlackSettings;
 }

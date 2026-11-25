@@ -7,7 +7,7 @@ const int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Patch = z.object({
   thresholds: z.object({
     warn: int(50, 90), replace: int(70, 95), needsCap: int(1, 6), staleMin: int(10, 120), stuckMin: int(5, 60), loopRepeats: int(2, 6),
-    cacheWarnM: int(50, 5000), cacheReplaceM: int(100, 10000),
+    cacheWarnM: int(50, 5000), cacheReplaceM: int(100, 10000), leadReplace: int(20, 95),
   }).partial().optional(),
   switches: z.object({ autoDispatch: z.boolean(), quietHours: z.boolean() }).partial().optional(),
   budgets: z.object({ fiveHourTokens: int(0, 1e12), weeklyTokens: int(0, 1e13) }).partial().optional(),
@@ -21,7 +21,8 @@ const Patch = z.object({
   instructions: z.string().max(4000).optional(),
   instructionsPrev: z.string().max(4000).optional(),
   closeOldAfterMin: z.number().int().min(0).max(1440).optional(),
-  sessionsPerTab: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional(),
+  sessionsPerTab: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
+  autoReplace: z.boolean().optional(),
   slack: z.object({
     dm: z.object({ on: z.boolean(), userId: z.string().regex(/^[UW][A-Z0-9]{1,20}$/).nullable(), label: z.string().max(100).nullable() }).partial(),
     channel: z.object({ on: z.boolean(), id: z.string().regex(/^[CG][A-Z0-9]{1,20}$/).nullable(), name: z.string().max(100).nullable() }).partial(),

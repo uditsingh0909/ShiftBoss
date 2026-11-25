@@ -8,12 +8,12 @@ import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
-import { claudeTabs, inWorkspace, isGeneratedTabLabel, pickSplit, tabLabel, tidyPlan, workspacesOf } from './panes';
+import { claudeTabs, inWorkspace, isGeneratedTabLabel, NEW_TAB, pickSplit, tabLabel, tidyPlan, workspacesOf } from './panes';
 import { NAME_RE } from './fleet';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
 import { heatOf, holdsScheduledJob, Transcripts } from './transcripts';
-import { HANDOFF_TIMEOUT_MS, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
+import { HANDOFF_TIMEOUT_MS, pickWornOut, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
 import { setupInfo } from './setup';
 import { actionKey, decide, type ActionKind, type Actor } from './gate';
 import { onboardingPrompt, ownerRules } from './onboarding';
@@ -40,6 +40,8 @@ export class Engine {
   private labelTurn = 0;
   /** Pane labels ShiftBoss itself set from a terminal title: never promoted to an agent name. */
   private labelsSet = new Map<string, string>();
+  /** Tab labels ShiftBoss wrote, so it can rename them after a session leaves. */
+  private tabsWritten = new Set<string>();
   private feed: { at: string; who: string; text: string }[] = [];
   private lastStatus = new Map<string, AgentStatus>();
   private releases: Snapshot['releases'] = { envs: [], merged: [], freeze: null };
@@ -125,6 +127,7 @@ export class Engine {
       await this.advanceReplacements();
       await this.runMonitors();
       await this.closeReplaced();
+      if (this.labelTurn % 30 === 1) await this.autoReplace(); // about once a minute
       if (this.herdrOk && this.labelTurn++ % 15 === 0) await this.syncLabels(); // every ~30 s
       this.emit();
       try { this.slack.tick(this.snapshot()); } catch (e) { this.pushFeed('slack', 'could not check for alerts: ' + (e as Error).message.slice(0, 160)); }
@@ -709,7 +712,8 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   private async startReplacement(r: Replacement) {
     let pane: string | null = null;
     try {
-      pane = await this.herdr.spawnClaude({ name: r.newName, cwd: r.cwd, model: r.model ?? undefined, workspace: this.workspace() || undefined, ...this.placement() });
+      const old = this.sessions.find((s) => s.name === r.oldName); // open beside it, so the handover can be watched
+      pane = await this.herdr.spawnClaude({ name: r.newName, cwd: r.cwd, model: r.model ?? undefined, workspace: this.workspace() || undefined, ...this.placement(), beside: old?.paneId });
       this.store.updateReplacement(r.id, { state: 'started', error: null });
       this.pushFeed('shiftboss', `${r.newName} is up to replace ${r.oldName}`);
     } catch (e) {
@@ -791,6 +795,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     const count = (n: string) => { if (n) taken.set(n, (taken.get(n) ?? 0) + 1); };
     for (const a of agents) count((a.name ?? '').trim());
     for (const p of panes) if (!byPane.get(p.pane_id)?.name) count((p.label ?? '').trim());
+    const known = new Set<string>([...this.store.listTasks().map((t) => t.session ?? ''), ...this.store.listReplacements().flatMap((r) => [r.oldName, r.newName])].filter(Boolean));
     const shown = new Map<string, string>();
     for (const p of panes) {
       const a = byPane.get(p.pane_id);
@@ -798,9 +803,10 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       const label = (p.label ?? '').trim();
       let name = (a.name ?? '').trim();
       try {
-        // A label ShiftBoss copied from the title (now, or before a restart: it still equals the title) never becomes a name.
-        const ours = this.labelsSet.get(p.pane_id) === label || label === (a.terminal_title_stripped ?? '').trim() || label === p.pane_id;
-        if (!name && label && !ours && NAME_RE.test(label) && taken.get(label) === 1) { await this.herdr.renameAgent(p.pane_id, label); name = label; done.agents++; }
+        // A label becomes a name when ShiftBoss knows it (a task or a replacement) or a person typed it; one ShiftBoss
+        // copied from the title (now, or before a restart: it still equals the title) never does.
+        const typed = label !== this.labelsSet.get(p.pane_id) && label !== (a.terminal_title_stripped ?? '').trim() && label !== p.pane_id && !this.tabsWritten.has(label);
+        if (!name && label && (known.has(label) || typed) && NAME_RE.test(label) && taken.get(label) === 1) { await this.herdr.renameAgent(p.pane_id, label); name = label; done.agents++; }
         const want = name || nameOf(a);
         if (!label || (name && label !== name)) {
           await this.herdr.renamePane(p.pane_id, want); done.panes++;
@@ -814,8 +820,8 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     for (const [tab, ps] of claudeTabs(tabs, panes)) {
       const want = tabLabel(ps.map((p) => shown.get(p.pane_id) ?? '').filter(Boolean), closing);
       const cur = tabs.find((t) => t.tab_id === tab)?.label ?? '';
-      if (!want || want === cur || !isGeneratedTabLabel(cur, allNames)) continue;
-      try { await this.herdr.renameTab(tab, want); done.tabs++; } catch (e) { this.noteLabels('could not rename a tab: ' + (e as Error).message.slice(0, 120)); }
+      if (!want || want === cur || !isGeneratedTabLabel(cur, allNames, this.tabsWritten)) continue;
+      try { await this.herdr.renameTab(tab, want); this.tabsWritten.add(want); done.tabs++; } catch (e) { this.noteLabels('could not rename a tab: ' + (e as Error).message.slice(0, 120)); }
     }
     return done;
   }
@@ -831,14 +837,17 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     const names = new Map(agents.map((a) => [a.pane_id, nameOf(a)]));
     const closing = this.closingNames();
     // Each workspace on its own: a session never moves to another workspace.
-    const plan = workspacesOf(allTabs, this.workspace()).flatMap((ws) => tidyPlan(inWorkspace(allTabs, ws), inWorkspace(allPanes, ws), perTab, names, closing));
+    const plan = workspacesOf(allTabs, this.workspace()).flatMap((ws) => tidyPlan(inWorkspace(allTabs, ws), inWorkspace(allPanes, ws), perTab, names, closing).map((m) => ({ ...m, key: `${ws}:${m.group ?? 0}` })));
     let moved = 0; const failed: string[] = [];
+    const newTabs = new Map<string, string>(); // per workspace and group: a session never leaves its workspace
     for (const m of plan) {
       try {
-        const into = (await this.herdr.panes()).filter((p) => p.tab_id === m.tab);
+        if (m.tab === NEW_TAB && !newTabs.has(m.key)) { newTabs.set(m.key, await this.herdr.movePaneToNewTab(m.pane, names.get(m.pane) ?? '')); moved++; continue; }
+        const tabId = m.tab === NEW_TAB ? newTabs.get(m.key)! : m.tab;
+        const into = (await this.herdr.panes()).filter((p) => p.tab_id === tabId);
         const at = into.length ? pickSplit(await this.herdr.layout(into[0].pane_id)) : null;
         if (!at) throw new Error('its target tab is gone');
-        await this.herdr.movePane(m.pane, m.tab, at.pane, at.direction); moved++;
+        await this.herdr.movePane(m.pane, tabId, at.pane, at.direction); moved++;
       } catch (e) { failed.push(`${names.get(m.pane) ?? m.pane}: ${(e as Error).message.slice(0, 120)}`); }
     }
     await this.syncLabels();
@@ -853,6 +862,29 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     if (this.labelNoted === why) return;
     this.labelNoted = why;
     this.pushFeed('shiftboss', 'herdr tab and pane names: ' + why);
+  }
+
+  /** Sessions ShiftBoss tried to replace by itself, and when: no second try for 30 minutes. */
+  private autoTried = new Map<string, number>();
+  /**
+   * Settings → Replace worn-out sessions: once a minute, the most worn session (cache read past the line, context as
+   * a backstop) is replaced through a handoff. Never while it works or waits on a permission prompt, never while it
+   * holds a scheduled job that has not fired, never twice, and through the gate like every replacement.
+   */
+  async autoReplace(nowMs = Date.now()) {
+    const st = this.store.settings();
+    if (st.autoReplace === false || !this.herdrOk || this.spawnsPending) return;
+    const pick = pickWornOut(this.sessions, {
+      lead: resolveLead(this.sessions, st.leadSession ?? '')?.name ?? null, thresholds: st.thresholds,
+      replacements: this.store.listReplacements(), tried: this.autoTried, nowMs,
+      holdsJob: (s) => holdsScheduledJob(s.sessionId ? this.transcripts.read(s.sessionId)?.tools ?? [] : [], nowMs),
+    });
+    if (!pick) return;
+    this.autoTried.set(pick.s.name, nowMs);
+    const params = { names: [pick.s.name] };
+    if (this.store.wasRejected(actionKey('replace', params))) return; // you said no
+    try { await this.act('replace', params, { actor: 'auto', by: 'shiftboss', summary: `Replace ${pick.s.name}: ${pick.why}`, detail: 'It writes a handoff first; a fresh session takes over from it, beside it in herdr.' }); }
+    catch (e) { this.pushFeed('shiftboss', `could not replace ${pick.s.name}: ${(e as Error).message.slice(0, 160)}`); }
   }
 
   /** One feed line per replacement and reason, not one per tick. */

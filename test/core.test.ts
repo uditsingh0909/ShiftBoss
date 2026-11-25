@@ -1597,11 +1597,11 @@ describe('shared herdr tabs', () => {
   });
 
   test('a tab is named after its sessions, without -vN', () => {
-    expect(tabLabel(['alpha-lead-v3', 'beta-v2'])).toBe('alpha-lead + beta');
-    expect(tabLabel(['gamma-v2'])).toBe('gamma');
+    expect(tabLabel(['alpha-lead-v3', 'beta-v2'])).toBe('alpha-lead-v3 + beta-v2');
+    expect(tabLabel(['gamma-v2'])).toBe('gamma-v2');
     expect(tabLabel(['old-a', 'old-b'], new Set(['old-a', 'old-b']))).toBe(CLOSING_LABEL);
     expect(tabLabel(['old-a', 'new-b'], new Set(['old-a']))).toBe('new-b');
-    expect(tabLabel(['a-really-long-session-name-here', 'another-long-session-name']).length).toBeLessThanOrEqual(40);
+    expect(tabLabel(['a-really-long-session-name-here', 'another-long-session-name']).length).toBeLessThanOrEqual(44);
     expect(tabLabel([])).toBe('');
   });
 
@@ -1614,7 +1614,11 @@ describe('shared herdr tabs', () => {
     expect(tidyPlan([tab('t1', 1), tab('t2', 2, 2)], [pane('a', 't1'), pane('b', 't2'), pane('c', 't2')], 2, new Map(), new Set())).toEqual([]);
     const four = tidyPlan([tab('t1', 1), tab('t2', 2), tab('t3', 3), tab('t4', 4)], [pane('a', 't1'), pane('b', 't2'), pane('c', 't3'), pane('d', 't4')], 4, new Map(), new Set());
     expect(four).toEqual([{ pane: 'd', tab: 't1' }, { pane: 'c', tab: 't1' }, { pane: 'b', tab: 't1' }]);
-    expect(tidyPlan(tabs, panes, 1, names, new Set())).toEqual([]);
+    // perTab 1: every extra session gets a tab of its own
+    expect(tidyPlan([tab('t1', 1, 2)], [pane('a', 't1'), pane('b', 't1')], 1, new Map(), new Set())).toEqual([{ pane: 'b', tab: '__new', group: 0 }]);
+    // going from 4 to 2: the over-full tab gives up two, into the open tab first, then a new one
+    expect(tidyPlan([tab('t1', 1, 4), tab('t2', 2)], [pane('a', 't1'), pane('b', 't1'), pane('c', 't1'), pane('d', 't1'), pane('e', 't2')], 2, new Map(), new Set()))
+      .toEqual([{ pane: 'd', tab: 't2' }, { pane: 'c', tab: '__new', group: 0 }]);
   });
 
   test('placement and tidy stay in one workspace', () => {
@@ -1625,6 +1629,8 @@ describe('shared herdr tabs', () => {
     expect(workspaceFor(tabs.map((t) => ({ ...t, focused: false })), '')).toBe('B'); // most tabs
     expect(inWorkspace(tabs, 'A').map((t: any) => t.tab_id)).toEqual(['a1']);
     expect(inWorkspace(tabs, '').length).toBe(3);
+    const { workspacesOf } = require('../server/panes');
+    expect(workspacesOf([...tabs, { ...tab('x', 9) }], '')).toEqual(['A', 'B']); // a tab with no workspace does not merge them
   });
 
   test('a tab the owner named keeps its name', () => {
@@ -1633,14 +1639,15 @@ describe('shared herdr tabs', () => {
     expect(isGeneratedTabLabel('', names)).toBe(true);
     expect(isGeneratedTabLabel('6', names)).toBe(true);
     expect(isGeneratedTabLabel('alpha-lead-v3', names)).toBe(true);
-    expect(isGeneratedTabLabel('alpha-lead + beta', names)).toBe(true);
+    expect(isGeneratedTabLabel('alpha-lead-v3 + beta-v2', names)).toBe(true);
+    expect(isGeneratedTabLabel('alpha-lead + gone-v9', names, new Set(['alpha-lead + gone-v9']))).toBe(true); // one ShiftBoss wrote, after a session left
     expect(isGeneratedTabLabel('old (closing)', names)).toBe(true);
     expect(isGeneratedTabLabel('release work', names)).toBe(false);
     expect(isGeneratedTabLabel('alpha-lead + release', names)).toBe(false);
     expect(isGeneratedTabLabel('old (closing) 2', names)).toBe(true); // herdr's suffix for a repeated label
     const four = ['first-long-session-v3', 'second-long-session-v2', 'third-long-session-v1', 'fourth-long-session-v1'];
     const l4 = tabLabel(four);
-    expect(l4.length).toBeLessThanOrEqual(42);
+    expect(l4.length).toBeLessThanOrEqual(46);
     expect(isGeneratedTabLabel(l4, four)).toBe(true); // ShiftBoss can always rename its own label
   });
 });
@@ -1686,5 +1693,44 @@ describe('the Floor', () => {
     expect(again.layoutKey).toBe(m.layoutKey);
     const moved = floorModel({ ...base, sessions: many.map((s, i) => (i === 0 ? { ...s, status: 'idle', lastActivity: null } : s)) }, now);
     expect(moved.layoutKey).not.toBe(m.layoutKey);
+  });
+});
+
+describe('replacing worn-out sessions', () => {
+  const { wornOut } = require('../server/fleet');
+  const t = { replace: 85, cacheWarnM: 500, cacheReplaceM: 1000 };
+  test('lifetime cache is the trigger, context the backstop', () => {
+    expect(wornOut({ contextPct: 20, cache: { read: 1.2e9 } }, t, false)).toBe('cache 1.2B read (line 1B)');
+    expect(wornOut({ contextPct: 20, cache: { read: 9e8 } }, t, false)).toBeNull();
+    expect(wornOut({ contextPct: 90, cache: { read: 1e8 } }, t, false)).toBe('context 90% (line 85%)');
+  });
+  test('the lead goes earlier: at the cache warning line or 40% context', () => {
+    expect(wornOut({ contextPct: 20, cache: { read: 6e8 } }, t, true)).toBe('cache 600M read (line 500M)');
+    expect(wornOut({ contextPct: 45, cache: { read: 1e8 } }, t, true)).toBe('context 45% (line 40%)');
+    expect(wornOut({ contextPct: 30, cache: { read: 1e8 } }, t, true)).toBeNull();
+  });
+});
+
+describe('picking a worn-out session to replace', () => {
+  const { pickWornOut } = require('../server/fleet');
+  const t = { replace: 85, cacheWarnM: 500, cacheReplaceM: 1000, leadReplace: 40 };
+  const s = (name: string, read: number, status = 'idle', contextPct = 10) => ({ name, status, contextPct, cache: { read } });
+  const base = { lead: null, thresholds: t, replacements: [], tried: new Map(), nowMs: 1e9, holdsJob: () => false };
+  test('the most worn idle session goes first; working ones wait', () => {
+    expect(pickWornOut([s('a', 1.1e9), s('b', 2e9), s('c', 3e9, 'working')], base)?.s.name).toBe('b');
+  });
+  test('a replaced session that has not closed is never picked again', () => {
+    const replacements = [{ oldName: 'b', newName: 'b-v2', state: 'done' }];
+    expect(pickWornOut([s('a', 1.1e9), s('b', 2e9)], { ...base, replacements })?.s.name).toBe('a');
+    expect(pickWornOut([s('b', 2e9)], { ...base, replacements: [{ oldName: 'b', newName: 'b-v2', state: 'failed' }] })?.s.name).toBe('b');
+  });
+  test('a successor still taking over, a recent try and a scheduled job all skip', () => {
+    expect(pickWornOut([s('b-v2', 2e9)], { ...base, replacements: [{ oldName: 'b', newName: 'b-v2', state: 'started' }] })).toBeNull();
+    expect(pickWornOut([s('a', 2e9)], { ...base, tried: new Map([['a', 1e9 - 60e3]]) })).toBeNull();
+    expect(pickWornOut([s('a', 2e9)], { ...base, holdsJob: () => true })).toBeNull();
+  });
+  test('the lead goes at its own context line', () => {
+    expect(pickWornOut([s('lead', 1e8, 'idle', 45)], { ...base, lead: 'lead' })?.why).toBe('context 45% (line 40%)');
+    expect(pickWornOut([s('lead', 1e8, 'idle', 45)], base)).toBeNull();
   });
 });

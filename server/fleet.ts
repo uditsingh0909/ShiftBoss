@@ -13,6 +13,43 @@ export const SPAWN_MANY_CAP = 20;
 /** A handoff not written within this long after the request is shown as stalled. */
 export const HANDOFF_TIMEOUT_MS = 20 * 60e3;
 
+/**
+ * Whether a session is worn out enough to replace by itself. Lifetime cache read is the real wear (it never drops
+ * after a compact); context is the backstop. The lead is replaced earlier, at the cache warning line or 40 %
+ * context, because its frequent check-ins pile up cache fastest. Returns why, or null.
+ */
+export function wornOut(s: { contextPct: number; cache?: { read: number } | null }, t: { replace: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number }, isLead: boolean): string | null {
+  const readM = (s.cache?.read ?? 0) / 1e6;
+  const cacheLine = isLead ? (t.cacheWarnM ?? 500) : (t.cacheReplaceM ?? 1000);
+  const ctxLine = isLead ? Math.min(t.leadReplace ?? 40, t.replace) : t.replace;
+  if (readM >= cacheLine) return `cache ${readM >= 1000 ? (readM / 1000).toFixed(1) + 'B' : Math.round(readM) + 'M'} read (line ${cacheLine >= 1000 ? cacheLine / 1000 + 'B' : cacheLine + 'M'})`;
+  if (s.contextPct >= ctxLine) return `context ${Math.round(s.contextPct)}% (line ${ctxLine}%)`;
+  return null;
+}
+
+/**
+ * Which session to replace by itself now, if any: worn out, idle or done, not already replaced (a replaced session
+ * that has not closed yet is never picked again), not a successor still taking over, not tried in the last 30
+ * minutes, holding no scheduled job. The most cache read goes first.
+ */
+export function pickWornOut<S extends { name: string; status: string; contextPct: number; cache?: { read: number } | null }>(
+  sessions: S[],
+  opts: { lead: string | null; thresholds: { replace: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number }; replacements: { oldName: string; newName: string; state: string }[]; tried: Map<string, number>; nowMs: number; holdsJob: (s: S) => boolean },
+): { s: S; why: string } | null {
+  const over = new Set(['failed', 'cancelled']);
+  const replaced = new Set(opts.replacements.filter((r) => !over.has(r.state)).map((r) => r.oldName));
+  const arriving = new Set(opts.replacements.filter((r) => !over.has(r.state) && r.state !== 'done').map((r) => r.newName));
+  const c = sessions
+    .filter((s) => s.status === 'idle' || s.status === 'done')
+    .filter((s) => !replaced.has(s.name) && !arriving.has(s.name))
+    .filter((s) => opts.nowMs - (opts.tried.get(s.name) ?? 0) > 30 * 60e3)
+    .map((s) => ({ s, why: wornOut(s, opts.thresholds, s.name === opts.lead) }))
+    .filter((x): x is { s: S; why: string } => !!x.why)
+    .filter(({ s }) => !opts.holdsJob(s))
+    .sort((a, b) => (b.s.cache?.read ?? 0) - (a.s.cache?.read ?? 0));
+  return c[0] ?? null;
+}
+
 export interface SpawnSpec { name: string; cwd: string; model: string | null; prompt: string | null; /** Claude session id to continue (claude --resume) */ resume?: string | null; /** The task this session was started for: its first prompt is the brief */ taskId?: string | null }
 
 /**

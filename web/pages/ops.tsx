@@ -256,6 +256,8 @@ export function SettingsPage({ section }: { section?: string }) {
 
         <SettingsSection id="automation" title="Automation" text="What ShiftBoss may do without asking you.">
           <div style={{ gridColumn: '1 / -1', gap: 22 }} className="col">
+            <Switch label="Replace worn-out sessions by themselves" on={st.autoReplace !== false} onChange={(v) => setSt({ ...st, autoReplace: v })}
+              hint="When a session's lifetime cache read passes the replace line (context is the backstop), it writes a handoff and a fresh -vN takes over. Never while it works, waits on you or holds a scheduled job. The lead goes earlier." />
             <Switch label="Send queued tasks by itself when a session has room" on={st.switches.autoDispatch} onChange={sw('autoDispatch')}
               hint="Off: queued tasks wait for you to press Send on the card."
               warn="On: ShiftBoss prompts sessions without asking you first." />
@@ -266,8 +268,8 @@ export function SettingsPage({ section }: { section?: string }) {
           </Field>
           <Field id="per-tab" label="Sessions per herdr tab" hint="New sessions join the newest tab with room as split panes; 4 make a 2x2. Each tab is named after its sessions. Tidy regroups the running ones without restarting them.">
             <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-              <Seg label="Sessions per herdr tab" value={String(st.sessionsPerTab ?? 2) as '1' | '2' | '4'} options={['1', '2', '4'] as const}
-                onChange={(v) => setSt({ ...st, sessionsPerTab: Number(v) as 1 | 2 | 4 })} />
+              <Seg label="Sessions per herdr tab" value={String(st.sessionsPerTab ?? 2) as '1' | '2' | '3' | '4'} options={['1', '2', '3', '4'] as const}
+                onChange={(v) => setSt({ ...st, sessionsPerTab: Number(v) as 1 | 2 | 3 | 4 })} />
               <button type="button" className="pill sm" onClick={() => void tidy(st.sessionsPerTab ?? 2)}>Tidy into tabs</button>
             </div>
           </Field>
@@ -292,6 +294,7 @@ export function SettingsPage({ section }: { section?: string }) {
           <Range id="th-replace" label="Ask to replace the session at" value={T.replace} min={70} max={95} unit="%" onChange={th('replace')} />
           <Range id="th-cache-warn" label="Warn when its cache read reaches" value={T.cacheWarnM ?? 500} min={100} max={5000} unit="M" onChange={th('cacheWarnM')} />
           <Range id="th-cache-replace" label="Ask to replace it at a cache read of" value={T.cacheReplaceM ?? 1000} min={200} max={10000} unit="M" onChange={th('cacheReplaceM')} />
+          <Range id="th-lead-replace" label="Replace the lead earlier, at context" value={T.leadReplace ?? 40} min={20} max={95} unit="%" onChange={th('leadReplace')} />
           <Range id="th-stuck" label="Stuck after no progress for" value={T.stuckMin} min={5} max={60} unit=" min" onChange={th('stuckMin')} />
           <Range id="th-loop" label="Same command this many times is a loop" value={T.loopRepeats} min={2} max={6} onChange={th('loopRepeats')} />
           <Range id="th-stale" label="Handoff is stale after" value={T.staleMin} min={10} max={120} unit=" min" onChange={th('staleMin')} />
