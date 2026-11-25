@@ -11,6 +11,9 @@ that on one page, live, and keeps the work list so sessions can report into it.
 It runs on your machine, listens on `127.0.0.1` only, and never answers a permission prompt or posts
 anything on your behalf.
 
+Want to answer and steer your sessions from your phone or the web? [HeyJason](https://heyjason.dev) is
+ShiftBoss plus remote control; `heyjason migrate` brings your ShiftBoss data over, and back again if you leave.
+
 - [What it does](#what-it-does)
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
