@@ -1,0 +1,20 @@
+{
+  "display_information": {
+    "name": "ShiftBoss",
+    "description": "Alerts from your local ShiftBoss control room: what needs you, what went wrong, what shipped.",
+    "background_color": "#050505"
+  },
+  "features": {
+    "bot_user": { "display_name": "ShiftBoss", "always_online": true }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["chat:write", "im:write", "users:read", "users:read.email", "channels:read", "groups:read"]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

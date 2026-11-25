@@ -593,7 +593,38 @@ opened notifies, and nothing is shown for the page you are already looking at. C
 page. The tab title counts what waits on you, e.g. "(2) ShiftBoss".
 
 These are plain browser notifications: they need ShiftBoss open in a tab (it can be in the background).
-There is no service worker and no push server, so a closed browser gets nothing.
+There is no service worker and no push server, so a closed browser gets nothing. For alerts away from the
+computer, use the Slack bot below.
+
+### Slack bot (optional, recommended if you use Slack)
+
+A ShiftBoss bot can DM you and post to a channel. It posts **only as itself**, only to the DM and channel you
+set, and only ShiftBoss's own alerts: never as you, never to anyone else, and never a session's transcript or output
+(a message is ShiftBoss's summary, such as a question's title, and a link back to the page). ShiftBoss only calls out to Slack, so it stays
+local. It is off until you set it up; skip it if your team does not use Slack.
+
+Setup, about three minutes (Get started step 8, or **Settings → Slack**):
+
+1. api.slack.com/apps → Create New App → **From a manifest** → paste [`slack/manifest.json`](slack/manifest.json)
+   (Settings → Slack has a Copy button). It asks for `chat:write`, `im:write`, `users:read`, `users:read.email`,
+   `channels:read` and `groups:read`.
+2. **Install to Workspace**. Some workspaces need an admin to approve new apps; Slack sends them the request.
+3. Copy the **Bot User OAuth Token** (`xoxb-…`) from OAuth & Permissions and paste it in Settings → Slack. It is
+   kept in ShiftBoss's database on this computer (`SHIFTBOSS_SLACK_TOKEN` overrides it) and never appears in the
+   pages, the snapshot or to Claude sessions.
+4. **Send to my DM**: find yourself by your Slack email. **Send to a channel** (e.g. `#shiftboss-alerts`): pick it,
+   then `/invite @ShiftBoss` there. **Send a test** for each.
+
+Then tick which alerts go where; the kinds are the same as browser notifications. By default the DM gets what
+needs you and what went wrong (approvals, permission prompts, overdue promises, monitor alerts, stuck or troubled
+sessions, overlaps, replacements, usage limits, herdr or the intake stopping), and the channel gets monitor alerts
+and checks and releases. Follow-ups reply in the same thread (the next monitor check, "Cleared" when a need is
+answered or a session recovers). **Quiet hours** hold the DM and send one digest when they end. A burst of more
+than 15 at once becomes one message. What was already there when ShiftBoss started does not post.
+
+From the terminal: `shiftboss bot` (status), `bot connect <token> --as-owner` (type it yourself), `bot dm <email>`,
+`bot channel <#name>`, `bot send dm|channel <kind> on|off`, `bot test dm|channel`. Claude can manage everything but
+the token with the `slack_bot` MCP tool.
 
 ## MCP tools and CLI reference
 

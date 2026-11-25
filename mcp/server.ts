@@ -414,6 +414,36 @@ server.registerTool('session_lane', {
   inputSchema: { session: z.string().max(100), lane: z.string().max(300).optional(), slots: z.number().int().min(0).max(6).optional() },
 }, wrap(async ({ session, lane, slots }) => { await call('POST', `/api/sessions/${encodeURIComponent(session)}/meta`, { lane, slots }); return `${session} saved`; }));
 
+server.registerTool('slack_bot', {
+  title: 'The ShiftBoss Slack bot',
+  description: 'The optional bot that sends ShiftBoss alerts to your Slack DM and a channel. action status (default): connected?, where it posts, which alerts. test: send a test to dm or channel. set (owner decision): turn dm/channel on or off, pick the channel by name, find the owner by Slack email, and switch alert kinds per place (kinds as in notifications: needs, blocked, stuck, trouble, overlap, promiseDue, monitor, monitorReport, releases, tasks, finished, replaced, actions, limits, system, updated). Connecting the token is not here: the owner pastes it in Settings → Slack.',
+  inputSchema: {
+    action: z.enum(['status', 'test', 'set']).optional(), dest: z.enum(['dm', 'channel']).optional(),
+    dm_on: z.boolean().optional(), dm_email: z.string().email().optional(), channel_on: z.boolean().optional(), channel_name: z.string().max(100).optional(),
+    kinds: z.record(z.string(), z.boolean()).optional().describe('Alert kinds to switch for `dest`, e.g. {"monitorReport": true}'),
+    owner_asked: OWNER_ASKED, by: ME,
+  },
+}, wrap(async ({ action = 'status', dest, dm_on, dm_email, channel_on, channel_name, kinds, by }) => {
+  if (action === 'test') { await call('POST', '/api/slack/test', { dest: dest ?? 'dm' }); return 'test sent to the ' + (dest ?? 'dm'); }
+  if (action === 'set') {
+    const slack: any = {};
+    if (dm_email) { const u = await call('POST', '/api/slack/me', { email: dm_email }); slack.dm = { userId: u.id, label: u.label, on: true }; }
+    if (dm_on !== undefined) slack.dm = { ...slack.dm, on: dm_on };
+    if (channel_name) {
+      const name = channel_name.replace(/^#/, '');
+      const c = (await call('GET', '/api/slack/channels')).find((x: any) => x.name === name);
+      if (!c) return `no channel #${name} the bot can see (for a private one, invite the bot first)`;
+      slack.channel = { id: c.id, name: c.name, on: true };
+    }
+    if (channel_on !== undefined) slack.channel = { ...slack.channel, on: channel_on };
+    if (kinds) slack.kinds = { [dest ?? 'dm']: kinds };
+    await call('PUT', '/api/settings', { slack }, { by });
+    return 'slack bot settings saved';
+  }
+  const r = await call('GET', '/api/slack');
+  return JSON.stringify(r, null, 2);
+}));
+
 server.registerTool('replacement_cancel', {
   title: 'Cancel a replacement',
   description: 'Stops a session replacement that has not finished. With dismiss: true, removes a finished one (done, failed or cancelled) from the Replacements list instead.',

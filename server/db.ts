@@ -5,7 +5,7 @@ import { checksLeft, effectiveState, nextDueAfter } from './monitors';
 import type { ActionItem, Direction, Dismissal, Monitor, MonitorCheck, MonitorLinks, MonitorNote, MonitorVerdict, Onboarding, Replacement, ReplacementState,
   AuditEntry, Decision, IntakeItem, IntakeState, Need, PromiseItem, Settings, SlackMsg, Stage, Task, TaskEvent,
 } from '../shared/types';
-import { DEFAULT_NOTIFY } from '../shared/types';
+import { DEFAULT_NOTIFY, DEFAULT_SLACK } from '../shared/types';
 
 export const DEFAULT_SETTINGS: Settings = {
   thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3 },
@@ -130,7 +130,10 @@ export class Store {
     `);
     this.db.exec(`CREATE TABLE IF NOT EXISTS monitor_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
         at TEXT NOT NULL, by_who TEXT NOT NULL, text TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS dismissals (key TEXT PRIMARY KEY, at TEXT NOT NULL, what TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', by_who TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS dismissals (key TEXT PRIMARY KEY, at TEXT NOT NULL, what TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', by_who TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS secrets (key TEXT PRIMARY KEY, value TEXT NOT NULL, at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS slack_threads (dest TEXT NOT NULL, thread TEXT NOT NULL, channel TEXT NOT NULL, ts TEXT NOT NULL, title TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY (dest, thread));
+      CREATE TABLE IF NOT EXISTS slack_held (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, route TEXT NOT NULL, at TEXT NOT NULL);`);
     const rcols = this.db.query('PRAGMA table_info(replacements)').all() as { name: string }[];
     if (!rcols.some((c) => c.name === 'dismissed_at')) this.db.exec('ALTER TABLE replacements ADD COLUMN dismissed_at TEXT');
     if (!rcols.some((c) => c.name === 'closed_at')) {
@@ -537,7 +540,8 @@ export class Store {
     if (!r) return DEFAULT_SETTINGS;
     const s = JSON.parse(r.value);
     return { ...DEFAULT_SETTINGS, ...s, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...s.thresholds }, switches: { ...DEFAULT_SETTINGS.switches, ...s.switches }, budgets: { ...DEFAULT_SETTINGS.budgets, ...s.budgets },
-      notify: { ...DEFAULT_NOTIFY, ...s.notify } };
+      notify: { ...DEFAULT_NOTIFY, ...s.notify },
+      slack: { ...DEFAULT_SLACK, ...s.slack, kinds: { dm: { ...DEFAULT_SLACK.kinds.dm, ...s.slack?.kinds?.dm }, channel: { ...DEFAULT_SLACK.kinds.channel, ...s.slack?.kinds?.channel } } } };
   }
   // ---------- held-back actions (gate.ts) ----------
   private rowAction = (r: any): ActionItem => ({ id: r.id, at: r.at, kind: r.kind, summary: r.summary, detail: r.detail, actor: r.actor, by: r.by_who,
@@ -560,6 +564,23 @@ export class Store {
     return this.db.query(`UPDATE actions SET state = ?, decided_at = COALESCE(decided_at, ?), result = COALESCE(?, result) WHERE id = ? AND state IN (${marks})`)
       .run(to, now(), result, id, ...from).changes > 0;
   }
+  // ---------- secrets (the Slack bot token): never in settings or the snapshot ----------
+  getSecret(key: string): string | null { return (this.db.query('SELECT value FROM secrets WHERE key = ?').get(key) as { value: string } | null)?.value ?? null; }
+  setSecret(key: string, value: string | null) {
+    if (value === null) this.db.query('DELETE FROM secrets WHERE key = ?').run(key);
+    else this.db.query('INSERT OR REPLACE INTO secrets (key, value, at) VALUES (?, ?, ?)').run(key, value, now());
+  }
+  // ---------- Slack threads and the quiet-hours digest ----------
+  slackThread(dest: string, thread: string): { channel: string; ts: string; title: string } | null {
+    return (this.db.query('SELECT channel, ts, title FROM slack_threads WHERE dest = ? AND thread = ?').get(dest, thread) as any) ?? null;
+  }
+  setSlackThread(dest: string, thread: string, channel: string, ts: string, title: string) {
+    this.db.query('INSERT OR REPLACE INTO slack_threads (dest, thread, channel, ts, title, at) VALUES (?, ?, ?, ?, ?, ?)').run(dest, thread, channel, ts, title, now());
+    this.db.query('DELETE FROM slack_threads WHERE at < ?').run(new Date(Date.now() - 7 * 864e5).toISOString());
+  }
+  holdSlack(title: string, route: string) { this.db.query('INSERT INTO slack_held (title, route, at) VALUES (?, ?, ?)').run(title, route, now()); }
+  heldSlack(): { id: number; title: string; route: string; at: string }[] { return this.db.query('SELECT * FROM slack_held ORDER BY id').all() as any; }
+  clearHeldSlack(upTo: number) { this.db.query('DELETE FROM slack_held WHERE id <= ?').run(upTo); }
   /** The owner said no to this exact action before: do not ask again. */
   wasRejected(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state = 'rejected'").get(key); }
   hasOpenAction(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state IN ('waiting', 'dry')").get(key); }

@@ -93,7 +93,7 @@ export function useNotifications(snap: Snapshot | null) {
 
 // ---------------------------------------------------------------- Settings
 
-const GROUPS: { name: string; kinds: [keyof NotifySettings, string, string][] }[] = [
+export const GROUPS: { name: string; kinds: [keyof NotifySettings, string, string][] }[] = [
   { name: 'You are needed', kinds: [
     ['needs', 'A new Needs you item', 'A session asks you to decide something, an action waits for approval, or sessions look confused in a thread.'],
     ['blocked', 'A session needs a permission answer', 'It is blocked in herdr until you answer there.'],

@@ -3,7 +3,8 @@
 import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../shared/types';
 import { monitorSessionPrompt } from './monitors';
 import type { Engine } from './engine';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildReport, type Audience } from './report';
 import { setupInfo } from './setup';
 import { safeUrl } from './guard';
@@ -327,6 +328,40 @@ export function makeApi(engine: Engine) {
       }
       r = m(/^\/api\/replacements\/(\d+)\/dismiss$/);
       if (r && write) { store.dismissReplacement(Number(r[1])); return done(json({ ok: true })); }
+      // ----- the optional Slack bot (server/slack.ts); the token never leaves this machine's database -----
+      if (p === '/api/slack' && req.method === 'GET') return json({ status: engine.slack.status(), settings: store.settings().slack });
+      if (p === '/api/slack/manifest' && req.method === 'GET') return new Response(readFileSync(join(import.meta.dir, '..', 'slack', 'manifest.json'), 'utf8'), { headers: { 'content-type': 'application/json' } });
+      if (p === '/api/slack/connect' && write) {
+        if (actorOf(req) !== 'owner') return ownerOnly('Connecting the Slack bot');
+        const b = await body<any>(req);
+        const who = await engine.slack.connect(str(b.token, 'token', 300));
+        engine.pushFeed('you', `connected the ShiftBoss bot to Slack (${who.team})`);
+        return done(json({ ok: true, ...who }));
+      }
+      if (p === '/api/slack/disconnect' && write) {
+        if (actorOf(req) !== 'owner') return ownerOnly('Disconnecting the Slack bot');
+        engine.slack.disconnect();
+        engine.pushFeed('you', 'disconnected the Slack bot');
+        return done(json({ ok: true }));
+      }
+      if (p === '/api/slack/test' && write) {
+        const b = await body<any>(req);
+        if (b.dest !== 'dm' && b.dest !== 'channel') throw new Error('dest must be dm or channel');
+        await engine.slack.test(b.dest);
+        return done(json({ ok: true }));
+      }
+      if (p === '/api/slack/channels' && req.method === 'GET') {
+        const api = engine.slack.api();
+        if (!api) return fail('Connect the bot first', 409);
+        return json(await api.channels());
+      }
+      if (p === '/api/slack/me' && write) {
+        const api = engine.slack.api();
+        if (!api) return fail('Connect the bot first', 409);
+        const b = await body<any>(req);
+        const u = (await api.lookupByEmail(str(b.email, 'email', 200))).user;
+        return json({ id: u.id, label: u.real_name || u.name });
+      }
       // ----- Needs attention: dismiss with a note, until it changes -----
       if (p === '/api/dismiss' && write) {
         const b = await body<any>(req);

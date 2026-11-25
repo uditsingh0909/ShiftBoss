@@ -22,6 +22,7 @@ import { checksLeft, checksTotal, effectiveState, isAlerting, monitorPrompt, nex
 import { DEFAULT_NOTIFY, type Session } from '../shared/types';
 import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
 import { inRange, rangeBounds } from '../web/filters';
+import { inQuiet, SlackNotifier } from '../server/slack';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
 
 const mem = () => new Store('', ':memory:');
@@ -658,6 +659,109 @@ describe('browser notifications', () => {
     s.addNeed({ kind: 'Decision', title: 'B', answers: ['Yes'] });
     expect(tabTitle(snapOf(s))).toBe('(2) ShiftBoss');
     expect(tabTitle(null)).toBe('ShiftBoss');
+  });
+});
+
+describe('slack bot', () => {
+  const fakeSlack = (fail?: string) => {
+    const calls: { method: string; args: Record<string, string> }[] = [];
+    let n = 0;
+    const f = async (url: string, init: RequestInit) => {
+      const method = url.split('/').pop()!;
+      const args = Object.fromEntries(new URLSearchParams(String(init.body)));
+      calls.push({ method, args });
+      if (fail) return Response.json({ ok: false, error: fail });
+      if (method === 'auth.test') return Response.json({ ok: true, team: 'Acme', user: 'shiftboss', user_id: 'U1', team_id: 'T1' });
+      if (method === 'conversations.open') return Response.json({ ok: true, channel: { id: 'D42' } });
+      if (method === 'users.lookupByEmail') return Response.json({ ok: true, user: { id: 'U9', name: 'sam', real_name: 'Sam' } });
+      if (method === 'chat.postMessage') return Response.json({ ok: true, ts: '1.' + ++n, channel: args.channel });
+      return Response.json({ ok: false, error: 'unknown_method' });
+    };
+    return { f, calls };
+  };
+  const setup = async (over: Record<string, unknown> = {}, fail?: string) => {
+    const s = mem();
+    const { f, calls } = fakeSlack(fail);
+    const logs: string[] = [];
+    const n = new SlackNotifier(s, 'http://127.0.0.1:4400', (t) => logs.push(t), f as any, () => new Date(), 0);
+    await n.connect('xoxb-1234567890-abcdef');
+    s.saveSettings(mergeSettings(s.settings(), { slack: { dm: { on: true, userId: 'U9', label: 'Sam' }, channel: { on: true, id: 'C1', name: 'alerts' }, ...over } }));
+    const e = new Engine(loadConfig(), s, { prompt: async () => {} } as any);
+    const snap = (x: Record<string, unknown> = {}) => ({ ...e.snapshot(), herdrOk: true, ...x }) as any;
+    return { s, n, calls, logs, snap };
+  };
+  const posts = (calls: { method: string; args: Record<string, string> }[]) => calls.filter((c) => c.method === 'chat.postMessage').map((c) => c.args);
+  const flush = (n: SlackNotifier) => n.drain();
+
+  test('connect checks the token and keeps it out of settings', async () => {
+    const s = mem();
+    const n = new SlackNotifier(s, 'http://x', () => {}, fakeSlack().f as any);
+    await expect(n.connect('not-a-token')).rejects.toThrow('starts with xoxb-');
+    expect(await n.connect('xoxb-1234567890-abcdef')).toEqual({ team: 'Acme', bot: 'shiftboss' });
+    expect(JSON.stringify(s.settings())).not.toContain('xoxb');
+    expect(n.status()).toMatchObject({ connected: true, team: 'Acme' });
+    const bad = new SlackNotifier(mem(), 'http://x', () => {}, fakeSlack('invalid_auth').f as any);
+    await expect(bad.connect('xoxb-1234567890-abcdef')).rejects.toThrow('does not accept this token');
+  });
+
+  test('only new events post, to the places switched on for their kind, threaded, with a link and no session output', async () => {
+    const { s, n, calls, snap } = await setup();
+    n.tick(snap()); // what was there at start never posts
+    s.addNeed({ kind: 'Decision', title: 'Ship it?', answers: ['Yes'], session: 'w1' });
+    const mon = { id: 3, title: 'Texting', lastCheckAt: '2026-01-01T10:00:00Z', lastVerdict: 'ok', lastSummary: 'fine', finishedAt: null, finishReason: null, checksDone: 1, notes: [] };
+    n.tick(snap({ monitors: [mon], sessions: [session({ name: 'w2', status: 'done', lastActivity: '2026-01-01T10:00:00Z', lines: [{ at: '', kind: 'say', text: 'SECRET OUTPUT' }] })] }));
+    await flush(n);
+    const p = posts(calls);
+    expect(p.find((x) => x.channel === 'D42' && x.text.includes('Needs you: Ship it?'))!.text).toContain('<http://127.0.0.1:4400/needs|Open in ShiftBoss>');
+    expect(p.some((x) => x.channel === 'C1' && x.text.includes('Ship it?'))).toBe(false); // needs: DM only by default
+    expect(p.find((x) => x.channel === 'C1' && x.text.includes('Texting: ok'))).toBeTruthy(); // monitor checks: channel
+    expect(p.some((x) => x.text.includes('SECRET OUTPUT'))).toBe(false); // finished is off by default, and never carries output
+    // The next check of the same monitor replies in its thread.
+    const first = p.find((x) => x.text.includes('Texting: ok'))!;
+    n.tick(snap({ monitors: [{ ...mon, lastCheckAt: '2026-01-01T16:00:00Z', lastVerdict: 'warn', lastSummary: 'slow' }] }));
+    await flush(n);
+    const reply = posts(calls).find((x) => x.text.includes('Texting: warn'))!;
+    expect(reply.thread_ts).toBe(s.slackThread('channel', 'monitor:3')!.ts);
+    expect(first.thread_ts).toBeUndefined();
+  });
+
+  test('a need answered says Cleared in its thread; quiet hours hold the DM and send one digest', async () => {
+    const { s, n, calls, snap } = await setup({ quiet: { on: true, from: '00:00', to: '23:59' } });
+    n.tick(snap());
+    const need = s.addNeed({ kind: 'Decision', title: 'Q1', answers: ['Yes'] });
+    n.tick(snap());
+    await flush(n);
+    expect(posts(calls).some((x) => x.text.includes('Q1'))).toBe(false); // held
+    expect(s.heldSlack().map((h) => h.title)).toEqual(['Needs you: Q1']);
+    s.saveSettings(mergeSettings(s.settings(), { slack: { quiet: { on: false } } }));
+    s.answerNeed(need.id, 'Yes');
+    n.tick(snap());
+    await flush(n);
+    expect(posts(calls).find((x) => x.text.startsWith('*While you were away: 1 thing*'))!.text).toContain('Needs you: Q1');
+    expect(s.heldSlack()).toEqual([]);
+  });
+
+  test('a burst becomes one message; a revoked token stops sending and says why once', async () => {
+    const { s, n, calls, snap, logs } = await setup();
+    n.tick(snap());
+    for (let i = 0; i < 20; i++) s.addNeed({ kind: 'Decision', title: 'Q' + i, answers: ['Yes'] });
+    n.tick(snap());
+    await flush(n);
+    expect(posts(calls).filter((x) => x.channel === 'D42').map((x) => x.text.split('\n')[0])).toEqual(['*20 things happened at once in ShiftBoss*']);
+    (n as any).f = fakeSlack('token_revoked').f;
+    s.addNeed({ kind: 'Decision', title: 'After', answers: ['Yes'] });
+    n.tick(snap());
+    await flush(n);
+    expect(n.status().error).toContain('revoked');
+    expect(logs.filter((l) => l.includes('revoked')).length).toBe(1);
+  });
+
+  test('quiet hours cross midnight', () => {
+    const q = { on: true, from: '22:00', to: '08:00' };
+    expect(inQuiet(q, new Date(2026, 0, 1, 23, 0))).toBe(true);
+    expect(inQuiet(q, new Date(2026, 0, 1, 7, 59))).toBe(true);
+    expect(inQuiet(q, new Date(2026, 0, 1, 8, 0))).toBe(false);
+    expect(inQuiet({ ...q, on: false }, new Date(2026, 0, 1, 23, 0))).toBe(false);
   });
 });
 

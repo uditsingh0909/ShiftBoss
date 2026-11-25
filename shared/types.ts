@@ -166,7 +166,21 @@ export interface Settings {
   notify?: NotifySettings;
   /** Close a replaced session this many minutes after its successor has its first prompt. 0: never (you close it). */
   closeOldAfterMin?: number;
+  /** The ShiftBoss Slack bot: where its alerts go and which. The token is kept apart and never in the snapshot. */
+  slack?: SlackSettings;
 }
+
+/** Where the ShiftBoss bot posts, and which kinds of event go to each place. */
+export interface SlackSettings {
+  dm: { on: boolean; userId: string | null; label: string | null };
+  channel: { on: boolean; id: string | null; name: string | null };
+  kinds: { dm: NotifySettings; channel: NotifySettings };
+  /** Quiet hours for the DM (local time, HH:MM): held, then one digest when they end. */
+  quiet: { on: boolean; from: string; to: string };
+}
+export type SlackDest = 'dm' | 'channel';
+/** The bot's state, for the screens. Never holds the token. */
+export interface SlackStatus { connected: boolean; team: string | null; bot: string | null; error: string | null; sentToday: number; held: number; queued: number }
 
 /** Browser notification switches, one per kind of event. */
 export interface NotifySettings {
@@ -187,6 +201,18 @@ export interface NotifySettings {
   limits: boolean; // the 5-hour or weekly usage passed 80% or 95%
   system: boolean; // herdr stopped answering, or the intake went quiet
 }
+/** Slack defaults: the DM gets what needs you and what went wrong; the channel only what the team cares about. */
+const OFF: NotifySettings = { needs: false, blocked: false, stuck: false, overlap: false, promiseDue: false, monitor: false, updated: false,
+  finished: false, trouble: false, tasks: false, releases: false, monitorReport: false, replaced: false, actions: false, limits: false, system: false };
+export const DEFAULT_SLACK: SlackSettings = {
+  dm: { on: false, userId: null, label: null },
+  channel: { on: false, id: null, name: null },
+  kinds: {
+    dm: { ...OFF, needs: true, blocked: true, stuck: true, trouble: true, overlap: true, promiseDue: true, monitor: true, replaced: true, limits: true, system: true },
+    channel: { ...OFF, monitor: true, monitorReport: true, releases: true },
+  },
+  quiet: { on: false, from: '22:00', to: '08:00' },
+};
 export const DEFAULT_NOTIFY: NotifySettings = {
   needs: true, blocked: true, stuck: true, overlap: true, promiseDue: true, monitor: true, updated: true,
   finished: true, trouble: true, tasks: true, releases: true, monitorReport: true, replaced: true, actions: true, limits: true, system: true,
@@ -342,4 +368,6 @@ export interface Snapshot {
   monitors: Monitor[];
   /** Needs attention items the owner dismissed (last 14 days). */
   dismissed: Dismissal[];
+  /** The ShiftBoss Slack bot, if set up. */
+  slack: SlackStatus;
 }

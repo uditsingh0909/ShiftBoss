@@ -32,9 +32,12 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
 | `shared/notify.ts` | Pure rules for browser notifications: which snapshot items notify, which are new, the tab title |
 | `web/notify.tsx` | Browser notifications (one leader tab, no service worker) and the Notifications settings section |
+| `server/slack.ts` | The optional Slack bot: Web API client, message text, threads, quiet-hours digest, the sender loop (`SlackNotifier`) |
+| `web/slack.tsx` | Settings → Slack: create from `slack/manifest.json`, connect the token, DM/channel, which alerts go where |
+| `web/filters.tsx` | Shared list controls: date range (max 90 days custom), filter bar, search, pager |
 | `web/source.tsx` | "Open in Slack" button, ↓/↑ direction chip, "No source link" marker and the "Add link" field |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
-| `mcp/server.ts` | MCP server (`shiftboss`), 55 tools over the HTTP API: every action in the UI, so Claude can do it too |
+| `mcp/server.ts` | MCP server (`shiftboss`), 56 tools over the HTTP API: every action in the UI, so Claude can do it too |
 | `server/monitors.ts` | Pure rules for monitors (schedule, alerting, due-check selection, prompts); the engine sends checks only through `Engine.sendMonitorCheck` |
 | `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
 | `server/update.ts` | Self-update: fetch, fast-forward only, reinstall packages if needed, build check, roll back, exit 75 for run.sh |
@@ -72,8 +75,11 @@ These are product promises. Do not weaken them without the owner asking.
   (a page on another origin cannot send it without a preflight we never allow). Do not add CORS.
 - **Never answer a permission prompt.** A blocked pane becomes a "needs you" item; answering it only
   *focuses* the herdr pane. No code path may send keys that approve a Claude Code permission prompt.
-- **Never post for the user.** Approving a Slack draft asks the owning session to post it; the daily
-  report is copied, not sent. ShiftBoss itself makes no outbound posts.
+- **Never post as the user.** Approving a Slack draft asks the owning session to post it; the daily
+  report is copied, not sent. The only thing ShiftBoss posts itself is its optional Slack bot
+  (`server/slack.ts`): as the bot, only to the DM and channel the owner set, only ShiftBoss's own alert
+  summaries (never session output or transcript text). The bot token lives in the `secrets` table, never in
+  settings, the snapshot or anything a session can read; only the owner connects it.
 - **Answers are undoable.** A decision answer waits 10 s (`UNDO_MS`) before the engine sends it; keep the
   undo and reopen paths working.
 - **Tasks only move forward automatically**, and never to "Requester told" — only a session or person

@@ -16,6 +16,7 @@ import { setupInfo } from './setup';
 import { actionKey, decide, type ActionKind, type Actor } from './gate';
 import { onboardingPrompt, ownerRules } from './onboarding';
 import { UNDO_MS } from './api';
+import { SlackNotifier } from './slack';
 
 type Listener = () => void;
 
@@ -44,8 +45,11 @@ export class Engine {
   private herdrFails = 0; // consecutive failed `herdr agent list` calls
   private herdrRetryAt = 0;
 
+  /** The optional Slack bot: posts alerts to the DM and channel the owner set up. Off until a token is connected. */
+  slack: SlackNotifier;
   constructor(public cfg: Config, public store: Store, public herdr: Herdr) {
     this.transcripts = new Transcripts(cfg.transcriptsDir);
+    this.slack = new SlackNotifier(store, `http://127.0.0.1:${cfg.port}`, (t) => this.pushFeed('slack', t));
   }
 
   onChange(fn: Listener) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -111,6 +115,7 @@ export class Engine {
       await this.runMonitors();
       await this.closeReplaced();
       this.emit();
+      try { this.slack.tick(this.snapshot()); } catch (e) { this.pushFeed('slack', 'could not check for alerts: ' + (e as Error).message.slice(0, 160)); }
     } catch (e) {
       this.pushFeed('shiftboss', 'poll failed: ' + (e as Error).message); // next tick retries
     } finally {
@@ -856,6 +861,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       actions: this.store.listActions(),
       threadChecks: this.store.openThreadChecks(),
       dismissed: this.store.listDismissed(),
+      slack: this.slack.status(),
       monitors: this.store.listMonitors(864e5),
     };
   }

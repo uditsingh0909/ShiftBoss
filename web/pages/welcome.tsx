@@ -194,6 +194,14 @@ export function Welcome() {
           <Cmd text={IMPORT_SHAPE} />
         </Step>
 
+        <Step n={8} title="Get alerts in Slack (recommended if you use Slack)" state={snap.slack?.connected && (snap.settings.slack?.dm.on || snap.settings.slack?.channel.on) ? 'ok' : 'optional'}>
+          <span className="dim" style={{ fontSize: 14 }}>
+            A ShiftBoss bot can DM you what needs you and what went wrong, and post what the team should see to a channel, so you hear about it away from this computer.
+            It takes about three minutes: create a Slack app from our manifest, install it, paste its token. Skip it if your team does not use Slack.
+          </span>
+          <div className="row" style={{ gap: 8 }}><a className="pill sm w" href={href('settings', 'slack')}>{snap.slack?.connected ? 'Slack settings' : 'Set up the bot'}<Arrow dark /></a></div>
+        </Step>
+
         <Card span={12}>
           <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
             <div className="col" style={{ gap: 4, flex: '1 1 300px' }}>

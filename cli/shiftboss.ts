@@ -62,6 +62,13 @@ Everything you can do in ShiftBoss, from the command line:
   shiftboss approvals                             actions held for approval (and the dry-run log)
   shiftboss approve <id> | --all  --as-owner     reject <id> | --all  --as-owner
   shiftboss mode [dry|ask|safe|auto] [--review | --drop] [--as-owner]   show, or change (owner)
+  shiftboss bot [status]                          the optional Slack bot: connected?, where it posts, which alerts
+  shiftboss bot manifest                          the app manifest to create the bot from
+  shiftboss bot connect <xoxb-token> --as-owner    type this yourself; the token stays in ShiftBoss's database
+  shiftboss bot dm <email>|off --as-owner         DM you (found by your Slack email)
+  shiftboss bot channel <#name>|off --as-owner    also post to a channel
+  shiftboss bot send dm|channel <kind> on|off --as-owner    which alerts go where (kinds as in notify)
+  shiftboss bot test dm|channel                   send a test message
   shiftboss settings                              show all settings as JSON
   shiftboss settings set key=value… --as-owner    e.g. thresholds.warn=70 switches.autoDispatch=true
                                                   watchedChannels=#a,#b leadSession=lead autoUpdate=false
@@ -252,6 +259,46 @@ async function main() {
       if (sub === 'correct') { await call('POST', `/api/audit/${a1}/correct`, { note: a2 }); return console.log('marked corrected'); }
       await call('POST', '/api/audit', { where: flags.where, channel: flags.channel, text: flags.text, by: flags.by ?? who, approval: flags.approval });
       return console.log('logged');
+    }
+    case 'bot': {
+      // The optional ShiftBoss Slack bot. Connecting a token is the owner's step: type it yourself, never through a session.
+      if (!sub || sub === 'status') {
+        const r = await call('GET', '/api/slack');
+        const st = r.status, s = r.settings;
+        if (!st.connected) return console.log('Not connected. Settings → Slack walks you through it, or: shiftboss bot connect <xoxb-token> --as-owner\nManifest: shiftboss bot manifest');
+        return console.log([`Connected${st.team ? ` as ${st.bot} in ${st.team}` : ''}${st.error ? `  (error: ${st.error})` : ''}`,
+          `DM: ${s.dm.on ? 'on' : 'off'}${s.dm.label ? ' → ' + s.dm.label : ''}   Channel: ${s.channel.on ? 'on' : 'off'}${s.channel.name ? ' → #' + s.channel.name : ''}`,
+          `Sent today: ${st.sentToday}  queued: ${st.queued}  held for quiet hours: ${st.held}`,
+          `DM kinds: ${Object.keys(s.kinds.dm).filter((k) => s.kinds.dm[k]).join(', ') || 'none'}`,
+          `Channel kinds: ${Object.keys(s.kinds.channel).filter((k) => s.kinds.channel[k]).join(', ') || 'none'}`].join('\n'));
+      }
+      if (sub === 'manifest') return console.log(JSON.stringify(await call('GET', '/api/slack/manifest'), null, 2));
+      if (sub === 'connect') { if (!a1) throw new Error('usage: shiftboss bot connect <xoxb-token> --as-owner'); const r = await call('POST', '/api/slack/connect', { token: a1 }); return console.log(`connected as ${r.bot} in ${r.team}`); }
+      if (sub === 'disconnect') { await call('POST', '/api/slack/disconnect', {}); return console.log('disconnected'); }
+      if (sub === 'test') { await call('POST', '/api/slack/test', { dest: a1 === 'channel' ? 'channel' : 'dm' }); return console.log('test sent'); }
+      if (sub === 'dm') {
+        if (a1 === 'off') { await call('PUT', '/api/settings', { slack: { dm: { on: false } } }); return console.log('DM off'); }
+        if (!a1?.includes('@')) throw new Error('usage: shiftboss bot dm <your slack email>|off --as-owner');
+        const u = await call('POST', '/api/slack/me', { email: a1 });
+        await call('PUT', '/api/settings', { slack: { dm: { on: true, userId: u.id, label: u.label } } });
+        return console.log(`DM on → ${u.label}`);
+      }
+      if (sub === 'channel') {
+        if (a1 === 'off') { await call('PUT', '/api/settings', { slack: { channel: { on: false } } }); return console.log('channel off'); }
+        if (!a1) throw new Error('usage: shiftboss bot channel <#name>|off --as-owner');
+        const name = a1.replace(/^#/, '');
+        const c = (await call('GET', '/api/slack/channels')).find((x: any) => x.name === name || x.id === a1);
+        if (!c) throw new Error(`No channel ${a1} the bot can see (for a private one, invite the bot first).`);
+        await call('PUT', '/api/settings', { slack: { channel: { on: true, id: c.id, name: c.name } } });
+        return console.log(`channel on → #${c.name}${c.member ? '' : '  (invite the bot there: /invite @ShiftBoss)'}`);
+      }
+      if (sub === 'send') {
+        // shiftboss bot send dm monitorReport on
+        if (!['dm', 'channel'].includes(a1 ?? '') || !a2 || !['on', 'off'].includes(pos[4] ?? '')) throw new Error('usage: shiftboss bot send dm|channel <kind> on|off --as-owner');
+        await call('PUT', '/api/settings', { slack: { kinds: { [a1!]: { [a2]: pos[4] === 'on' } } } });
+        return console.log(`${a2} → ${a1}: ${pos[4]}`);
+      }
+      throw new Error('usage: shiftboss bot [status|manifest|connect|disconnect|test|dm|channel|send]');
     }
     case 'monitor': {
       if (sub === 'note') { if (!a1 || !a2) throw new Error('usage: shiftboss monitor note <id> "<text>"'); await call('POST', `/api/monitors/${a1}/notes`, { text: a2 }); return console.log(`noted on monitor ${a1}`); }

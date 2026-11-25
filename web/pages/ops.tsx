@@ -5,6 +5,7 @@ import { IntakeControl } from '../intake-control';
 import { resetTours } from '../tour';
 import { ModePicker } from '../mode';
 import { NotificationSettings } from '../notify';
+import { SlackSettingsSection } from '../slack';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
@@ -188,7 +189,7 @@ export function SettingsPage({ section }: { section?: string }) {
   const save = () => act(async () => {
     const was = JSON.parse(base) as Record<string, unknown>;
     const now = st as unknown as Record<string, unknown>;
-    const changed = Object.fromEntries(Object.keys(now).filter((k) => !['mode', 'notify', 'delegate'].includes(k) && JSON.stringify(now[k]) !== JSON.stringify(was[k])).map((k) => [k, now[k]]));
+    const changed = Object.fromEntries(Object.keys(now).filter((k) => !['mode', 'notify', 'delegate', 'slack'].includes(k) && JSON.stringify(now[k]) !== JSON.stringify(was[k])).map((k) => [k, now[k]]));
     const next = await api<Settings>('PUT', '/api/settings', changed);
     setSt(next); setBase(JSON.stringify(next));
   }, 'Saved');
@@ -197,7 +198,7 @@ export function SettingsPage({ section }: { section?: string }) {
   // Most-used first. The menu jumps to a section without leaving the page, so unsaved edits survive;
   // #/settings/<id> opens the page at that section.
   const SECTIONS = [
-    ['mode', 'Mode'], ['instructions', 'Your way of working'], ['notifications', 'Notifications'], ['automation', 'Automation'], ['intake', 'Intake'], ['lanes', 'Lanes and slots'], ['warnings', 'Warnings'],
+    ['mode', 'Mode'], ['instructions', 'Your way of working'], ['notifications', 'Notifications'], ['slack', 'Slack'], ['automation', 'Automation'], ['intake', 'Intake'], ['lanes', 'Lanes and slots'], ['warnings', 'Warnings'],
     ['general', 'General'], ['updates', 'Updates'], ['budgets', 'Usage budgets'], ['help', 'Help'],
   ] as const;
   const jump = (id: string) => document.getElementById('set-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -241,6 +242,7 @@ export function SettingsPage({ section }: { section?: string }) {
         </SettingsSection>
 
         <NotificationSettings Section={SettingsSection} Switch={Switch} />
+        <SlackSettingsSection Section={SettingsSection} Switch={Switch} />
 
         <SettingsSection id="automation" title="Automation" text="What ShiftBoss may do without asking you.">
           <div style={{ gridColumn: '1 / -1', gap: 22 }} className="col">
