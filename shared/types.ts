@@ -32,6 +32,28 @@ export interface Session {
   prUrls: string[];
   usesShiftbossTools: boolean; // called a shiftboss MCP tool in the last 3 hours
   exactUsage: boolean; // the status line tap is reporting for this session
+  /** Cache over the session's whole life: unlike context, it never drops after a compact. The real wear. */
+  cache: SessionCache;
+}
+
+export interface SessionCache {
+  read: number; // cache tokens read, all turns since the session started
+  written: number; // cache tokens written
+  compactions: number;
+  lastCompactAt: string | null;
+  /** From the status line tap, when on: is the prompt cache warm now, until when, and how often it hits. */
+  warm: boolean | null;
+  expiresAt: string | null;
+  hitRatio: number | null;
+}
+/** "1.4B", "640M", "12K". */
+export const fmtCache = (n: number) => (n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? Math.round(n / 1e6) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n));
+/** Where a session's wear stands: context or lifetime cache, whichever is further along. */
+export function wear(s: { contextPct: number; cache?: { read: number } }, t: { warn: number; replace: number; cacheWarnM?: number; cacheReplaceM?: number }): 'ok' | 'warn' | 'replace' {
+  const read = (s.cache?.read ?? 0) / 1e6;
+  if (s.contextPct >= t.replace || read >= (t.cacheReplaceM ?? 1000)) return 'replace';
+  if (s.contextPct >= t.warn || read >= (t.cacheWarnM ?? 500)) return 'warn';
+  return 'ok';
 }
 
 export const STAGES = ['Inbox', 'Queued', 'In progress', 'PR open', 'On dev', 'Live', 'Requester told'] as const;
@@ -143,7 +165,8 @@ export interface IntakeState {
 }
 
 export interface Settings {
-  thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number };
+  /** cacheWarnM / cacheReplaceM: lifetime cache read, in millions of tokens. */
+  thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number; cacheWarnM?: number; cacheReplaceM?: number };
   switches: { autoDispatch: boolean; quietHours: boolean };
   budgets: { fiveHourTokens: number; weeklyTokens: number };
   herdrWorkspace: string;
@@ -223,7 +246,7 @@ export const DEFAULT_NOTIFY: NotifySettings = {
 export function taskSessionName(t: { id: string; title: string }, taken: Iterable<string>): string {
   const used = new Set(taken);
   const words = t.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((w) => w && !['the', 'a', 'an', 'to', 'for', 'of', 'and', 'on', 'in'].includes(w));
-  let base = (t.id.toLowerCase().replace('-', '') + '-' + words.join('-')).slice(0, 34).replace(/-+$/, '');
+  let base = (t.id.toLowerCase().replace('-', '') + '-' + words.join('-')).slice(0, 29).replace(/-+$/, ''); // room for -2…-99 within herdr's 32
   if (base.length < 2) base = 'task-' + base;
   let name = base, i = 2;
   while (used.has(name)) name = `${base}-${i++}`;

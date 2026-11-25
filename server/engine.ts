@@ -17,6 +17,7 @@ import { actionKey, decide, type ActionKind, type Actor } from './gate';
 import { onboardingPrompt, ownerRules } from './onboarding';
 import { UNDO_MS } from './api';
 import { SlackNotifier } from './slack';
+import { CacheTracker } from './cache';
 
 type Listener = () => void;
 
@@ -37,6 +38,8 @@ export class Engine {
   private releases: Snapshot['releases'] = { envs: [], merged: [], freeze: null };
   private listeners = new Set<Listener>();
   private transcripts: Transcripts;
+  /** Lifetime cache per transcript (server/cache.ts). */
+  private cacheTracker = new CacheTracker();
   private timer: ReturnType<typeof setInterval> | null = null;
   private relTimer: ReturnType<typeof setInterval> | null = null;
   private ghTimer: ReturnType<typeof setInterval> | null = null;
@@ -151,6 +154,9 @@ export class Engine {
     if (prev && prev !== status && status === 'done') this.pushFeed(name, 'finished its turn');
     this.lastStatus.set(name, status);
     const loops = loopKeys(st?.tools ?? [], settings.thresholds.loopRepeats);
+    const path = st?.path ?? null;
+    const ct = path ? this.cacheTracker.update(path) : null;
+    const live = tap?.cache && Date.now() - tap.at < 15 * 60e3 ? tap.cache : null;
     return {
       name, paneId: a.pane_id, sessionId: sid, status, cwd: a.cwd, model: info?.model ?? model,
       contextTokens: ctxTokens, contextWindow: window, contextPct,
@@ -163,6 +169,8 @@ export class Engine {
       lane: meta.lane, slots: meta.slots, handoffPath, handoffAgeMin, prUrls: st?.prUrls ?? [],
       usesShiftbossTools: (st?.tools ?? []).some((t) => t.name.startsWith('mcp__shiftboss__')),
       exactUsage: !!tap && Date.now() - tap.at < 15 * 60e3,
+      cache: { read: ct?.read ?? 0, written: ct?.written ?? 0, compactions: ct?.compactions ?? 0, lastCompactAt: ct?.lastCompactAt ?? null,
+        warm: live?.warm ?? null, expiresAt: live?.expiresAt ? new Date(live.expiresAt * 1000).toISOString() : null, hitRatio: live?.hitRatio ?? null },
     };
   }
 

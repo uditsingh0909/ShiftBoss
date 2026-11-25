@@ -24,7 +24,7 @@ export function NewSessionForm({ task, onDone, onStart, compact }: {
   const [cwd, setCwd] = useState(prevCwd ?? lead?.cwd ?? folders[0] ?? '');
   const [model, setModel] = useState('');
   // For a task not created yet the name may stay empty: ShiftBoss names it after the task.
-  const ok = ((!name && !!onStart) || (/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/.test(name) && !snap.sessions.some((s) => s.name === name))) && !!cwd.trim();
+  const ok = ((!name && !!onStart) || (/^[a-z][a-z0-9_-]{1,31}$/.test(name) && !snap.sessions.some((s) => s.name === name))) && !!cwd.trim();
   const start = () => act(async () => {
     if (onStart) await onStart({ name, cwd: cwd.trim(), model });
     else await api('POST', `/api/tasks/${task!.id}/new-session`, { name, cwd: cwd.trim(), model: model || undefined });
@@ -38,7 +38,7 @@ export function NewSessionForm({ task, onDone, onStart, compact }: {
       <span style={{ fontSize: 13 }}>Start a new session{task ? ` for ${task.id}` : ''}. Its first prompt is the task's brief, so it starts right away.</span>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <label htmlFor={p + '-name'} className="sr-only">Session name</label>
-        <input id={p + '-name'} className="field mono" value={name} onChange={(e) => setName(e.target.value.replace(/\s+/g, '-'))} placeholder={onStart ? 'name (empty: named after the task)' : 'session-name'} style={{ flex: '1 1 180px', minWidth: 0, padding: '6px 10px' }} />
+        <input id={p + '-name'} className="field mono" value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s+/g, '-'))} placeholder={onStart ? 'name (empty: named after the task)' : 'session-name'} style={{ flex: '1 1 180px', minWidth: 0, padding: '6px 10px' }} />
         <Pick id={p + '-cwd'} free width={240} label="Folder" value={cwd} onChange={setCwd} placeholder="Folder" options={folders.map((f) => ({ value: f }))} />
         <Pick id={p + '-model'} width={170} label="Model" value={model} onChange={setModel} options={MODELS} />
       </div>

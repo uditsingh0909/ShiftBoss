@@ -7,6 +7,7 @@ const int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Patch = z.object({
   thresholds: z.object({
     warn: int(50, 90), replace: int(70, 95), needsCap: int(1, 6), staleMin: int(10, 120), stuckMin: int(5, 60), loopRepeats: int(2, 6),
+    cacheWarnM: int(50, 5000), cacheReplaceM: int(100, 10000),
   }).partial().optional(),
   switches: z.object({ autoDispatch: z.boolean(), quietHours: z.boolean() }).partial().optional(),
   budgets: z.object({ fiveHourTokens: int(0, 1e12), weeklyTokens: int(0, 1e13) }).partial().optional(),
@@ -47,6 +48,7 @@ export function mergeSettings(cur: Settings, input: unknown): Settings {
     slack: mergeSlack(cur.slack, b.slack),
     leadSession: (b.leadSession ?? cur.leadSession).trim(), herdrWorkspace: (b.herdrWorkspace ?? cur.herdrWorkspace).trim(),
   };
+  if ((next.thresholds.cacheWarnM ?? 500) >= (next.thresholds.cacheReplaceM ?? 1000)) throw new Error('The cache warning must be below the cache replace line');
   if (next.thresholds.warn >= next.thresholds.replace) throw new Error('The context warning must be below the replace line');
   return next;
 }

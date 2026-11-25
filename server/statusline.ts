@@ -12,6 +12,8 @@ export interface StatusInfo {
   weeklyPct: number | null;
   weeklyResetsAt: number | null;
   model: string | null;
+  /** The prompt cache, from the tap only. */
+  cache?: { warm: boolean | null; expiresAt: number | null; hitRatio: number | null };
   source: 'tap' | 'footer';
   at: number;
 }
@@ -30,6 +32,7 @@ export function readTap(dataDir: string, sessionId: string): StatusInfo | null {
       weeklyPct: rl.seven_day?.used_percentage ?? null,
       weeklyResetsAt: rl.seven_day?.resets_at ?? null,
       model: j.model?.display_name ?? null,
+      cache: j.prompt_cache ? { warm: typeof j.prompt_cache.warm === 'boolean' ? j.prompt_cache.warm : null, expiresAt: j.prompt_cache.expires_at ?? null, hitRatio: j.prompt_cache.hit_ratio ?? null } : undefined,
       source: 'tap',
       at: j._tappedAt ?? Date.now(),
     };

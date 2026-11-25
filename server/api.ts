@@ -13,7 +13,7 @@ import { HerdrError } from './herdr';
 import { checkDirection, NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
-import { checkSpawn, checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
+import { checkSpawn, checkSpawnMany, NAME_RE, NAME_RULE, SPAWN_MANY_CAP } from './fleet';
 import { isSessionId, listOutside } from './outside';
 import { PaneBlockedError } from './herdr';
 import { SnapshotHub } from './stream';
@@ -310,7 +310,7 @@ export function makeApi(engine: Engine) {
         // Quick action: a new herdr tab running Claude Code, optionally with a first prompt.
         const b = await body<any>(req);
         const name = str(b.name, 'name', 40).trim();
-        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/.test(name)) return json({ error: 'Name: letters, digits, - and _ only (2-40 characters).' }, 400);
+        if (!NAME_RE.test(name)) return json({ error: 'Name: ' + NAME_RULE + '.' }, 400);
         if (engine.snapshot().sessions.some((x) => x.name === name)) return json({ error: `A session named ${name} is already running.` }, 409);
         const cwd = str(b.cwd, 'cwd', 400).trim();
         if (!existsSync(cwd) || !statSync(cwd).isDirectory()) return json({ error: 'That folder does not exist.' }, 400);

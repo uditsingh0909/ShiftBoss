@@ -8,7 +8,7 @@ import type { ActionItem, Direction, Dismissal, Monitor, MonitorCheck, MonitorLi
 import { DEFAULT_NOTIFY, DEFAULT_SLACK } from '../shared/types';
 
 export const DEFAULT_SETTINGS: Settings = {
-  thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3 },
+  thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3, cacheWarnM: 500, cacheReplaceM: 1000 },
   switches: { autoDispatch: false, quietHours: true },
   budgets: { fiveHourTokens: 0, weeklyTokens: 0 },
   herdrWorkspace: '',

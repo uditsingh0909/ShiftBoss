@@ -240,6 +240,8 @@ Thresholds, switches and budgets live on the **Settings** screen and are stored 
 |---|---|---|
 | Context warning | 70% | Bars turn amber |
 | Suggest replace at | 85% | Bars turn red; the session page offers Replace, and Replace… on Sessions pre-ticks these |
+| Cache warning | 500M | Lifetime cache read turns amber. Context drops back after every auto-compact; the cache a session has read over its whole life does not, and it is what makes a long session slow and costly. ShiftBoss counts it from the whole transcript (cache read and written, compactions), plus warm/cold and hit rate from the status line tap |
+| Suggest replace at (cache) | 1B | Same as the context line, on lifetime cache: a session at 20% context but 1.4B cache read is due for a fresh start through its handoff |
 | Needs you, at most | 3 | Above this, Needs you warns that decisions are piling up |
 | Handoff stale after | 30 min | Handoff age turns amber |
 | Stuck after | 20 min | No output while queued work waits |

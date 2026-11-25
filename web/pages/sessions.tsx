@@ -2,6 +2,10 @@ import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
 import { MONITOR_SESSION, resolveLead, type Replacement, type Session } from '../../shared/types';
 import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, safeHref, Seg, toneColor, useSnap } from '../lib';
+import { fmtCache, wear, type Settings } from '../../shared/types';
+/** Lifetime cache against the replace line (Settings, Warnings), for bars and colours. */
+const cachePct = (s: Session, th: Settings['thresholds']) => Math.min(100, (s.cache.read / 1e6 / (th.cacheReplaceM ?? 1000)) * 100);
+const cacheColor = (s: Session, th: Settings['thresholds']) => { const m = s.cache.read / 1e6; return m >= (th.cacheReplaceM ?? 1000) ? C.red : m >= (th.cacheWarnM ?? 500) ? C.amber : C.fg; };
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
 const lineColor = (k: string) => (k === 'tool' ? C.fg : k === 'out' ? C.faint : k === 'you' ? C.amber : k === 'sys' ? C.red : C.dim);
@@ -50,8 +54,8 @@ function Alerts() {
   }
   for (const h of snap.health.filter((x) => !['healthy', 'waiting'].includes(x.verdict)))
     all.push({ key: `h:${h.session}:${h.verdict}`, tone: ['lost', 'looping', 'burning'].includes(h.verdict) ? 'red' : 'amber', what: `${h.session} is ${h.verdict}`, detail: h.suggest || h.title, to: href('session', h.session) });
-  for (const s of snap.sessions.filter((x) => x.contextPct >= th.replace && !snap.health.some((h) => h.session === x.name && h.verdict === 'heavy')))
-    all.push({ key: 'ctx' + s.name, tone: 'red', what: `${s.name} is at ${Math.round(s.contextPct)}% context`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
+  for (const s of snap.sessions.filter((x) => wear(x, th) === 'replace' && !snap.health.some((h) => h.session === x.name && h.verdict === 'heavy')))
+    all.push({ key: 'ctx' + s.name, tone: 'red', what: s.contextPct >= th.replace ? `${s.name} is at ${Math.round(s.contextPct)}% context` : `${s.name} has read ${fmtCache(s.cache.read)} of cache`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
   for (const o of snap.overlaps) all.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
   const due = snap.promises.filter((p) => p.state === 'due');
   if (due.length) all.push({ key: 'due:' + due.map((p) => p.id).join(','), tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
@@ -199,7 +203,7 @@ function NewSessions({ onDone }: { onDone: () => void }) {
       {rows.map((r, i) => (
         <div key={i} className="grid12 well" style={{ alignItems: 'end', padding: 14 }} aria-label={`Session ${i + 1}`} role="group">
           <div className="col" style={{ gap: 6, gridColumn: 'span 3' }}><label htmlFor={`nm-name-${i}`} className="label">Name</label>
-            <input id={`nm-name-${i}`} className="field mono" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,39}" value={r.name} onChange={(e) => set(i, { name: e.target.value })} /></div>
+            <input id={`nm-name-${i}`} className="field mono" required pattern="[a-z][a-z0-9_\-]{1,31}" title="lowercase letters, digits, - and _, starting with a letter (2-32)" value={r.name} onChange={(e) => set(i, { name: e.target.value })} /></div>
           <div className="col" style={{ gap: 6, gridColumn: 'span 4' }}><label htmlFor={`nm-cwd-${i}`} className="label">Folder</label>
             <Pick id={`nm-cwd-${i}`} free value={r.cwd} onChange={(v) => set(i, { cwd: v })} options={folders.map((d) => ({ value: d }))} /></div>
           <div className="col" style={{ gap: 6, gridColumn: 'span 2' }}><label htmlFor={`nm-model-${i}`} className="label">Model</label>
@@ -244,7 +248,7 @@ function NewOne({ onDone }: { onDone: () => void }) {
     <>
       <form className="grid12" style={{ alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-name" className="label">Name</label>
-          <input id="ns-name" className="field mono" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,39}" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="billing-fix" /></div>
+          <input id="ns-name" className="field mono" required pattern="[a-z][a-z0-9_\-]{1,31}" title="lowercase letters, digits, - and _, starting with a letter (2-32)" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="billing-fix" /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="ns-cwd" className="label">Folder</label>
           <Pick id="ns-cwd" free value={f.cwd} onChange={(v) => setF({ ...f, cwd: v })} placeholder="C:/path/to/repo" options={folders.map((d) => ({ value: d }))} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="ns-model" className="label">Model</label>
@@ -326,7 +330,7 @@ function ReplaceMany({ onDone }: { onDone: () => void }) {
   const th = snap.settings.thresholds;
   const busy = new Set(snap.replacements.filter((r) => activeRepl(r.state)).map((r) => r.oldName));
   const list = [...snap.sessions].sort((a, b) => b.contextPct - a.contextPct);
-  const [picked, setPicked] = useState<Record<string, boolean>>(() => Object.fromEntries(list.filter((s) => s.contextPct >= th.replace && !busy.has(s.name)).map((s) => [s.name, true])));
+  const [picked, setPicked] = useState<Record<string, boolean>>(() => Object.fromEntries(list.filter((s) => wear(s, th) === 'replace' && !busy.has(s.name)).map((s) => [s.name, true])));
   const names = list.filter((s) => picked[s.name] && !busy.has(s.name)).map((s) => s.name);
   const submit = () => act(async () => {
     const r = await api<{ results: { name: string; error?: string }[] }>('POST', '/api/sessions/replace', { sessions: names });
@@ -347,6 +351,7 @@ function ReplaceMany({ onDone }: { onDone: () => void }) {
               <span className="mono ellipsis" style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13 }}>{s.name}</span>
               <span className="mono faint" style={{ fontSize: 11 }}>{busy.has(s.name) ? 'being replaced' : s.status}</span>
               <span className="mono" style={{ width: 44, textAlign: 'right', fontSize: 13, color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span>
+              <span className="mono" style={{ width: 58, textAlign: 'right', fontSize: 12, color: cacheColor(s, th) }} title="Cache read over the life of the session">{fmtCache(s.cache.read)}</span>
             </label>
           ))}
           {!list.length && <Empty text="No sessions running." />}
@@ -365,7 +370,7 @@ export function CommandCenter() {
   const [filter, setFilter] = useState<'All' | 'Working' | 'Needs you' | 'Near limit' | 'Idle'>('All');
   const th = snap.settings.thresholds;
   const blocked = snap.sessions.filter((s) => s.status === 'blocked');
-  const near = snap.sessions.filter((s) => s.contextPct >= th.replace);
+  const near = snap.sessions.filter((s) => wear(s, th) === 'replace');
   // Tasks a running session is actually working on: In progress, not held, and its session is running.
   const live = new Set(snap.sessions.map((x) => x.name));
   const inProgress = snap.tasks.filter((t) => t.stage === 2 && !t.held && t.session && live.has(t.session));
@@ -435,7 +440,7 @@ export function CommandCenter() {
             )}
             <Lines s={hero} n={40} height={230} grow />
             <div className="row" style={{ gap: 28, flexWrap: 'wrap' }}>
-              {[['Context', Math.round(hero.contextPct) + '%'], ['Tokens today', fmtTok(hero.tokensToday)], ['Last tool', hero.lastTool ?? '—'], ['Active', ago(hero.lastActivity)]].map(([k, v]) => (
+              {[['Context', Math.round(hero.contextPct) + '%'], ['Cache', fmtCache(hero.cache.read) + ' · ' + hero.cache.compactions + '×'], ['Tokens today', fmtTok(hero.tokensToday)], ['Last tool', hero.lastTool ?? '—'], ['Active', ago(hero.lastActivity)]].map(([k, v]) => (
                 <div key={k} className="col" style={{ gap: 4 }}><span className="label">{k}</span><span className="mono" style={{ fontSize: 15 }}>{v}</span></div>
               ))}
             </div>
@@ -476,6 +481,8 @@ export function CommandCenter() {
               <div className="col" style={{ gap: 6 }}>
                 <span className="row mono" style={{ justifyContent: 'space-between', fontSize: 11 }}><span className="faint">context</span><span style={{ color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span></span>
                 <Bar pct={s.contextPct} color={ctxColor(s.contextPct, th.warn, th.replace)} />
+                <span className="row mono" style={{ justifyContent: 'space-between', fontSize: 11 }} title="Cache read over the whole life of the session: it does not drop after a compact"><span className="faint">cache · {s.cache.compactions} compaction{s.cache.compactions === 1 ? '' : 's'}</span><span style={{ color: cacheColor(s, th) }}>{fmtCache(s.cache.read)}</span></span>
+                <Bar pct={cachePct(s, th)} color={cacheColor(s, th)} />
               </div>
               <div className="row" style={{ justifyContent: 'space-between' }}>
                 <span className="mono faint" style={{ fontSize: 11 }}>{fmtTok(s.tokensToday)} · {ago(s.lastActivity)}</span>
@@ -546,15 +553,15 @@ export function SessionPage({ name }: { name: string }) {
           <button type="button" className="pill" onClick={() => post('interrupt', {}, 'Interrupted ' + s.name)}>Interrupt</button>
           <button type="button" className="pill" onClick={() => post('focus', {}, 'Opened in herdr')}>Open in herdr</button>
           <button type="button" className="pill" onClick={() => act(async () => setScreen((await api('GET', `/api/sessions/${encodeURIComponent(s.name)}/screen`)).text), 'Screen loaded')}>Raw screen</button>
-          <button type="button" className={'pill tour-replace' + (s.contextPct >= th.replace && !replacingNow ? ' r' : '')} disabled={replacingNow} onClick={replace}>{replacingNow ? 'Replacing…' : 'Replace'}</button>
+          <button type="button" className={'pill tour-replace' + (wear(s, th) === 'replace' && !replacingNow ? ' r' : '')} disabled={replacingNow} onClick={replace}>{replacingNow ? 'Replacing…' : 'Replace'}</button>
         </div>
       </section>
 
-      {s.contextPct >= th.replace && !hideAlert && !replacingNow && (
+      {wear(s, th) === 'replace' && !hideAlert && !replacingNow && (
         <section role="alert" className="shell rise alert-red">
           <div className="core row" style={{ gap: 24, padding: '22px 26px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 40, fontWeight: 500, letterSpacing: '-0.04em', color: C.red }}>{Math.round(s.contextPct)}%</span>
-            <span style={{ flex: '1 1 480px', lineHeight: 1.55, fontSize: 15 }}>Context is nearly full and the session will start losing track. <span className="dim">Replace asks it to write its handoff, then starts a fresh session that reads it and takes over its tasks. This one stays open for you to close.</span></span>
+            <span style={{ fontSize: 40, fontWeight: 500, letterSpacing: '-0.04em', color: C.red }}>{s.contextPct >= th.replace ? Math.round(s.contextPct) + '%' : fmtCache(s.cache.read)}</span>
+            <span style={{ flex: '1 1 480px', lineHeight: 1.55, fontSize: 15 }}>{s.contextPct >= th.replace ? 'Context is nearly full and the session will start losing track.' : `It has read ${fmtCache(s.cache.read)} of cache over ${s.cache.compactions} compaction${s.cache.compactions === 1 ? '' : 's'}. Context looks low because compacting resets it, but every turn still re-reads a long history: slow, costly, and it loses detail.`} <span className="dim">Replace asks it to write its handoff, then starts a fresh session that reads it and takes over its tasks. This one stays open for you to close.</span></span>
             <button type="button" className="pill" onClick={() => setHideAlert(true)}>Later</button>
             <button type="button" className="pill w" onClick={replace}>Replace<Arrow dark /></button>
           </div>
@@ -588,6 +595,11 @@ export function SessionPage({ name }: { name: string }) {
           <span style={{ fontSize: 56, fontWeight: 500, letterSpacing: '-0.045em', lineHeight: 1, color: c }}>{Math.round(s.contextPct)}%</span>
           <Bar pct={s.contextPct} color={c} />
           <span className="faint" style={{ fontSize: 12 }}>{fmtTok(s.tokensToday)} tokens today · {fmtTok(s.tokens5h)} in 5 h</span>
+          <div className="col" style={{ gap: 6, borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: 12 }} title="Unlike context, this never drops after a compact">
+            <div className="row" style={{ justifyContent: 'space-between' }}><span className="label">Cache over its life</span><span className="mono" style={{ fontSize: 15, color: cacheColor(s, th) }}>{fmtCache(s.cache.read)} read</span></div>
+            <Bar pct={cachePct(s, th)} color={cacheColor(s, th)} />
+            <span className="faint" style={{ fontSize: 12 }}>{fmtCache(s.cache.written)} written · {s.cache.compactions} compaction{s.cache.compactions === 1 ? '' : 's'}{s.cache.lastCompactAt ? ' · last ' + ago(s.cache.lastCompactAt) : ''}{s.cache.warm === null ? '' : s.cache.warm ? ` · warm${s.cache.expiresAt ? ' until ' + hhmm(s.cache.expiresAt) : ''}` : ' · cold'}{s.cache.hitRatio !== null ? ` · ${Math.round(s.cache.hitRatio * 100)}% hits` : ''} · replace at {fmtCache((th.cacheReplaceM ?? 1000) * 1e6)}</span>
+          </div>
         </Card>
         <Card span={4} delay={60}>
           <span className="label">Working on</span>
@@ -612,14 +624,14 @@ export function SessionPage({ name }: { name: string }) {
 
 export function Roster() {
   const snap = useSnap()!;
-  const [sort, setSort] = useState<'Context' | 'Name' | 'Status'>('Context');
+  const [sort, setSort] = useState<'Context' | 'Cache' | 'Name' | 'Status'>('Context');
   const th = snap.settings.thresholds;
   const rows = [...snap.sessions].sort(sort === 'Context' ? (a, b) => b.contextPct - a.contextPct : sort === 'Name' ? (a, b) => a.name.localeCompare(b.name) : (a, b) => a.status.localeCompare(b.status));
   const grid = { display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1.4fr) minmax(0,1.5fr) 130px 90px 110px 80px', gap: 16, alignItems: 'center' } as const;
   return (
     <div className="page">
       <Hero eyebrow="Roster" title="Every session." sub={`${snap.sessions.length} in herdr right now.`}>
-        <Seg label="Sort" value={sort} options={['Context', 'Name', 'Status'] as const} onChange={setSort} />
+        <Seg label="Sort" value={sort} options={['Context', 'Cache', 'Name', 'Status'] as const} onChange={setSort} />
         <a className="pill" href={href('health')}>Health</a><a className="pill" href={href('overlap')}>Overlaps</a>
       </Hero>
       <section className="shell rise"><div className="core" style={{ padding: 12, overflowX: 'auto' }}>
@@ -629,7 +641,7 @@ export function Roster() {
             <span className="row" style={{ gap: 10, minWidth: 0 }}><Dot color={statusColor(s.status)} blink={s.status === 'working'} /><span className="col" style={{ gap: 3, minWidth: 0 }}><span className="mono ellipsis">{s.name}</span><span className="mono faint" style={{ fontSize: 11 }}>{(s.model ?? '?') + ' · ' + s.status}</span></span></span>
             <span className="dim ellipsis" style={{ fontSize: 13 }}>{s.lane || '—'}</span>
             <span className="ellipsis" style={{ fontSize: 13 }}>{snap.tasks.find((t) => t.session === s.name && t.stage >= 2 && t.stage <= 4)?.title ?? '—'}</span>
-            <span className="col" style={{ gap: 6 }}><span className="mono" style={{ fontSize: 13, color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span><Bar pct={s.contextPct} color={ctxColor(s.contextPct, th.warn, th.replace)} /></span>
+            <span className="col" style={{ gap: 6 }}><span className="mono" style={{ fontSize: 13, color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}% <span style={{ color: cacheColor(s, th), fontSize: 11 }} title="Cache read over its life">· {fmtCache(s.cache.read)}</span></span><Bar pct={s.contextPct} color={ctxColor(s.contextPct, th.warn, th.replace)} /></span>
             <span className="mono dim" style={{ fontSize: 13 }}>{fmtTok(s.tokensToday)}</span>
             <span className="mono" style={{ fontSize: 12, color: s.handoffAgeMin == null || s.handoffAgeMin > th.staleMin ? C.amber : C.dim }}>{s.handoffAgeMin == null ? 'none' : s.handoffAgeMin + 'm ago'}</span>
             <span className="mono faint" style={{ fontSize: 12, textAlign: 'right' }}>{ago(s.lastActivity)}</span>

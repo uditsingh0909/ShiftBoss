@@ -217,7 +217,7 @@ server.registerTool('session_bring_in', {
 server.registerTool('session_spawn', {
   title: 'Start a Claude Code session',
   description: 'Opens a new herdr tab in the folder and starts Claude Code, with an optional model and first prompt. A folder Claude has not opened before asks "trust this folder?" in herdr first; only the owner answers that.',
-  inputSchema: { name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku', 'fable']).optional(), prompt: z.string().max(8000).optional() },
+  inputSchema: { name: z.string().regex(/^[a-z][a-z0-9_-]{1,31}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku', 'fable']).optional(), prompt: z.string().max(8000).optional() },
 }, wrap(async ({ name, cwd, model, prompt }) => { const r = await call('POST', '/api/sessions/spawn', { name, cwd, model: model ?? null, prompt: prompt ?? null }); if (r.__held) return r.message; return `starting ${name}; watch the ShiftBoss feed for "ready" or "waiting for you"`; }));
 
 server.registerTool('session_replace', {
@@ -277,7 +277,7 @@ server.registerTool('monitor_list', {
 server.registerTool('session_spawn_many', {
   title: 'Start several Claude Code sessions',
   description: "Up to 20 at once, one after another, each in its own herdr tab. Goes through the owner's mode (risky: waits in Ask first and Safe auto).",
-  inputSchema: { sessions: z.array(z.object({ name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku']).optional(), prompt: z.string().max(8000).optional() })).min(1).max(20), by: ME },
+  inputSchema: { sessions: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_-]{1,31}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku']).optional(), prompt: z.string().max(8000).optional() })).min(1).max(20), by: ME },
 }, wrap(async ({ sessions, by }) => { const r = await call('POST', '/api/sessions/spawn-many', { sessions, by }); return r.__held ? r.message : `starting ${r.names.join(', ')}`; }));
 
 server.registerTool('task_update', {

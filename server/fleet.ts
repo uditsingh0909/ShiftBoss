@@ -4,7 +4,10 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,39}$/;
+/** herdr's own rule for session names: a lowercase letter, then lowercase letters, digits, - or _, 32 at most. */
+export const NAME_MAX = 32;
+export const NAME_RE = /^[a-z][a-z0-9_-]{1,31}$/;
+export const NAME_RULE = 'lowercase letters, digits, - and _, starting with a letter (2-32 characters)';
 export const MODELS = ['sonnet', 'opus', 'haiku', 'fable'] as const;
 export const SPAWN_MANY_CAP = 20;
 /** A handoff not written within this long after the request is shown as stalled. */
@@ -18,7 +21,7 @@ export interface SpawnSpec { name: string; cwd: string; model: string | null; pr
  */
 export function checkSpawn(raw: any, taken: Set<string>): SpawnSpec {
   const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
-  if (!NAME_RE.test(name)) throw new Error(`Name "${name || '(empty)'}": letters, digits, - and _ only (2-40 characters).`);
+  if (!NAME_RE.test(name)) throw new Error(`Name "${name || '(empty)'}": ${NAME_RULE}.`);
   if (taken.has(name)) throw new Error(`A session named ${name} is already running or listed twice.`);
   const cwd = typeof raw?.cwd === 'string' ? raw.cwd.trim() : '';
   if (!cwd || cwd.length > 400) throw new Error(`${name}: folder is required.`);
@@ -46,7 +49,8 @@ const V_RE = /^(.*)-v(\d+)$/i;
 export const baseName = (name: string) => name.match(V_RE)?.[1] ?? name;
 /**
  * Next free `<base>-vN`: one above the highest version of that base among `taken` (and the name
- * itself), at least v2, skipping names already taken. Kept within the 40-character name limit.
+ * itself), at least v2, skipping names already taken. Lowercase and within herdr's 32-character limit:
+ * a long base is shortened to make room for the -vN (herdr refuses a longer name and the replacement failed).
  */
 export function nextReplacementName(name: string, taken: Iterable<string>): string {
   const base = baseName(name);
@@ -61,7 +65,7 @@ export function nextReplacementName(name: string, taken: Iterable<string>): stri
   }
   for (let n = v + 1; ; n++) {
     const suffix = '-v' + n;
-    const cand = base.slice(0, 40 - suffix.length) + suffix;
+    const cand = lower.slice(0, NAME_MAX - suffix.length).replace(/[-_]+$/, '') + suffix;
     if (!all.has(cand.toLowerCase())) return cand;
   }
 }

@@ -19,16 +19,18 @@ import { needsInstall, Updater } from '../server/update';
 import { actionKey, decide } from '../server/gate';
 import { join } from 'node:path';
 import { checksLeft, checksTotal, effectiveState, isAlerting, monitorPrompt, nextDueAfter, pickDue } from '../server/monitors';
-import { DEFAULT_NOTIFY, taskSessionName, type Session } from '../shared/types';
+import { DEFAULT_NOTIFY, fmtCache, taskSessionName, wear, type Session } from '../shared/types';
 import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
 import { inRange, rangeBounds } from '../web/filters';
 import { inQuiet, SlackNotifier } from '../server/slack';
-import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
+import { addCacheLine, CacheTracker, emptyTotals } from '../server/cache';
+import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, NAME_RE, nextReplacementName, replacementPrompt } from '../server/fleet';
 
 const mem = () => new Store('', ':memory:');
 const session = (over: Partial<Session> = {}): Session => ({
   name: 's1', paneId: 'w5:p1', sessionId: 'x', status: 'working', cwd: 'C:\\work', model: 'claude-opus-5-5', contextTokens: 0, contextWindow: 1e6, contextPct: 20,
-  tokensToday: 0, tokens5h: 0, lastActivity: new Date().toISOString(), lastTool: null, lines: [], heat: [], filesTouched: [], lane: '', slots: 2, handoffPath: null, handoffAgeMin: null, prUrls: [], usesShiftbossTools: false, exactUsage: false, ...over,
+  tokensToday: 0, tokens5h: 0, lastActivity: new Date().toISOString(), lastTool: null, lines: [], heat: [], filesTouched: [], lane: '', slots: 2, handoffPath: null, handoffAgeMin: null, prUrls: [], usesShiftbossTools: false, exactUsage: false,
+  cache: { read: 0, written: 0, compactions: 0, lastCompactAt: null, warm: null, expiresAt: null, hitRatio: null }, ...(over as Partial<Session> & { cache?: Session['cache'] }),
 });
 
 describe('store', () => {
@@ -692,6 +694,66 @@ describe('a new session for a task', () => {
     expect(prompted[0]).toContain(`ShiftBoss task ${t.id}`);
     expect(store.getTask(t.id)!.stage).toBe(2);
     expect((await call('POST', `/api/tasks/${t.id}/new-session`, { name: 'lead' })).status).toBe(400); // already running
+  });
+});
+
+describe('lifetime cache', () => {
+  const asst = (read: number, write: number, side = false) => JSON.stringify({ type: 'assistant', isSidechain: side, timestamp: '2026-11-25T10:00:00Z',
+    message: { model: 'claude-opus-5-5', usage: { input_tokens: 3, cache_creation_input_tokens: write, cache_read_input_tokens: read, output_tokens: 50, iterations: [{ input_tokens: 3, cache_creation_input_tokens: 999, cache_read_input_tokens: 999 }] } } });
+  const compact = JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: '2026-11-25T11:00:00Z', compactMetadata: { trigger: 'auto', preTokens: 900000, postTokens: 30000 } });
+
+  test('sums cache read and written over every turn, counts compactions, skips sub-agents and nested iterations', () => {
+    const t = emptyTotals();
+    for (const l of [asst(100_000, 2_000), asst(150_000, 1_000), compact, asst(30_000, 30_000), asst(5_000_000, 0, true), '{"type":"user"}', '']) addCacheLine(t, l);
+    expect(t).toEqual({ read: 280_000, written: 33_000, compactions: 1, lastCompactAt: '2026-11-25T11:00:00Z', turns: 3 });
+  });
+
+  test('the tracker reads a file once, then only what was appended, and starts over when it is rewritten', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-cache-'));
+    const p = join(dir, 's.jsonl');
+    writeFileSync(p, asst(100, 10) + '\n' + compact + '\n');
+    const tr = new CacheTracker();
+    expect(tr.update(p)).toMatchObject({ read: 100, written: 10, compactions: 1, turns: 1 });
+    appendFileSync(p, asst(50, 5) + '\n' + asst(7, 0).slice(0, 40)); // a half-written line waits for the rest
+    expect(tr.update(p)).toMatchObject({ read: 150, turns: 2 });
+    appendFileSync(p, asst(7, 0).slice(40) + '\n');
+    expect(tr.update(p)).toMatchObject({ read: 157, turns: 3 });
+    writeFileSync(p, asst(1, 1) + '\n');
+    expect(tr.update(p)).toMatchObject({ read: 1, written: 1, compactions: 0, turns: 1 });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('wear: replace on context or on lifetime cache, whichever comes first; health says which', () => {
+    const th = { warn: 70, replace: 85, cacheWarnM: 500, cacheReplaceM: 1000 };
+    const cache = (read: number) => ({ read, written: 0, compactions: 6, lastCompactAt: null, warm: null, expiresAt: null, hitRatio: null });
+    expect(wear({ contextPct: 20, cache: cache(100e6) }, th)).toBe('ok');
+    expect(wear({ contextPct: 20, cache: cache(600e6) }, th)).toBe('warn');
+    expect(wear({ contextPct: 20, cache: cache(1.4e9) }, th)).toBe('replace');
+    expect(wear({ contextPct: 90, cache: cache(0) }, th)).toBe('replace');
+    const h = healthOf(session({ contextPct: 18, status: 'idle', cache: cache(1.4e9) }), [], [], { ...mem().settings(), thresholds: { ...mem().settings().thresholds, ...th } });
+    expect(h.verdict).toBe('heavy');
+    expect(h.title).toContain('1.4B');
+    expect(fmtCache(1_400_000_000)).toBe('1.4B');
+    expect(fmtCache(640_000_000)).toBe('640M');
+  });
+});
+
+describe('session names fit herdr', () => {
+  test('a long name is shortened so the replacement fits 32 lowercase characters', () => {
+    const a = nextReplacementName('serive-ai-servicetosales-agent', []);
+    const b = nextReplacementName('platform-admin-mcp-console-parity', []);
+    for (const n of [a, b]) { expect(n.length).toBeLessThanOrEqual(32); expect(NAME_RE.test(n)).toBe(true); expect(n).toMatch(/-v2$/); }
+    expect(b).toBe('platform-admin-mcp-console-pa-v2');
+    expect(nextReplacementName(b, [b])).toBe('platform-admin-mcp-console-pa-v3');
+    expect(nextReplacementName('Lead-Manager', [])).toBe('lead-manager-v2');
+    expect(nextReplacementName('lead-manager-v2', ['lead-manager-v2'])).toBe('lead-manager-v3');
+  });
+  test('names for a task session fit too, even with a number after them', () => {
+    const t = { id: 'T-1234', title: 'Make the very long export of every rooftop faster and cheaper' };
+    const n = taskSessionName(t, []);
+    expect(NAME_RE.test(n)).toBe(true);
+    expect(taskSessionName(t, [n]).length).toBeLessThanOrEqual(32);
+    expect(NAME_RE.test('Billing-Fix')).toBe(false); // herdr wants lowercase
   });
 });
 

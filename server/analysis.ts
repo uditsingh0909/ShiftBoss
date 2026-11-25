@@ -1,6 +1,6 @@
 // Pure rules: session health and cross-session overlaps. No I/O here, so it is easy to test.
 import { basename } from 'node:path';
-import type { HealthCard, Overlap, Session, Settings, Task } from '../shared/types';
+import { fmtCache, type HealthCard, type Overlap, type Session, type Settings, type Task } from '../shared/types';
 import type { ToolCall } from './transcripts';
 
 const MIN = 60e3;
@@ -43,8 +43,13 @@ export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Sett
       [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? new Date(s.lastActivity).toTimeString().slice(0, 5) : 'unknown'), tone: 'red' }, { k: 'in progress', v: working.map((q) => q.id).join(', '), tone: 'amber' }],
       'ask it how ' + working[0].id + ' is going');
   }
-  if (s.contextPct >= t.replace) {
-    return card('heavy', `Context at ${Math.round(s.contextPct)}%.`, [{ k: 'context', v: Math.round(s.contextPct) + '% of ' + Math.round(s.contextWindow / 1000) + 'k', tone: 'red' },
+  // Worn out: context near the top, or the lifetime cache past the line. Compacting resets context but not the
+  // cache, so a session can show 20 % context and still be due for a fresh start.
+  const cacheM = (s.cache?.read ?? 0) / 1e6;
+  if (s.contextPct >= t.replace || cacheM >= (t.cacheReplaceM ?? 1000)) {
+    const byCache = s.contextPct < t.replace;
+    return card('heavy', byCache ? `Cache ${fmtCache(s.cache.read)} read over its life (${s.cache.compactions} compaction${s.cache.compactions === 1 ? '' : 's'}), though context shows ${Math.round(s.contextPct)}%.` : `Context at ${Math.round(s.contextPct)}%.`,
+      [byCache ? { k: 'cache', v: fmtCache(s.cache.read) + ' read · ' + s.cache.compactions + ' compactions', tone: 'red' } : { k: 'context', v: Math.round(s.contextPct) + '% of ' + Math.round(s.contextWindow / 1000) + 'k', tone: 'red' },
       { k: 'handoff', v: s.handoffAgeMin == null ? 'no handoff file found' : 'updated ' + s.handoffAgeMin + ' min ago', tone: s.handoffAgeMin != null && s.handoffAgeMin <= t.staleMin ? 'green' : 'amber' }],
       'Replace it from its handoff after the current step');
   }
