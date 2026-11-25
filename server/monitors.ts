@@ -88,7 +88,7 @@ export function leadAlertPrompt(m: Pick<Monitor, 'id' | 'title' | 'prompt' | 'li
     '> ' + m.prompt.replace(/\n/g, '\n> '),
     links.length ? 'Links:\n' + links.map((l) => `- ${l.label}: ${l.url}`).join('\n') : '',
     m.taskId ? `ShiftBoss task: ${m.taskId}` : '',
-    `Full check history: http://127.0.0.1:${port}/#/monitors (monitor ${m.id}).`,
+    `Full check history: http://127.0.0.1:${port}/monitors (monitor ${m.id}).`,
     'Look into it and route it to the session that owns this area, or fix it if it is yours. Ask the owner (ask_owner) before anything that touches production.',
     `Once it is fixed, ask for a fresh check: monitor_update with id ${m.id} and action check_now (or: shiftboss monitor check ${m.id}). If it was a false alarm, action resolve marks it fixed without a check.`,
   ].filter(Boolean).join('\n');

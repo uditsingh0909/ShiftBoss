@@ -26,7 +26,7 @@ export function Approvals() {
       <div className="core col" style={{ gap: 12 }}>
         <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
           <span className="label">{waiting.length ? `Waiting for your approval · ${waiting.length}` : snap.settings.mode === 'dry' ? 'Dry run' : 'Approvals'}</span>
-          <span className="faint" style={{ fontSize: 12 }}>Mode: {modeName(snap.settings.mode)} · <a href="#/settings" style={{ textDecoration: 'underline' }}>change</a></span>
+          <span className="faint" style={{ fontSize: 12 }}>Mode: {modeName(snap.settings.mode)} · <a href="/settings" style={{ textDecoration: 'underline' }}>change</a></span>
           {waiting.length > 1 && (
             <span className="row" style={{ gap: 8, marginLeft: 'auto' }}>
               <button type="button" className="pill sm w" disabled={busy !== null} onClick={() => void decide('all', true)}>Approve all</button>

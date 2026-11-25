@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { C, Dot, href, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap } from './lib';
+import { C, Dot, href, navigate, SnapshotCtx, Toaster, useLiveSnapshot, useRoute, useSnap } from './lib';
 import { AppFrame } from './nav';
 import { Audit, NeedsYou, Promises } from './pages/decide';
 import { Report, SettingsPage } from './pages/ops';
@@ -44,7 +44,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     const ql = q.toLowerCase();
     return all.filter((i) => !ql || (i.label + ' ' + i.meta).toLowerCase().includes(ql)).slice(0, 14);
   }, [q, snap]);
-  const go = (i: { to: string; run?: () => void }) => { onClose(); if (i.run) setTimeout(i.run, 60); else location.hash = i.to.slice(1); };
+  const go = (i: { to: string; run?: () => void }) => { onClose(); if (i.run) setTimeout(i.run, 60); else navigate(i.to); };
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <section className="shell rise" role="dialog" aria-modal="true" aria-label="Command palette" style={{ width: 'min(760px, 100%)' }}>
@@ -91,7 +91,7 @@ class Boundary extends Component<{ children: ReactNode }, { error: Error | null 
           <span className="label">This screen hit an error</span>
           <span className="mono" style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{this.state.error.message}</span>
           <span className="dim" style={{ fontSize: 13 }}>The rest of ShiftBoss still works. Reload the page, or go back to Sessions.</span>
-          <div className="row" style={{ gap: 8 }}><a className="pill sm w" href="#/">Back to Sessions</a><button type="button" className="pill sm" onClick={() => location.reload()}>Reload</button></div>
+          <div className="row" style={{ gap: 8 }}><a className="pill sm w" href="/">Back to Sessions</a><button type="button" className="pill sm" onClick={() => location.reload()}>Reload</button></div>
         </div></section>
       </div>
     );

@@ -158,8 +158,8 @@ export function ModeBanner() {
     <div className="mode-banner row" role="status">
       <span style={{ width: 8, height: 8, borderRadius: 999, background: mode === 'dry' ? C.faint : C.green, flex: 'none' }} aria-hidden="true" />
       <span style={{ flex: '1 1 auto', minWidth: 0 }}>{text}</span>
-      {(dry > 0 || waiting > 0) && <a href="#/needs" className="pill xs">{mode === 'dry' ? 'See them' : 'Review'}</a>}
-      <a href="#/settings/mode" className="pill xs">Change</a>
+      {(dry > 0 || waiting > 0) && <a href="/needs" className="pill xs">{mode === 'dry' ? 'See them' : 'Review'}</a>}
+      <a href="/settings/mode" className="pill xs">Change</a>
     </div>
   );
 }

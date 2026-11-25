@@ -39,21 +39,24 @@ try {
   process.exit(1);
 }
 
+async function handle(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  if (url.pathname.startsWith('/api/')) {
+    const bad = checkRequest(req, cfg.port);
+    if (bad) return Response.json({ error: bad }, { status: 403 });
+  }
+  const res = await api(req, url);
+  return res ?? new Response('Not found', { status: 404 });
+}
+
 function serve() { return Bun.serve({
   hostname: '127.0.0.1', // never exposed beyond this machine: the API can prompt sessions
   port: cfg.port,
   idleTimeout: 0, // keep event streams open
   development: process.env.NODE_ENV !== 'production',
-  routes: { '/': app },
-  async fetch(req) {
-    const url = new URL(req.url);
-    if (url.pathname.startsWith('/api/')) {
-      const bad = checkRequest(req, cfg.port);
-      if (bad) return Response.json({ error: bad }, { status: 403 });
-    }
-    const res = await api(req, url);
-    return res ?? new Response('Not found', { status: 404 });
-  },
+  // Pages are plain paths (/needs, /task/T-12): every path that is not the API gets the app, which routes itself.
+  routes: { '/api/*': handle, '/*': app },
+  fetch: handle,
 }); }
 
 console.log(`ShiftBoss on http://127.0.0.1:${server.port}`);

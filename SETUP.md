@@ -2,7 +2,7 @@
 
 You are Claude Code, and someone has asked you to set up ShiftBoss from this repository. Follow these
 steps in order. The person should only have to answer a few questions. The Get started screen
-(`http://127.0.0.1:<port>/#/welcome`) shows the same steps and updates live while you work. Point the
+(`http://127.0.0.1:<port>/welcome`) shows the same steps and updates live while you work. Point the
 person at it once ShiftBoss is running, so they can watch or take over.
 
 ## Ground rules
@@ -66,7 +66,7 @@ bun scripts/setup.ts --owner "<name>" --lead <session> --mode <dry|ask|safe|auto
 ```
 
 Include only the extras they picked. It prints what it did and what is left. Then tell them to open
-`http://127.0.0.1:4400/#/welcome` (or the port it printed).
+`http://127.0.0.1:4400/welcome` (or the port it printed).
 
 Start the intake in **the folder this Claude session was started in** (`--intake-cwd`), not the ShiftBoss folder: Claude already
 trusts that folder, so the new tab starts straight away. The intake needs nothing from the ShiftBoss folder. Only if setup

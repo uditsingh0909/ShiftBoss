@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveLead } from '../../shared/types';
-import { act, ago, agoText, api, Arrow, C, Card, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
+import { act, ago, agoText, api, Arrow, C, Card, Empty, Hero, hhmm, href, navigate, Pick, Seg, toast, useSnap } from '../lib';
 import { Cmd, Step, type SetupInfo } from './setup';
 import { ModePicker } from '../mode';
 
@@ -104,7 +104,7 @@ export function Welcome() {
     } catch (e) { toast((e as Error).message); }
   };
 
-  const finish = () => act(async () => { await api('POST', '/api/onboarding/done', { done: true }); location.hash = '#/'; }, 'Setup done');
+  const finish = () => act(async () => { await api('POST', '/api/onboarding/done', { done: true }); navigate('/'); }, 'Setup done');
   const connected = !!info && info.mcp.registered && info.mcp.pointsHere;
 
   return (

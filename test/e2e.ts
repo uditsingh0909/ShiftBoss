@@ -31,14 +31,14 @@ const snap = await (await fetch(BASE + '/api/snapshot')).json();
 const session = snap.sessions[0]?.name;
 const task = snap.tasks[0]?.id;
 const routes: [string, string, string][] = [
-  ['home', '#/', 'sessions running'], ['roster', '#/roster', 'Every session'], ['health', '#/health', 'Session health'],
-  ['overlap', '#/overlap', 'Overlap check'], ['tasks', '#/tasks', 'in flight'], ['intake', '#/intake', 'messages read today'],
-  ['needs', '#/needs', 'Needs you'], ['promises', '#/promises', 'waiting on you'], ['audit', '#/audit', 'in your name'],
-  ['report', '#/report', 'Copy'], ['settings', '#/settings', 'Save'], ['welcome', '#/welcome', 'Set up ShiftBoss'], ['setup', '#/setup', 'Connect your sessions'],
-  ['monitors', '#/monitors', 'watched'],
+  ['home', '/', 'sessions running'], ['roster', '/roster', 'Every session'], ['health', '/health', 'Session health'],
+  ['overlap', '/overlap', 'Overlap check'], ['tasks', '/tasks', 'in flight'], ['intake', '/intake', 'messages read today'],
+  ['needs', '/needs', 'Needs you'], ['promises', '/promises', 'waiting on you'], ['audit', '/audit', 'in your name'],
+  ['report', '/report', 'Copy'], ['settings', '/settings', 'Save'], ['welcome', '/welcome', 'Set up ShiftBoss'], ['setup', '/setup', 'Connect your sessions'],
+  ['monitors', '/monitors', 'watched'],
 ];
-if (session) routes.push(['session', '#/session/' + encodeURIComponent(session), session]);
-if (task) routes.push(['task', '#/task/' + task, task]);
+if (session) routes.push(['session', '/session/' + encodeURIComponent(session), session]);
+if (task) routes.push(['task', '/task/' + task, task]);
 
 const chrome = findChrome();
 if (!chrome) { console.log('No Chrome, Edge or Chromium found. Set CHROME_PATH to one, or run: bunx playwright install chromium'); process.exit(2); }
@@ -53,7 +53,7 @@ for (const width of [1920, 390]) {
   page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
   for (const [name, hash, expect] of routes) {
     errs.length = 0;
-    await page.goto(BASE + '/' + hash);
+    await page.goto(BASE + hash);
     try {
       await page.getByText(expect, { exact: false }).first().waitFor({ timeout: 6000 });
     } catch { failures.push(`${width}px ${name}: did not show "${expect}"`); }
@@ -89,7 +89,7 @@ for (const width of [1920, 390]) {
   const seen = () => localStorage.setItem('shiftboss-tour-seen', JSON.stringify(['home', 'tasks', 'task', 'needs', 'promises', 'intake', 'session', 'settings', 'welcome']));
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.addInitScript(seen);
-  await page.goto(BASE + '/#/tasks');
+  await page.goto(BASE + '/tasks');
   try {
     await page.getByRole('link', { name: /^Overlaps/ }).waitFor({ timeout: 6000 });
     await page.getByRole('button', { name: 'Collapse the sidebar' }).click();
@@ -102,7 +102,7 @@ for (const width of [1920, 390]) {
   await page.close();
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await phone.addInitScript(seen);
-  await phone.goto(BASE + '/#/tasks');
+  await phone.goto(BASE + '/tasks');
   try {
     await phone.getByRole('button', { name: /^Open menu/ }).click();
     const tasks = phone.getByRole('link', { name: /^Tasks/ });
@@ -119,7 +119,7 @@ for (const width of [1920, 390]) {
 // The tour shows on a first visit and goes away with Skip.
 {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-  await page.goto(BASE + '/#/tasks');
+  await page.goto(BASE + '/tasks');
   try {
     await page.locator('.tour-card').waitFor({ timeout: 6000 });
     await page.screenshot({ path: join(OUT, 'tour-1920.png') });
@@ -128,6 +128,25 @@ for (const width of [1920, 390]) {
     await page.waitForTimeout(2500);
     if (await page.locator('.tour-card').count()) failures.push('tour: shows again after Skip');
   } catch { failures.push('tour: did not show on a first visit to Tasks'); }
+  await page.close();
+}
+// Plain paths: an old #/ link lands on the path, and a click inside the app moves without a reload.
+{
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.addInitScript(() => localStorage.setItem('shiftboss-tour-seen', JSON.stringify(['home', 'tasks', 'task', 'needs', 'promises', 'intake', 'session', 'settings', 'welcome'])));
+  await page.goto(BASE + '/#/needs');
+  try {
+    await page.getByText('Needs you', { exact: false }).first().waitFor({ timeout: 6000 });
+    if (new URL(page.url()).pathname !== '/needs') failures.push('urls: #/needs did not become /needs (got ' + page.url() + ')');
+    await page.evaluate(() => { (window as any).__noReload = true; });
+    await page.getByRole('link', { name: /^Promises/ }).first().click();
+    await page.getByText('waiting on you', { exact: false }).first().waitFor({ timeout: 6000 });
+    if (new URL(page.url()).pathname !== '/promises') failures.push('urls: sidebar click did not go to /promises');
+    if (!(await page.evaluate(() => (window as any).__noReload))) failures.push('urls: a sidebar click reloaded the page');
+    await page.goBack();
+    await page.getByText('Needs you', { exact: false }).first().waitFor({ timeout: 6000 });
+    if (new URL(page.url()).pathname !== '/needs') failures.push('urls: Back did not return to /needs');
+  } catch (e) { failures.push('urls: ' + (e as Error).message.split('\n')[0]); }
   await page.close();
 }
 await browser.close();

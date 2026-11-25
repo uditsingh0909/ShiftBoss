@@ -170,7 +170,7 @@ if (running) {
     ...(unasked.length ? [`Bring in current work from ${unasked.length} session(s): shiftboss setup ask --all   (or MCP onboarding_ask)`] : []),
     ...(!o.onboarding.backfillFrom ? ['Read back Slack and Gmail: shiftboss setup backfill 3   (or MCP onboarding_backfill)'] : []),
     ...(!o.onboarding.doneAt ? ['Finish: shiftboss setup done   (or MCP onboarding_done)'] : []),
-    `Open the UI: ${BASE}/#/welcome  (it shows the same steps and updates live)`,
+    `Open the UI: ${BASE}/welcome  (it shows the same steps and updates live)`,
   ];
 }
 

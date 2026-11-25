@@ -5,7 +5,7 @@ import { DEFAULT_NOTIFY, STAGES, type NotifySettings, type Snapshot } from './ty
 export type NotifyKind = keyof NotifySettings;
 export interface NotifyEvent { kind: NotifyKind; key: string; title: string; body: string; route: string }
 
-const route = (...parts: string[]) => '#/' + parts.map(encodeURIComponent).join('/');
+const route = (...parts: string[]) => '/' + parts.map(encodeURIComponent).join('/');
 const cut = (s: string, n = 140) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
 /** Every item in this snapshot that would notify, enabled or not. Keys are stable across snapshots. */

@@ -36,17 +36,41 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return data as T;
 }
 
-// ---------- hash router ----------
-export function useRoute(): string[] {
-  const [hash, setHash] = useState(location.hash);
-  useEffect(() => {
-    const on = () => setHash(location.hash);
-    addEventListener('hashchange', on);
-    return () => removeEventListener('hashchange', on);
-  }, []);
-  return hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+// ---------- router: plain paths (/needs, /task/T-12) ----------
+const NAV = 'shiftboss:nav';
+/** Old links (#/needs) still work: they become /needs. */
+function fromOldHash() {
+  if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1) || '/');
 }
-export const href = (...parts: string[]) => '#/' + parts.map(encodeURIComponent).join('/');
+fromOldHash();
+/** Go to a page inside ShiftBoss without reloading. */
+export function navigate(to: string, replace = false) {
+  const path = to.startsWith('#/') ? to.slice(1) : to;
+  if (path === location.pathname + location.search) return;
+  history[replace ? 'replaceState' : 'pushState'](null, '', path);
+  dispatchEvent(new Event(NAV));
+  scrollTo(0, 0);
+}
+/** Same-origin links (<a href="/needs">) move inside the app instead of reloading the page. */
+if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = (e.target as Element | null)?.closest?.('a');
+  if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+  const raw = a.getAttribute('href') ?? '';
+  if (!(raw.startsWith('/') || raw.startsWith('#/')) || raw.startsWith('//') || raw.startsWith('/api/')) return;
+  e.preventDefault();
+  navigate(raw);
+});
+export function useRoute(): string[] {
+  const [path, setPath] = useState(location.pathname);
+  useEffect(() => {
+    const on = () => { fromOldHash(); setPath(location.pathname); };
+    addEventListener('popstate', on); addEventListener(NAV, on); addEventListener('hashchange', on);
+    return () => { removeEventListener('popstate', on); removeEventListener(NAV, on); removeEventListener('hashchange', on); };
+  }, []);
+  return path.split('/').filter(Boolean).map(decodeURIComponent);
+}
+export const href = (...parts: string[]) => '/' + parts.map(encodeURIComponent).join('/');
 
 // ---------- toast ----------
 type ToastAction = { label: string; run: () => void };

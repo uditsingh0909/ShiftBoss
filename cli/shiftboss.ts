@@ -311,7 +311,7 @@ async function main() {
         console.log(`Sessions (${o.sessions.length}):`);
         for (const x of o.sessions) console.log(`  ${x.name.padEnd(36)} ${x.status.padEnd(8)} ${String(x.tasks).padStart(3)} tasks  ${x.askedAt ? 'asked' : 'not asked'}`);
         console.log(`
-Board: ${o.board.tasks} tasks, ${o.board.promises} promises. UI: http://127.0.0.1:${o.setup.port}/#/welcome`);
+Board: ${o.board.tasks} tasks, ${o.board.promises} promises. UI: http://127.0.0.1:${o.setup.port}/welcome`);
         return;
       }
       if (sub === 'lead') {

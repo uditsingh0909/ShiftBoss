@@ -105,7 +105,7 @@ Set up ShiftBoss for me: https://github.com/uditsingh0909/ShiftBoss — clone it
 
 It checks the machine, asks you a few questions (your name, which extras, your lead session), installs
 and starts ShiftBoss, then brings in the work your sessions are already doing. Open
-<http://127.0.0.1:4400/#/welcome> to watch each step tick off, or take over there at any point. The same
+<http://127.0.0.1:4400/welcome> to watch each step tick off, or take over there at any point. The same
 steps are in the CLI (`shiftboss setup …`) and the MCP tools (`setup_status`, `onboarding_ask`, …).
 
 ### Not using herdr yet?
@@ -190,7 +190,7 @@ claude mcp get shiftboss     # should say: Connected
 
 Restart the sessions that were already running so they load the tools. Then paste the
 [CLAUDE.md snippet](#what-to-tell-your-sessions) into the `CLAUDE.md` your sessions read, so they report
-without being asked. **Check:** the Connect screen (`#/setup`) marks a session "reports with tools" once
+without being asked. **Check:** the Connect screen (`/setup`) marks a session "reports with tools" once
 it has used one.
 
 #### 6. Exact usage numbers (optional)

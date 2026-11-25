@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { DEFAULT_NOTIFY, type NotifySettings, type Snapshot } from '../shared/types';
 import { newNotifications, tabTitle, type NotifyEvent } from '../shared/notify';
-import { api, C, toast, useSnap } from './lib';
+import { api, C, navigate, toast, useSnap } from './lib';
 
 const supported = () => typeof window !== 'undefined' && 'Notification' in window;
 const store = {
@@ -47,15 +47,15 @@ function claim(key: string): boolean {
 
 /** The person is looking at that very page in this tab: nothing to tell them. */
 function onScreen(route: string): boolean {
-  const here = (location.hash || '#/').replace(/\/$/, '') || '#';
-  return document.visibilityState === 'visible' && document.hasFocus() && here === route.replace(/\/$/, '');
+  const here = location.pathname.replace(/\/$/, '') || '/';
+  return document.visibilityState === 'visible' && document.hasFocus() && here === (route.replace(/\/$/, '') || '/');
 }
 
 function show(title: string, body: string, route: string, tag: string) {
   if (!supported() || Notification.permission !== 'granted') return;
   try {
     const n = new Notification(title, { body, tag });
-    n.onclick = () => { window.focus(); location.hash = route; n.close(); };
+    n.onclick = () => { window.focus(); navigate(route); n.close(); };
   } catch { /* some browsers only allow notifications from a service worker */ }
 }
 
@@ -80,14 +80,14 @@ export function useNotifications(snap: Snapshot | null) {
     if (!before) {
       const to = store.get('shiftboss.updatedTo', true);
       store.del('shiftboss.updatedTo', true);
-      if (to && on.updated && claim('update:' + to)) show('ShiftBoss updated', snap.update?.current ? `Now running ${snap.update.current.sha}: ${snap.update.current.subject}` : 'A new version is running.', '#/settings', 'update');
+      if (to && on.updated && claim('update:' + to)) show('ShiftBoss updated', snap.update?.current ? `Now running ${snap.update.current.sha}: ${snap.update.current.subject}` : 'A new version is running.', '/settings', 'update');
     }
     const fresh: NotifyEvent[] = newNotifications(before, snap, on);
     for (const e of fresh.slice(0, 5)) {
       if (onScreen(e.route) || !claim(e.kind + '|' + e.key)) continue;
       show(e.title, e.body, e.route, e.key);
     }
-    if (fresh.length > 5) show(`${fresh.length - 5} more in ShiftBoss`, 'Open ShiftBoss to see them all.', '#/', 'more');
+    if (fresh.length > 5) show(`${fresh.length - 5} more in ShiftBoss`, 'Open ShiftBoss to see them all.', '/', 'more');
   }, [snap]);
 }
 
@@ -142,7 +142,7 @@ export function NotificationSettings({ Section, Switch }: { Section: ComponentTy
   };
   const test = () => {
     if (perm !== 'granted') return toast('Allow notifications first');
-    show('ShiftBoss', 'Notifications work. Click to come back here.', '#/settings', 'test');
+    show('ShiftBoss', 'Notifications work. Click to come back here.', '/settings', 'test');
   };
   const save = (patch: Partial<NotifySettings>) => {
     setPending((p) => ({ ...p, ...patch }));
