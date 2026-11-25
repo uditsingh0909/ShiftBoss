@@ -197,15 +197,23 @@ input[type="checkbox"] { accent-color: #F4F4F5; width: 16px; height: 16px; flex:
 /* quick actions on task cards and list rows: on hover or keyboard focus, always on touch screens */
 .kq { display: none; gap: 6px; flex-wrap: wrap; align-items: center; }
 .kcard:hover .kq, .kcard:focus-within .kq { display: flex; }
-/* on a board card: the buttons on one row, the session picker on its own full-width row (no 3-line wrap) */
+/* on a board card: a footer that slides open under a hairline, without the card jumping in place:
+   back + next (named stages, next is the main action) + hold on one row, the session picker on its own row */
+.kcard .kq.kq-card { display: flex; max-height: 0; opacity: 0; overflow: hidden; margin-top: -10px; padding-top: 0; border-top: 1px solid transparent;
+  transition: max-height .35s var(--ease), opacity .25s var(--ease), margin-top .35s var(--ease), padding-top .35s var(--ease), border-color .35s var(--ease); }
+.kcard:hover .kq.kq-card, .kcard:focus-within .kq.kq-card { max-height: 120px; opacity: 1; margin-top: 2px; padding-top: 12px; border-top-color: rgba(255,255,255,.08); }
 .kcard .kq > .pick { order: 9; flex: 1 1 100%; width: 100% !important; }
-.kcard .kq > .pill { flex: none; }
+.kcard .kq > .pill { flex: none; height: 28px; padding: 0 12px; }
+.kcard .kq > .kq-next { flex: 1 1 auto; justify-content: center; font-weight: 500; }
+.kcard .kq > .kq-back { color: var(--dim); }
+.kcard .kq .pick-field { height: 30px; border-radius: 10px; background-color: rgba(255,255,255,.03); }
 .kq .pick-field { height: 26px; border-radius: 999px; font-size: 11px; padding: 0 26px 0 10px; background-position: right 9px center; border-color: rgba(255,255,255,.12); background-color: transparent; }
 .tlist { display: grid; grid-template-columns: 64px minmax(0,1fr) 170px 110px 90px 70px; gap: 16px; align-items: center; position: relative; }
 .tlist .kq { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding-left: 16px; background: #121212; flex-wrap: nowrap; }
 .tlist:hover .kq, .tlist:focus-within .kq { display: flex; }
 @media (hover: none) {
   .kcard .kq { display: flex; }
+  .kcard .kq.kq-card { max-height: none; opacity: 1; margin-top: 2px; padding-top: 12px; border-top-color: rgba(255,255,255,.08); }
   .tlist .kq { display: flex; position: static; transform: none; grid-column: 1 / -1; padding-left: 0; background: none; flex-wrap: wrap; }
 }
 @media (max-width: 900px) {

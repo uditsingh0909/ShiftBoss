@@ -20,7 +20,7 @@ function StagePips({ stage }: { stage: number }) {
  * Move, assign, hold and brief a task without opening it. Shown on hover or keyboard focus, always on
  * touch screens. Moving backwards, or to Requester told (which closes its promises), takes a second click.
  */
-function QuickActions({ t, ready }: { t: Task; ready: boolean }) {
+function QuickActions({ t, ready, card }: { t: Task; ready: boolean; card?: boolean }) {
   const snap = useSnap()!;
   const [confirm, setConfirm] = useState<number | null>(null);
   const patch = (body: object, ok: string) => act(() => api('PATCH', `/api/tasks/${t.id}`, { ...body, who: 'you' }), ok);
@@ -32,16 +32,18 @@ function QuickActions({ t, ready }: { t: Task; ready: boolean }) {
   };
   const stepBtn = (to: number, glyph: string) => {
     const asking = confirm === to;
+    // On a board card the buttons name the stage: "← Queued", "PR open →"; the forward one is the main action.
+    const text = card ? (to < t.stage ? `${glyph} ${STAGES[to]}` : `${STAGES[to]} ${glyph}`) : glyph;
     return (
-      <button type="button" className={'pill xs' + (asking ? ' amber-b' : ' icon')}
+      <button type="button" className={'pill xs' + (asking ? ' amber-b' : card ? (to > t.stage ? ' w kq-next' : ' kq-back') : ' icon')}
         aria-label={asking ? `Click again to move ${t.id} to ${STAGES[to]}` : `Move ${t.id} to ${STAGES[to]}`} title={STAGES[to]}
         onClick={() => go(to)} onBlur={() => setConfirm((c) => (c === to ? null : c))}>
-        {asking ? (to === 6 ? 'Again: closes promises' : 'Again: move back') : glyph}
+        {asking ? (to === 6 ? 'Again: closes promises' : 'Again: move back') : text}
       </button>
     );
   };
   return (
-    <div className="kq row" role="group" aria-label={`Quick actions for ${t.id}`}>
+    <div className={'kq row' + (card ? ' kq-card' : '')} role="group" aria-label={`Quick actions for ${t.id}`}>
       {t.stage > 0 && stepBtn(t.stage - 1, '←')}
       {t.stage < 6 && stepBtn(t.stage + 1, '→')}
       <button type="button" className="pill xs" onClick={() => void patch({ held: !t.held }, t.held ? `${t.id} resumed` : `${t.id} on hold`)}>{t.held ? 'Resume' : 'Hold'}</button>
@@ -125,7 +127,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
         <span className="mono faint" style={{ fontSize: 11 }}>{ago(t.updatedAt)}</span>
         {ready.includes(t.id) && <button type="button" className="pill xs w" onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Sent to ' + t.session)}>Send</button>}
       </span>
-      <QuickActions t={t} ready={ready.includes(t.id)} />
+      <QuickActions card t={t} ready={ready.includes(t.id)} />
     </div>
   );
   // Dropping a card backwards, or on Requester told, asks first, like the task page does.
