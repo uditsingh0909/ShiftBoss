@@ -36,12 +36,13 @@ export function pickWornOut<S extends { name: string; status: string; contextPct
   sessions: S[],
   opts: { lead: string | null; thresholds: { replace: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number }; replacements: { oldName: string; newName: string; state: string }[]; tried: Map<string, number>; nowMs: number; holdsJob: (s: S) => boolean },
 ): { s: S; why: string } | null {
-  const over = new Set(['failed', 'cancelled']);
+  const over = new Set(['failed']); // a cancelled one is a "no": it is never retried by itself
   const replaced = new Set(opts.replacements.filter((r) => !over.has(r.state)).map((r) => r.oldName));
-  const arriving = new Set(opts.replacements.filter((r) => !over.has(r.state) && r.state !== 'done').map((r) => r.newName));
+  const names = sessions.map((s) => s.name);
+  const arriving = new Set(opts.replacements.filter((r) => !['failed', 'cancelled', 'done'].includes(r.state)).map((r) => r.newName));
   const c = sessions
     .filter((s) => s.status === 'idle' || s.status === 'done')
-    .filter((s) => !replaced.has(s.name) && !arriving.has(s.name))
+    .filter((s) => !replaced.has(s.name) && !arriving.has(s.name) && !newerVersionOf(s.name, names))
     .filter((s) => opts.nowMs - (opts.tried.get(s.name) ?? 0) > 30 * 60e3)
     .map((s) => ({ s, why: wornOut(s, opts.thresholds, s.name === opts.lead) }))
     .filter((x): x is { s: S; why: string } => !!x.why)
@@ -90,21 +91,43 @@ export const baseName = (name: string) => name.match(V_RE)?.[1] ?? name;
  * a long base is shortened to make room for the -vN (herdr refuses a longer name and the replacement failed).
  */
 export function nextReplacementName(name: string, taken: Iterable<string>): string {
-  const base = baseName(name);
-  const lower = base.toLowerCase();
+  const lower = baseName(name).toLowerCase();
   const all = new Set([...taken].map((t) => t.toLowerCase()));
   all.add(name.toLowerCase());
   let v = 1;
-  for (const t of all) {
-    if (t === lower) continue;
-    const m = t.match(V_RE);
-    if (m && m[1] === lower) v = Math.max(v, Number(m[2]));
-  }
+  for (const t of all) v = Math.max(v, versionOf(t, lower) ?? 0);
   for (let n = v + 1; ; n++) {
-    const suffix = '-v' + n;
-    const cand = lower.slice(0, NAME_MAX - suffix.length).replace(/[-_]+$/, '') + suffix;
-    if (!all.has(cand.toLowerCase())) return cand;
+    const cand = stemFor(lower, n) + '-v' + n;
+    if (!all.has(cand)) return cand;
   }
+}
+
+/**
+ * The base as it appears in `<base>-vN`: whole when it fits herdr's 32 characters, otherwise cut back to a word
+ * ("serive-ai-servicetosales-agent" → "serive-ai-servicetosales-v2"), so the name stays readable and in the series.
+ */
+function stemFor(base: string, n: number): string {
+  const room = NAME_MAX - ('-v' + n).length;
+  if (base.length <= room) return base;
+  const cut = base.slice(0, room), word = cut.lastIndexOf('-');
+  return (word >= 12 ? cut.slice(0, word) : cut).replace(/[-_]+$/, '');
+}
+
+/** The version of `name` in the series of `base` (1 for the base itself), or null when it is not in that series. */
+export function versionOf(name: string, base: string): number | null {
+  const n = name.toLowerCase(), b = baseName(base).toLowerCase();
+  if (n === b) return 1;
+  const m = n.match(V_RE);
+  if (!m) return null;
+  const v = Number(m[2]);
+  return m[1] === b || m[1] === stemFor(b, v) ? v : null;
+}
+
+/** A running session that is a later version of `name` (someone already took over from it, by hand or not). */
+export function newerVersionOf(name: string, running: Iterable<string>): string | null {
+  const mine = versionOf(name, name) ?? 1;
+  for (const r of running) { if (r === name) continue; const v = versionOf(r, name); if (v !== null && v > mine) return r; }
+  return null;
 }
 
 /** The model to start the replacement with: an exact model id when known, else the family alias. */

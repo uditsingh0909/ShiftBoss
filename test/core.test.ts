@@ -743,8 +743,8 @@ describe('session names fit herdr', () => {
     const a = nextReplacementName('serive-ai-servicetosales-agent', []);
     const b = nextReplacementName('platform-admin-mcp-console-parity', []);
     for (const n of [a, b]) { expect(n.length).toBeLessThanOrEqual(32); expect(NAME_RE.test(n)).toBe(true); expect(n).toMatch(/-v2$/); }
-    expect(b).toBe('platform-admin-mcp-console-pa-v2');
-    expect(nextReplacementName(b, [b])).toBe('platform-admin-mcp-console-pa-v3');
+    expect(b).toBe('platform-admin-mcp-console-v2');
+    expect(nextReplacementName(b, [b])).toBe('platform-admin-mcp-console-v3');
     expect(nextReplacementName('Lead-Manager', [])).toBe('lead-manager-v2');
     expect(nextReplacementName('lead-manager-v2', ['lead-manager-v2'])).toBe('lead-manager-v3');
   });
@@ -1781,5 +1781,28 @@ describe('lead chat store', () => {
     const id = s.addChatOut('lead', 'yes');
     s.syncChat('lead', [{ key: 'q:1', at: Date.now(), role: 'you', text: 'yes' }]);
     expect(s.listChat().map((m) => [m.id, m.state])).toEqual([[id, 'seen']]);
+  });
+});
+
+describe('replacement names past 32 characters', () => {
+  const { nextReplacementName, versionOf, newerVersionOf, pickWornOut } = require('../server/fleet');
+  const long = 'serive-ai-servicetosales-agent';
+  test('a long base is cut back to a whole word and stays within 32', () => {
+    const n = nextReplacementName(long, [long]);
+    expect(n).toBe('serive-ai-servicetosales-v2');
+    expect(n.length).toBeLessThanOrEqual(32);
+  });
+  test('a hand-started -v2 that is too long for herdr still counts, and the series goes on', () => {
+    expect(versionOf('serive-ai-servicetosales-v3', long)).toBe(3);
+    expect(nextReplacementName(long, [long, 'serive-ai-servicetosales-v3'])).toBe('serive-ai-servicetosales-v4');
+    expect(newerVersionOf(long, [long, 'serive-ai-servicetosales-agent-v2'])).toBe('serive-ai-servicetosales-agent-v2');
+    expect(newerVersionOf('lead-v4', ['lead-v4', 'lead-v3'])).toBeNull();
+  });
+  test('auto-replace leaves a session alone once a successor runs, or after a cancel', () => {
+    const t = { replace: 85, cacheWarnM: 500, cacheReplaceM: 1000 };
+    const s = (name: string) => ({ name, status: 'idle', contextPct: 10, cache: { read: 2e9 } });
+    const base = { lead: null, thresholds: t, replacements: [], tried: new Map(), nowMs: 1e9, holdsJob: () => false };
+    expect(pickWornOut([s(long), { ...s(long + '-v2'), cache: { read: 1e6 } }], base)).toBeNull();
+    expect(pickWornOut([s('a')], { ...base, replacements: [{ oldName: 'a', newName: 'a-v2', state: 'cancelled' }] })).toBeNull();
   });
 });

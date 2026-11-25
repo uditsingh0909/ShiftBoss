@@ -13,7 +13,7 @@ import { NAME_RE } from './fleet';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
 import { heatOf, holdsScheduledJob, Transcripts } from './transcripts';
-import { HANDOFF_TIMEOUT_MS, pickWornOut, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
+import { HANDOFF_TIMEOUT_MS, newerVersionOf, pickWornOut, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
 import { setupInfo } from './setup';
 import { actionKey, decide, type ActionKind, type Actor } from './gate';
 import { onboardingPrompt, ownerRules } from './onboarding';
@@ -586,6 +586,8 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
         const s = this.sessions.find((x) => x.name === name);
         if (!s) throw new Error(name + ' is not running in herdr');
         if (this.store.activeReplacementFor(name)) throw new Error(name + ' is already being replaced');
+        const newer = newerVersionOf(name, this.sessions.map((x) => x.name));
+        if (newer) throw new Error(`${newer} is already running and took over from ${name}: close ${name} instead`);
         const r = this.store.addReplacement({
           oldName: name, newName: nextReplacementName(name, this.takenNames()), cwd: s.cwd, model: modelArg(s.model),
           handoffPath: handoffPathFor(name, s.cwd, s.handoffPath), sessionId: s.sessionId,
