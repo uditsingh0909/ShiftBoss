@@ -11,6 +11,7 @@ import { SetupPage } from './pages/setup';
 import { CommandCenter, Health, Overlap, Roster, SessionPage } from './pages/sessions';
 import { Intake, TaskPage, Tasks } from './pages/tasks';
 import { Monitors } from './pages/monitors';
+import { FloorPage } from './pages/floor';
 
 function Palette({ onClose }: { onClose: () => void }) {
   const snap = useSnap();
@@ -21,6 +22,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   const items = useMemo(() => {
     const all: { group: string; label: string; meta: string; to: string; run?: () => void }[] = [
       { group: 'Help', label: "Show this page's tour", meta: 'a short walk through this screen', to: '#', run: replayTour },
+      { group: 'Go to', label: 'Floor', meta: 'the 3D office, for a second monitor', to: href('floor') },
       { group: 'Go to', label: 'Tasks board', meta: 'board and list', to: href('tasks') },
       { group: 'Go to', label: 'Needs you', meta: 'decisions', to: href('needs') },
       { group: 'Go to', label: 'Promises', meta: 'what you said you would do', to: href('promises') },
@@ -129,6 +131,8 @@ function App() {
   // A fresh install (nothing on the board, setup never finished) opens on Get started.
   else if (!snap.onboarding.doneAt && !snap.tasks.length && !top) page = <Welcome />;
   else page = <CommandCenter />;
+  // The Floor fills the screen on its own: no sidebar, made for a second monitor.
+  if (snap && top === 'floor') return <SnapshotCtx.Provider value={snap}><Boundary><FloorPage /></Boundary><Toaster /></SnapshotCtx.Provider>;
   return (
     <SnapshotCtx.Provider value={snap}>
       <AppFrame top={top ?? ''} connected={connected} onSearch={() => setPalette(true)}>

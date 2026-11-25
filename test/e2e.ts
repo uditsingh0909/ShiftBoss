@@ -35,14 +35,14 @@ const routes: [string, string, string][] = [
   ['overlap', '/overlap', 'Overlap check'], ['tasks', '/tasks', 'in flight'], ['intake', '/intake', 'messages read today'],
   ['needs', '/needs', 'Needs you'], ['promises', '/promises', 'waiting on you'], ['audit', '/audit', 'in your name'],
   ['report', '/report', 'Copy'], ['settings', '/settings', 'Save'], ['welcome', '/welcome', 'Set up ShiftBoss'], ['setup', '/setup', 'Connect your sessions'],
-  ['monitors', '/monitors', 'watched'],
+  ['monitors', '/monitors', 'watched'], ['floor', '/floor', 'Leave the floor'],
 ];
 if (session) routes.push(['session', '/session/' + encodeURIComponent(session), session]);
 if (task) routes.push(['task', '/task/' + task, task]);
 
 const chrome = findChrome();
 if (!chrome) { console.log('No Chrome, Edge or Chromium found. Set CHROME_PATH to one, or run: bunx playwright install chromium'); process.exit(2); }
-const browser = await chromium.launch({ executablePath: chrome, headless: true });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }); // WebGL for the Floor
 const failures: string[] = [];
 for (const width of [1920, 390]) {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 1080 } });

@@ -420,6 +420,7 @@ export function CommandCenter() {
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
           <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <a className="pill sm" href={href('floor')} title="Every session at its desk in a 3D office, made for a second monitor"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-5 9 5-9 5zM3 9v6l9 5 9-5V9M12 14v6" /></svg>Open the floor</a>
             <a className="pill sm" href={href('roster')}>All sessions</a>
             <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
             <button type="button" className={'pill sm' + (near.length ? ' r' : '')} aria-expanded={replacing} onClick={() => { setReplacing(!replacing); setSpawning(false); }}>Replace…</button>

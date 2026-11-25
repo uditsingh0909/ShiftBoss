@@ -1644,3 +1644,47 @@ describe('shared herdr tabs', () => {
     expect(isGeneratedTabLabel(l4, four)).toBe(true); // ShiftBoss can always rename its own label
   });
 });
+
+describe('the Floor', () => {
+  const { deskState, terminalLines, floorModel, POD_SEATS } = require('../shared/floor');
+  const at = (h: number, m = 0) => new Date(2026, 10, 25, h, m).toISOString(); // local time: the test passes in any time zone
+  const now = Date.parse(at(12));
+  const mk = (name: string, status: string, lane = '', extra: any = {}) => ({ name, status, lane, lastActivity: at(11, 58), contextPct: 40, cache: { read: 5e8 }, lastTool: null, lines: [], ...extra });
+
+  test('a session reads as needs you, stuck, working, just finished or idle', () => {
+    expect(deskState({ status: 'blocked', lastActivity: null }, 'stuck', now)).toBe('needs');
+    expect(deskState({ status: 'working', lastActivity: null }, 'looping', now)).toBe('stuck');
+    expect(deskState({ status: 'working', lastActivity: null }, 'healthy', now)).toBe('working');
+    expect(deskState({ status: 'done', lastActivity: at(11, 55) }, null, now)).toBe('finished');
+    expect(deskState({ status: 'done', lastActivity: at(10) }, null, now)).toBe('idle');
+    expect(deskState({ status: 'idle', lastActivity: null }, null, now)).toBe('idle');
+  });
+
+  test('terminal lines mark tools, output and what you typed', () => {
+    expect(terminalLines([{ at: '', kind: 'tool', text: 'Edit  a.ts' }, { at: '', kind: 'out', text: '+3 -1' }, { at: '', kind: 'you', text: 'go' }, { at: '', kind: 'say', text: 'Done.' }]))
+      .toEqual(['⏺ Edit a.ts', '  ⎿ +3 -1', '> go', 'Done.']);
+  });
+
+  test('the lead gets the office, the monitor the ops desk, idle sessions the lounge, the rest a pod per lane', () => {
+    const sessions = [mk('alpha-v2', 'working', 'core'), mk('beta', 'working', 'core'), mk('gamma', 'idle', 'core'), mk('delta', 'blocked', ''), mk('boss-v3', 'idle'), mk('monitor', 'idle')];
+    const m = floorModel({ sessions, health: [], tasks: [{ id: 'T-1', session: 'beta', stage: 2, liveAt: null }, { id: 'T-2', session: null, stage: 5, liveAt: at(9) }],
+      needs: [{ answer: null, createdAt: at(11, 50) }], actions: [{ state: 'waiting', at: at(11, 40) }], settings: { leadSession: 'boss' } } as any, now);
+    expect(m.lead.name).toBe('boss-v3');
+    expect(m.ops.name).toBe('monitor');
+    expect(m.idle.map((d: any) => d.name)).toEqual(['gamma']);
+    expect(m.pods.map((p: any) => [p.label, p.desks.map((d: any) => d.name)])).toEqual([['core', ['alpha-v2', 'beta', 'gamma']], ['Unassigned', ['delta']]]);
+    expect(m.all.find((d: any) => d.name === 'beta').task).toBe('T-1');
+    expect(m.kpis).toEqual({ busy: 3, total: 6, inProgress: 1, shippedToday: 1, needs: 2, oldestNeedMin: 20 });
+  });
+
+  test('a lane with more sessions than seats gets a second pod; the layout key changes only when someone moves', () => {
+    const many = Array.from({ length: POD_SEATS + 2 }, (_, i) => mk('s' + String(i).padStart(2, '0'), 'working', 'big'));
+    const base = { health: [], tasks: [], needs: [], actions: [], settings: { leadSession: '' } } as any;
+    const m = floorModel({ ...base, sessions: many }, now);
+    expect(m.pods.map((p: any) => [p.label, p.lane, p.desks.length])).toEqual([['big 1', 'big', POD_SEATS], ['big 2', 'big', 2]]);
+    const again = floorModel({ ...base, sessions: many.map((s) => ({ ...s, contextPct: 90 })) }, now);
+    expect(again.layoutKey).toBe(m.layoutKey);
+    const moved = floorModel({ ...base, sessions: many.map((s, i) => (i === 0 ? { ...s, status: 'idle', lastActivity: null } : s)) }, now);
+    expect(moved.layoutKey).not.toBe(m.layoutKey);
+  });
+});

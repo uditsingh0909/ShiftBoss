@@ -28,6 +28,9 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `server/api.ts` | HTTP API |
 | `server/herdr.ts` | herdr CLI wrapper |
 | `server/panes.ts` | Pure rules for sharing herdr tabs: which tab a new session joins, which pane to split, tab names, the Tidy plan |
+| `shared/floor.ts` | The Floor's rules: who sits where (pods per lane, lead office, ops desk, lounge for idle), desk states, KPIs |
+| `web/floor/scene.ts` | The Floor: the three.js office (loaded only on that page), rebuilt when someone moves, updated in place otherwise |
+| `web/pages/floor.tsx` | The Floor page: full screen, no sidebar, panels that follow what you click |
 | `server/fleet.ts` | Pure rules for starting many sessions and replacing one through a handoff (names, handoff check, prompts); the engine runs the replacement state machine |
 | `server/config.ts` | Defaults + `shiftboss.config.json` (gitignored) + `SHIFTBOSS_*` env overrides |
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
