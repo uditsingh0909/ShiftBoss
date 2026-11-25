@@ -418,8 +418,8 @@ export function CommandCenter() {
           <h1 className="hero">{snap.sessions.length} sessions running.<br /><span className="faint">
             <a href={href('tasks')} style={{ color: 'inherit' }} title={`Tasks in progress held by a running session, across ${busyOn} session${busyOn === 1 ? '' : 's'}`}>{inProgress.length} task{inProgress.length === 1 ? '' : 's'} in progress</a>, {blocked.length} need{blocked.length === 1 ? 's' : ''} you, {near.length} near the limit.</span></h1>
         </div>
-        <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
-          <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+          <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap' }}>
             <a className="pill sm" href={href('floor')} title="Every session at its desk in a 3D office, made for a second monitor"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-5 9 5-9 5zM3 9v6l9 5 9-5V9M12 14v6" /></svg>Open the floor</a>
             <a className="pill sm" href={href('roster')}>All sessions</a>
             <a className="pill sm" href={href('tasks', 'new')}>+ New task</a>
