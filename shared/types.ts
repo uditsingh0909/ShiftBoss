@@ -409,3 +409,8 @@ export interface Snapshot {
   /** The ShiftBoss Slack bot, if set up. */
   slack: SlackStatus;
 }
+
+/** A time of day the way people read it here: 12-hour, in the local time zone ("5:42 PM"). One place, so every screen agrees. */
+export function clockTime(at: string | number | Date): string {
+  return new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+}

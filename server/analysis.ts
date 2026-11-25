@@ -1,6 +1,6 @@
 // Pure rules: session health and cross-session overlaps. No I/O here, so it is easy to test.
 import { basename } from 'node:path';
-import { fmtCache, type HealthCard, type Overlap, type Session, type Settings, type Task } from '../shared/types';
+import { clockTime, fmtCache, type HealthCard, type Overlap, type Session, type Settings, type Task } from '../shared/types';
 import type { ToolCall } from './transcripts';
 
 const MIN = 60e3;
@@ -36,11 +36,11 @@ export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Sett
     return card('looping', `Ran the same command ${hits.length} times in 15 minutes.`,
       [{ k: 'loop', v: key.split(':').slice(1).join(':').slice(0, 140), tone: 'red' }, { k: 'edits', v: edits15 + ' file edits in 15 min', tone: edits15 ? 'dim' : 'amber' }],
       'interrupt it and point it at the cause',
-      hits.slice(-4).map((h) => new Date(h.at).toTimeString().slice(0, 5) + '  ' + h.key.split(':').slice(1).join(':').slice(0, 120)));
+      hits.slice(-4).map((h) => clockTime(h.at) + '  ' + h.key.split(':').slice(1).join(':').slice(0, 120)));
   }
   if (s.status !== 'working' && working.length && silentMin >= t.stuckMin) {
     return card('stuck', `No output for ${Math.round(silentMin)} minutes with ${working.length} task${working.length === 1 ? '' : 's'} in progress.`,
-      [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? new Date(s.lastActivity).toTimeString().slice(0, 5) : 'unknown'), tone: 'red' }, { k: 'in progress', v: working.map((q) => q.id).join(', '), tone: 'amber' }],
+      [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? clockTime(s.lastActivity) : 'unknown'), tone: 'red' }, { k: 'in progress', v: working.map((q) => q.id).join(', '), tone: 'amber' }],
       'ask it how ' + working[0].id + ' is going');
   }
   // Worn out: context near the top, or the lifetime cache past the line. Compacting resets context but not the

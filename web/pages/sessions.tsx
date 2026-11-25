@@ -20,7 +20,7 @@ function Lines({ s, n, height, stamps, grow }: { s: Session; n: number; height: 
         <div className="col" style={{ gap: 2 }}>
           {s.lines.slice(-n).map((l, i) => (
             <div key={i + l.at} className="row" style={{ gap: 16, alignItems: 'flex-start' }}>
-              {stamps && <span style={{ width: 52, flex: 'none', color: 'rgba(255,255,255,0.22)' }}>{hhmm(l.at)}</span>}
+              {stamps && <span style={{ width: 66, flex: 'none', color: 'rgba(255,255,255,0.22)' }}>{hhmm(l.at)}</span>}
               <span style={{ color: lineColor(l.kind), wordBreak: 'break-word', minWidth: 0 }} className={stamps ? '' : 'ellipsis'}>{prefix(l.kind) + l.text}</span>
             </div>
           ))}
@@ -284,7 +284,7 @@ function replNote(r: Replacement, closeMin = 30): { text: string; tone: string }
       if (r.holdUntil && Date.parse(r.holdUntil) > Date.now()) return { text: `${r.newName} took over. ${r.oldName} is kept open until ${hhmm(r.holdUntil)}, then closes when idle.`, tone: C.amber };
       if (!closeMin || !r.promptedAt) return { text: `${r.newName} took over. ${r.oldName} can be closed when you are ready (Settings: Automation).`, tone: C.green };
       const at = Date.parse(r.promptedAt) + closeMin * 60e3;
-      return { text: `${r.newName} took over. ${r.oldName} closes ${at > Date.now() ? 'at ' + new Date(at).toTimeString().slice(0, 5) : 'once it is idle'} (not while it works or waits on a prompt).`, tone: C.green };
+      return { text: `${r.newName} took over. ${r.oldName} closes ${at > Date.now() ? 'at ' + hhmm(new Date(at).toISOString()) : 'once it is idle'} (not while it works or waits on a prompt).`, tone: C.green };
     }
     case 'failed': return { text: r.error ?? 'Failed.', tone: C.red };
     case 'cancelled': return { text: 'Cancelled.', tone: C.faint };

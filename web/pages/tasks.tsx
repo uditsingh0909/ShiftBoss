@@ -292,7 +292,7 @@ export function TaskPage({ id }: { id: string }) {
           <div className="col divide scrollbox" style={{ maxHeight: 520 }}>
             {events.map((e) => (
               <div key={e.id} className="row" style={{ gap: 16, padding: '10px 0' }}>
-                <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(e.at)}</span>
+                <span className="mono faint" style={{ width: 66, fontSize: 12, flex: 'none' }}>{hhmm(e.at)}</span>
                 <span className="mono" style={{ width: 64, fontSize: 11, flex: 'none', color: e.src === 'Slack' ? C.amber : e.src === 'GitHub' ? C.fg : C.faint }}>{e.src}</span>
                 <span className="mono ellipsis" style={{ width: 120, fontSize: 12, flex: 'none' }}>{e.who}</span>
                 <span className="dim" style={{ fontSize: 14, minWidth: 0 }}>{e.text}</span>
@@ -376,7 +376,7 @@ export function Intake() {
         <Card span={8} pad={12}>
           {(list?.items ?? []).map((m) => (
             <div key={m.id} className="trow row" style={{ gap: '10px 18px', flexWrap: 'wrap' }}>
-              <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }} title={new Date(m.at).toLocaleString()}>{range.id === 'Today' ? hhmm(m.at) : new Date(m.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
+              <span className="mono faint" style={{ width: 66, fontSize: 12, flex: 'none' }} title={new Date(m.at).toLocaleString()}>{range.id === 'Today' ? hhmm(m.at) : new Date(m.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
               <span className="mono dim ellipsis" style={{ flex: '0 1 180px', minWidth: 0, fontSize: 12 }}>{m.src}</span>
               <span className="col" style={{ flex: '1 1 260px', minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
               <span className="row" style={{ gap: 10, marginLeft: 'auto', flex: '0 1 auto', minWidth: 0, maxWidth: '100%' }}>

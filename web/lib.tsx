@@ -1,3 +1,4 @@
+import { clockTime } from '../shared/types';
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Snapshot } from '../shared/types';
@@ -98,7 +99,8 @@ export async function act(fn: () => Promise<unknown>, ok: string) {
 // ---------- formatting ----------
 export const C = { fg: '#F4F4F5', dim: 'rgba(255,255,255,0.55)', faint: 'rgba(255,255,255,0.32)', ghost: 'rgba(255,255,255,0.12)', red: '#FF5A4F', amber: '#F5A524', green: '#4ADE80' };
 export const ctxColor = (pct: number, warn = 70, replace = 85) => (pct >= replace ? C.red : pct >= warn ? C.amber : C.fg);
-export const hhmm = (iso: string | null) => (iso ? new Date(iso).toTimeString().slice(0, 5) : '—');
+/** A time of day: 12-hour, local ("5:42 PM"). */
+export const hhmm = (iso: string | null) => (iso ? clockTime(iso) : '—');
 export function ago(iso: string | null): string {
   if (!iso) return '—';
   const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60e3));

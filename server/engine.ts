@@ -2,7 +2,7 @@
 // (auto "needs you" items for blocked panes, dispatch), and builds the snapshot the UI streams.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { MONITOR_SESSION, resolveLead, type AgentStatus, type EnvVersion, type Limits, type MergedPr, type Monitor, type Replacement, type Session, type Snapshot } from '../shared/types';
+import { MONITOR_SESSION, resolveLead, type AgentStatus, type EnvVersion, type Limits, type MergedPr, type Monitor, type Replacement, type Session, type Snapshot, clockTime } from '../shared/types';
 import { MONITOR_REPORT_TIMEOUT_MS, MONITOR_RETRY_MS, leadAlertPrompt, monitorPrompt, pickDue } from './monitors';
 import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
@@ -881,7 +881,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
         if (!succ || succ.status === 'lost') { this.noteClose(r, `${r.newName} is not running`); continue; }
         if (old.status === 'blocked') { this.noteClose(r, 'it waits on a permission prompt; it closes once you answer it in herdr'); continue; }
         if (old.status === 'working') continue; // busy: next tick
-        if (r.holdUntil && Date.parse(r.holdUntil) > nowMs) { this.noteClose(r, `kept open until ${new Date(r.holdUntil).toTimeString().slice(0, 5)}`); continue; }
+        if (r.holdUntil && Date.parse(r.holdUntil) > nowMs) { this.noteClose(r, `kept open until ${clockTime(r.holdUntil)}`); continue; }
         const tools = old.sessionId ? this.transcripts.read(old.sessionId)?.tools ?? [] : [];
         if (holdsScheduledJob(tools, nowMs)) { this.noteClose(r, 'it has a scheduled job (CronCreate) that closing would drop; close it yourself when the job has run, or use Keep open until'); continue; }
         const params = { replacementId: r.id };

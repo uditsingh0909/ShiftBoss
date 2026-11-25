@@ -1,6 +1,6 @@
 // HTTP API. Every write needs the X-ShiftBoss header, so a web page on another origin
 // cannot trigger one (the custom header forces a CORS preflight that we never allow).
-import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, taskSessionName, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../shared/types';
+import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, taskSessionName, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent, clockTime } from '../shared/types';
 import { monitorSessionPrompt } from './monitors';
 import type { Engine } from './engine';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -360,7 +360,7 @@ export function makeApi(engine: Engine) {
         store.holdReplacement(Number(r[1]), until ? until.toISOString() : null);
         const rep = store.getReplacement(Number(r[1]))!;
         engine.pushFeed(req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session'),
-          until ? `keeps ${rep.oldName} open until ${until.toTimeString().slice(0, 5)}` : `lets ${rep.oldName} close on the normal rule`);
+          until ? `keeps ${rep.oldName} open until ${clockTime(until)}` : `lets ${rep.oldName} close on the normal rule`);
         return done(json(rep));
       }
       r = m(/^\/api\/replacements\/(\d+)\/dismiss$/);
