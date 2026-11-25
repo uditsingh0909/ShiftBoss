@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mode: 'dry', // a new install watches first; installs from before modes keep Autopilot (see migrate)
   delegate: false, // a new install: only ShiftBoss's own screens make the owner's decisions
   notify: { ...DEFAULT_NOTIFY },
+  closeOldAfterMin: 30, // a replaced session closes 30 min after its successor took over; 0 = never
 };
 
 const now = () => new Date().toISOString();
@@ -127,6 +128,12 @@ export class Store {
         links TEXT NOT NULL DEFAULT '[]');
       CREATE INDEX IF NOT EXISTS monitor_checks_monitor ON monitor_checks(monitor_id, id);
     `);
+    const rcols = this.db.query('PRAGMA table_info(replacements)').all() as { name: string }[];
+    if (!rcols.some((c) => c.name === 'closed_at')) {
+      this.db.exec('ALTER TABLE replacements ADD COLUMN closed_at TEXT');
+      // Replacements finished before auto-close existed stay the owner's to close: only recent ones (2 h) are closed for them.
+      this.db.query("UPDATE replacements SET closed_at = prompted_at WHERE state = 'done' AND prompted_at < ?").run(new Date(Date.now() - 2 * 3600e3).toISOString());
+    }
     const mcols = this.db.query('PRAGMA table_info(monitors)').all() as { name: string }[];
     if (!mcols.some((c) => c.name === 'inform_lead')) this.db.exec('ALTER TABLE monitors ADD COLUMN inform_lead INTEGER NOT NULL DEFAULT 0');
     if (!mcols.some((c) => c.name === 'resolved_at')) this.db.exec('ALTER TABLE monitors ADD COLUMN resolved_at TEXT');
@@ -405,8 +412,13 @@ export class Store {
   private rowRepl = (r: any): Replacement => ({
     id: r.id, oldName: r.old_name, newName: r.new_name, cwd: r.cwd, model: r.model, handoffPath: r.handoff_path, sessionId: r.session_id,
     transcriptPath: r.transcript_path, state: r.state, startedAt: r.started_at, updatedAt: r.updated_at, requestedAt: r.requested_at,
-    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'),
+    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'), closedAt: r.closed_at ?? null,
   });
+  /** Done replacements whose old session ShiftBoss has not closed yet, oldest first. */
+  replacementsToClose(): Replacement[] {
+    return this.db.query("SELECT * FROM replacements WHERE state = 'done' AND closed_at IS NULL AND prompted_at IS NOT NULL ORDER BY id").all().map(this.rowRepl);
+  }
+  markReplacementClosed(id: number) { this.db.query('UPDATE replacements SET closed_at = ? WHERE id = ? AND closed_at IS NULL').run(now(), id); }
   addReplacement(r: { oldName: string; newName: string; cwd: string; model: string | null; handoffPath: string; sessionId: string | null; transcriptPath: string | null }): Replacement {
     const at = now();
     const res = this.db.query(`INSERT INTO replacements (old_name, new_name, cwd, model, handoff_path, session_id, transcript_path, state, started_at, updated_at)
@@ -507,6 +519,8 @@ export class Store {
     return this.db.query(`UPDATE actions SET state = ?, decided_at = COALESCE(decided_at, ?), result = COALESCE(?, result) WHERE id = ? AND state IN (${marks})`)
       .run(to, now(), result, id, ...from).changes > 0;
   }
+  /** The owner said no to this exact action before: do not ask again. */
+  wasRejected(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state = 'rejected'").get(key); }
   hasOpenAction(key: string): boolean { return !!this.db.query("SELECT 1 FROM actions WHERE key = ? AND state IN ('waiting', 'dry')").get(key); }
   /** The owner did it directly: the same action held earlier is settled, so approving it later cannot run it twice. */
   supersedeActions(key: string): number {

@@ -1122,6 +1122,51 @@ describe('monitors', () => {
     expect(store.reportMonitor(m.id, { verdict: 'ok', summary: 'fine' }, T + 3000).recovered).toBe(true);
   });
 
+  test('a replaced session closes after the set time: never while busy or blocked, never without its successor, not after a no', async () => {
+    const store = mem();
+    store.saveSettings({ ...store.settings(), mode: 'auto', closeOldAfterMin: 30 });
+    const closed: string[] = [];
+    const e = new Engine(loadConfig(), store, { close: async (pane: string) => { closed.push(pane); } } as any);
+    e.herdrOk = true;
+    const r = store.addReplacement({ oldName: 'intake', newName: 'intake-v2', cwd: '/x', model: null, handoffPath: '/x/h.md', sessionId: null, transcriptPath: null });
+    const T = Date.now();
+    store.updateReplacement(r.id, { state: 'done', promptedAt: new Date(T).toISOString() });
+    e.sessions = [session({ name: 'intake', paneId: 'p-old', status: 'idle' }), session({ name: 'intake-v2', paneId: 'p-new', status: 'working' })];
+    await e.closeReplaced(T + 10 * 60e3);
+    expect(closed).toEqual([]); // too early
+    e.sessions[0] = session({ name: 'intake', paneId: 'p-old', status: 'working' });
+    await e.closeReplaced(T + 31 * 60e3);
+    expect(closed).toEqual([]); // busy: next tick
+    e.sessions[0] = session({ name: 'intake', paneId: 'p-old', status: 'blocked' });
+    await e.closeReplaced(T + 31 * 60e3);
+    expect(closed).toEqual([]); // waits on a permission prompt
+    e.sessions = [session({ name: 'intake', paneId: 'p-old', status: 'idle' })];
+    await e.closeReplaced(T + 31 * 60e3);
+    expect(closed).toEqual([]); // the successor is not running
+    e.sessions = [session({ name: 'intake', paneId: 'p-old', status: 'idle' }), session({ name: 'intake-v2', paneId: 'p-new', status: 'idle' })];
+    store.saveSettings({ ...store.settings(), closeOldAfterMin: 0 });
+    await e.closeReplaced(T + 31 * 60e3);
+    expect(closed).toEqual([]); // switched off
+    store.saveSettings({ ...store.settings(), closeOldAfterMin: 30 });
+    await e.closeReplaced(T + 31 * 60e3);
+    expect(closed).toEqual(['p-old']);
+    expect(store.getReplacement(r.id)!.closedAt).not.toBeNull();
+    await e.closeReplaced(T + 32 * 60e3);
+    expect(closed).toEqual(['p-old']); // once
+    // Ask first: it waits for approval; a rejection is final.
+    const r2 = store.addReplacement({ oldName: 'w1', newName: 'w1-v2', cwd: '/x', model: null, handoffPath: '/x/h2.md', sessionId: null, transcriptPath: null });
+    store.updateReplacement(r2.id, { state: 'done', promptedAt: new Date(T).toISOString() });
+    store.saveSettings({ ...store.settings(), mode: 'ask' });
+    e.sessions = [session({ name: 'w1', paneId: 'p-w1', status: 'idle' }), session({ name: 'w1-v2', paneId: 'p-w2', status: 'idle' })];
+    await e.closeReplaced(T + 31 * 60e3);
+    const held = store.listActions().filter((a: any) => a.kind === 'close-old' && a.state === 'waiting');
+    expect(held.length).toBe(1);
+    e.rejectAction(held[0].id);
+    await e.closeReplaced(T + 32 * 60e3);
+    expect(store.listActions().filter((a: any) => a.kind === 'close-old' && a.state === 'waiting').length).toBe(0);
+    expect(closed).toEqual(['p-old']);
+  });
+
   test('telling the lead is routine: it runs in Safe auto, waits in Ask first', () => {
     expect(decide('safe', 'auto', 'monitor-lead')).toBe('run');
     expect(decide('ask', 'auto', 'monitor-lead')).toBe('ask');

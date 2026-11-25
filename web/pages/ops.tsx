@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Settings } from '../../shared/types';
-import { act, ago, agoText, api, C, Card, Dot, Empty, Hero, hhmm, href, Seg, toast, useSnap } from '../lib';
+import { act, ago, agoText, api, C, Card, Dot, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
 import { IntakeControl } from '../intake-control';
 import { resetTours } from '../tour';
 import { ModePicker } from '../mode';
@@ -248,6 +248,10 @@ export function SettingsPage({ section }: { section?: string }) {
               hint="Off: queued tasks wait for you to press Send on the card."
               warn="On: ShiftBoss prompts sessions without asking you first." />
           </div>
+          <Field id="close-old" label="Close a replaced session" hint="After a replacement, the old session closes this long after the new one took over. Never while it is working or waiting on a permission prompt. Its transcript stays, so it can be resumed.">
+            <Pick id="close-old" label="Close a replaced session" value={String(st.closeOldAfterMin ?? 30)} onChange={(v) => setSt({ ...st, closeOldAfterMin: Number(v) })}
+              options={[['0', 'Never: I close it'], ['10', 'After 10 minutes'], ['30', 'After 30 minutes'], ['60', 'After 1 hour'], ['120', 'After 2 hours']].map(([value, label]) => ({ value, label }))} />
+          </Field>
         </SettingsSection>
 
         <SettingsSection id="intake" title="Intake" text="The session that reads Slack and meeting notes for new asks, and the channels it reads.">

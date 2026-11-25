@@ -19,6 +19,7 @@ const Patch = z.object({
   delegate: z.boolean().optional(),
   instructions: z.string().max(4000).optional(),
   instructionsPrev: z.string().max(4000).optional(),
+  closeOldAfterMin: z.number().int().min(0).max(1440).optional(),
   notify: z.object({
     needs: z.boolean(), blocked: z.boolean(), stuck: z.boolean(), overlap: z.boolean(), promiseDue: z.boolean(), monitor: z.boolean(), updated: z.boolean(),
     finished: z.boolean(), trouble: z.boolean(), tasks: z.boolean(), releases: z.boolean(), monitorReport: z.boolean(), replaced: z.boolean(),

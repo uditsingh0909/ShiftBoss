@@ -109,6 +109,7 @@ export class Engine {
       this.dispatch(settings.switches.autoDispatch);
       await this.advanceReplacements();
       await this.runMonitors();
+      await this.closeReplaced();
       this.emit();
     } catch (e) {
       this.pushFeed('shiftboss', 'poll failed: ' + (e as Error).message); // next tick retries
@@ -340,6 +341,17 @@ export class Engine {
       case 'interrupt': {
         if (pane(p.session).status === 'blocked') throw new Error(`${p.session} is waiting on a permission prompt: answer it in herdr`);
         await this.herdr.interrupt(pane(p.session).paneId); this.pushFeed(who, 'interrupted ' + p.session); return 'interrupted';
+      }
+      case 'close-old': {
+        const r = this.store.getReplacement(p.replacementId);
+        if (!r) throw new Error('No such replacement');
+        if (r.closedAt) return 'already closed';
+        const old = this.sessions.find((s) => s.name === r.oldName);
+        if (!old) { this.store.markReplacementClosed(r.id); return 'already gone'; }
+        await this.herdr.close(old.paneId); // refuses while it works or waits on a permission prompt
+        this.store.markReplacementClosed(r.id);
+        this.pushFeed(who, `closed ${r.oldName}; ${r.newName} took over`);
+        return 'closed ' + r.oldName;
       }
       case 'monitor-lead': {
         const lead = resolveLead(this.sessions, this.store.settings().leadSession ?? '');
@@ -694,7 +706,8 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     try {
       await this.herdr.prompt(pane, replacementPrompt({ newName: r.newName, oldName: r.oldName, handoffPath: r.handoffPath, transcriptPath: r.transcriptPath, shiftbossCli: setupInfo(this.cfg.port).repoPath + '/cli/shiftboss.ts' }) + this.rules());
       this.store.updateReplacement(r.id, { state: 'done', promptedAt: new Date().toISOString(), error: null });
-      this.pushFeed('shiftboss', `${r.newName} has its first prompt; ${r.oldName} can be closed when you are ready`);
+      const min = this.store.settings().closeOldAfterMin ?? 30;
+      this.pushFeed('shiftboss', `${r.newName} has its first prompt; ` + (min ? `${r.oldName} closes in ${min} min` : `${r.oldName} can be closed when you are ready`));
     } catch (e) {
       this.store.updateReplacement(r.id, { error: 'Could not send the first prompt yet: ' + (e as Error).message.slice(0, 200) }); // retried next tick
     }
@@ -703,6 +716,40 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   // ---------- monitors ----------
   /** The monitor session: `monitor`, or its newest replacement (monitor-v2, …). */
   monitorSession(): Session | null { return resolveLead(this.sessions, MONITOR_SESSION); }
+
+  private closeNoted = new Set<string>();
+  /** One feed line per replacement and reason, not one per tick. */
+  private noteClose(r: Replacement, why: string) {
+    const k = r.id + ':' + why;
+    if (this.closeNoted.has(k)) return;
+    this.closeNoted.add(k);
+    this.pushFeed('shiftboss', `${r.oldName} stays open: ${why}`);
+  }
+  /**
+   * Settings → closeOldAfterMin: a replaced session is closed that many minutes after its successor got its first
+   * prompt. Never while it works or waits on a permission prompt (tried again next tick), never when the
+   * successor is not running, and through the gate like everything else. Its transcript stays, so it can be resumed.
+   */
+  async closeReplaced(nowMs = Date.now()) {
+    const min = this.store.settings().closeOldAfterMin ?? 30;
+    if (!min || !this.herdrOk) return;
+    let rows: Replacement[];
+    try { rows = this.store.replacementsToClose(); } catch { return; }
+    for (const r of rows) {
+      try {
+        if (!r.promptedAt || Date.parse(r.promptedAt) + min * 60e3 > nowMs) continue;
+        const old = this.sessions.find((s) => s.name === r.oldName);
+        if (!old) { this.store.markReplacementClosed(r.id); continue; } // already closed by hand
+        const succ = this.sessions.find((s) => s.name === r.newName);
+        if (!succ || succ.status === 'lost') { this.noteClose(r, `${r.newName} is not running`); continue; }
+        if (old.status === 'blocked') { this.noteClose(r, 'it waits on a permission prompt; it closes once you answer it in herdr'); continue; }
+        if (old.status === 'working') continue; // busy: next tick
+        const params = { replacementId: r.id };
+        if (this.store.wasRejected(actionKey('close-old', params))) continue; // you said no
+        await this.act('close-old', params, { actor: 'auto', by: 'shiftboss', summary: `Close ${r.oldName}: ${r.newName} took over ${min}+ min ago`, detail: 'Its transcript stays, so it can be resumed.' });
+      } catch (e) { this.noteClose(r, 'could not close it: ' + (e as Error).message.slice(0, 160)); }
+    }
+  }
 
   /** For a monitor set to tell the lead: a short note when it comes back bad, and one when it is fine again. Goes through the gate. */
   async tellLeadAboutMonitor(m: Monitor, summary: string, recovered: boolean) {

@@ -630,7 +630,10 @@ PRs, Promises owed, Scheduled jobs, Worktrees and branches, Decisions made, Open
 ending in `HANDOFF COMPLETE`. Once the file is written and complete, it starts `<name>-vN` in the same
 folder with the same model, moves the open tasks, unsent questions and lane to it, and sends it a first
 prompt: read the handoff, check the old transcript if unclear, register with `my_tasks`, continue. After
-20 minutes without a complete handoff it shows as stalled. The old session is never closed: you close it.
+20 minutes without a complete handoff it shows as stalled. The old session closes by itself 30 minutes after
+the new one got its first prompt (Settings → Automation: 10 min to 2 hours, or Never). It is never closed
+while it works or waits on a permission prompt, nor when the new one is not running, and its transcript stays,
+so it can be resumed. The close goes through the mode like any other action.
 A session sitting at a prompt is never typed into; the request waits until it moves on.
 
 ### Everything works from Claude too

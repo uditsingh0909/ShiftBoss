@@ -219,7 +219,7 @@ const stepsDone = (st: Replacement['state']) => ({ pending: 0, requested: 1, sta
 const cancellable = (st: Replacement['state']) => ['pending', 'requested', 'stalled', 'ready', 'failed'].includes(st);
 export const activeRepl = (st: Replacement['state']) => !['done', 'failed', 'cancelled'].includes(st);
 
-function replNote(r: Replacement): { text: string; tone: string } {
+function replNote(r: Replacement, closeMin = 30): { text: string; tone: string } {
   switch (r.state) {
     case 'pending': return { text: r.error ?? 'About to ask for the handoff.', tone: C.amber };
     case 'requested': return { text: r.missing.length ? 'Handoff still missing: ' + r.missing.join(', ') : `Waiting for ${r.oldName} to write its handoff.`, tone: C.dim };
@@ -227,7 +227,12 @@ function replNote(r: Replacement): { text: string; tone: string } {
     case 'ready': case 'starting': return { text: `Starting ${r.newName}…`, tone: C.dim };
     case 'started': return { text: r.error ?? `${r.newName} is up; moving tasks…`, tone: r.error ? C.amber : C.dim };
     case 'moved': return { text: r.error ?? `Tasks moved. Waiting for ${r.newName} to be ready for its first prompt.`, tone: C.amber };
-    case 'done': return { text: `${r.newName} took over. ${r.oldName} can be closed when you are ready; ShiftBoss leaves that to you.`, tone: C.green };
+    case 'done': {
+      if (r.closedAt) return { text: `${r.newName} took over. ${r.oldName} is closed.`, tone: C.green };
+      if (!closeMin || !r.promptedAt) return { text: `${r.newName} took over. ${r.oldName} can be closed when you are ready (Settings: Automation).`, tone: C.green };
+      const at = Date.parse(r.promptedAt) + closeMin * 60e3;
+      return { text: `${r.newName} took over. ${r.oldName} closes ${at > Date.now() ? 'at ' + new Date(at).toTimeString().slice(0, 5) : 'once it is idle'} (not while it works or waits on a prompt).`, tone: C.green };
+    }
     case 'failed': return { text: r.error ?? 'Failed.', tone: C.red };
     case 'cancelled': return { text: 'Cancelled.', tone: C.faint };
   }
@@ -236,7 +241,8 @@ function replNote(r: Replacement): { text: string; tone: string } {
 /** One replacement's progress: the four steps, what it waits on, and cancel while that is still possible. */
 function ReplacementProgress({ r, compact }: { r: Replacement; compact?: boolean }) {
   const done = stepsDone(r.state);
-  const note = replNote(r);
+  const snap = useSnap();
+  const note = replNote(r, snap?.settings.closeOldAfterMin ?? 30);
   return (
     <div className="col" style={{ gap: 12 }}>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>

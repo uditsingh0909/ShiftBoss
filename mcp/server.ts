@@ -222,7 +222,7 @@ server.registerTool('session_spawn', {
 
 server.registerTool('session_replace', {
   title: 'Replace sessions through a handoff',
-  description: 'For each named session: ShiftBoss asks it to write a handoff file with fixed sections, waits until the file is complete, starts a fresh <name>-vN in the same folder with the same model, moves its open tasks and lane to the new name, and gives the new session its first prompt (read the handoff, register with my_tasks, continue). The old session is never closed; the owner does that. Use it for sessions near their context limit. Do not use it on yourself unless the owner asked.',
+  description: 'For each named session: ShiftBoss asks it to write a handoff file with fixed sections, waits until the file is complete, starts a fresh <name>-vN in the same folder with the same model, moves its open tasks and lane to the new name, and gives the new session its first prompt (read the handoff, register with my_tasks, continue). The old session is closed automatically once the new one has taken over for the time set in Settings (closeOldAfterMin, default 30 min; 0 = never), and never while it works or waits on a permission prompt. Use it for sessions near their context limit. Do not use it on yourself unless the owner asked.',
   inputSchema: { sessions: z.array(z.string().min(1).max(100)).min(1).max(20) },
 }, wrap(async ({ sessions }) => {
   const r = await call('POST', '/api/sessions/replace', { sessions });

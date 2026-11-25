@@ -164,6 +164,8 @@ export interface Settings {
   instructionsPrev?: string;
   /** Which browser notifications to show (one open tab shows them). Stored here so every tab agrees. */
   notify?: NotifySettings;
+  /** Close a replaced session this many minutes after its successor has its first prompt. 0: never (you close it). */
+  closeOldAfterMin?: number;
 }
 
 /** Browser notification switches, one per kind of event. */
@@ -235,6 +237,8 @@ export interface Replacement {
   error: string | null;
   /** Section headings (or the end marker) the handoff file still lacks; empty when unknown or complete. */
   missing: string[];
+  /** When ShiftBoss closed the old session's pane (or found it already gone). Null while it is still open. */
+  closedAt: string | null;
 }
 
 /** An action ShiftBoss held back: waiting for approval, or recorded in Dry run. */

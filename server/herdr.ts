@@ -93,4 +93,11 @@ export class Herdr {
     if (live?.agent_status === 'blocked') throw new PaneBlockedError();
     await run(this.bin, ['agent', 'send-keys', pane, 'esc']);
   }
+  /** Close a pane (its Claude session ends; the transcript stays, so it can be resumed). Refuses while it works or waits on a prompt. */
+  async close(pane: string): Promise<void> {
+    const live = parseAgentList(await run(this.bin, ['agent', 'list']), '').find((a) => a.pane_id === pane);
+    if (live?.agent_status === 'blocked') throw new PaneBlockedError();
+    if (live?.agent_status === 'working') throw new Error('it is working');
+    await run(this.bin, ['pane', 'close', pane]);
+  }
 }
