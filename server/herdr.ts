@@ -97,7 +97,7 @@ export class Herdr {
   }
   /** Move a live pane into a tab of its own; returns that tab's id. */
   async movePaneToNewTab(pane: string, label: string): Promise<string> {
-    await run(this.bin, ['pane', 'move', pane, '--new-tab', '--tab-label', label, '--no-focus']);
+    await run(this.bin, ['pane', 'move', pane, '--new-tab', '--label', label, '--no-focus']);
     const p = (await this.panes()).find((x) => x.pane_id === pane);
     if (!p) throw new Error('herdr moved it but the pane is gone');
     return p.tab_id;
@@ -129,7 +129,7 @@ export class Herdr {
 
   /**
    * Where a new session goes: with perTab > 1, a split of the newest Claude-only tab that has room
-   * (the biggest pane, so 4 make a 2x2); otherwise, or when every tab is full, a new tab.
+   * (the widest pane, split to the right, so sessions sit side by side); otherwise, or when every tab is full, a new tab.
    */
   private async placeNewPane(opts: { name: string; cwd: string; workspace?: string; perTab?: number; avoidTabs?: Set<string>; beside?: string }): Promise<{ pane: string; split: boolean }> {
     const workspace = opts.workspace;

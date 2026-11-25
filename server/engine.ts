@@ -833,7 +833,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   /**
    * "Tidy into tabs": regroup running sessions perTab to a tab (Settings → Sessions per tab unless given), in one
    * workspace, without restarting any, then name the tabs. Each move splits the biggest pane of the target tab, as a
-   * new session would, so 4 make a 2x2.
+   * new session would, so they sit side by side in columns.
    */
   async tidyTabs(perTabArg?: number): Promise<{ moved: number; failed: string[] }> {
     const perTab = perTabArg ?? this.store.settings().sessionsPerTab ?? 2;

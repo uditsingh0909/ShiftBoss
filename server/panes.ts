@@ -64,14 +64,14 @@ export function tabWithRoom(tabs: TabInfo[], panes: PaneInfo[], perTab: number, 
 }
 
 /**
- * Which pane to split, and which way: the biggest one, side by side while it is wide and stacked once
- * it is not (a terminal cell is about twice as tall as wide). One pane splits right, so 2 sit side
- * by side; the next two split down, so 4 make a 2x2.
+ * Which pane to split, and which way: always the widest one, to the right, so the sessions in a tab sit side
+ * by side in full-height columns (never stacked).
  */
 export function pickSplit(rects: PaneRect[]): { pane: string; direction: 'right' | 'down' } | null {
   if (!rects.length) return null;
-  const big = [...rects].sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height)[0];
-  return { pane: big.pane_id, direction: big.rect.width >= 2.2 * big.rect.height ? 'right' : 'down' };
+  // Sessions sit side by side in full-height columns (the owner's choice): the widest pane is split to the right.
+  const wide = [...rects].sort((a, b) => b.rect.width - a.rect.width || b.rect.height - a.rect.height)[0];
+  return { pane: wide.pane_id, direction: 'right' };
 }
 
 const short = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 1) + '…');

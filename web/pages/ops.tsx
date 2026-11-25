@@ -266,7 +266,7 @@ export function SettingsPage({ section }: { section?: string }) {
             <Pick id="close-old" label="Close a replaced session" value={String(st.closeOldAfterMin ?? 30)} onChange={(v) => setSt({ ...st, closeOldAfterMin: Number(v) })}
               options={[['0', 'Never: I close it'], ['10', 'After 10 minutes'], ['30', 'After 30 minutes'], ['60', 'After 1 hour'], ['120', 'After 2 hours']].map(([value, label]) => ({ value, label }))} />
           </Field>
-          <Field id="per-tab" label="Sessions per herdr tab" hint="New sessions join the newest tab with room as split panes; 4 make a 2x2. Each tab is named after its sessions. Tidy regroups the running ones without restarting them.">
+          <Field id="per-tab" label="Sessions per herdr tab" hint="New sessions join the newest tab with room as side-by-side columns. Each tab is named after its sessions. Tidy regroups the running ones without restarting them.">
             <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
               <Seg label="Sessions per herdr tab" value={String(st.sessionsPerTab ?? 2) as '1' | '2' | '3' | '4'} options={['1', '2', '3', '4'] as const}
                 onChange={(v) => setSt({ ...st, sessionsPerTab: Number(v) as 1 | 2 | 3 | 4 })} />

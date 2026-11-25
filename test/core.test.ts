@@ -1587,12 +1587,12 @@ describe('shared herdr tabs', () => {
     expect(tabWithRoom([tab('t2', 2, 2)], [pane('b', 't2'), pane('c', 't2')], 2)).toBeNull();
   });
 
-  test('splitting the biggest pane makes 2 side by side and 4 a 2x2', () => {
+  test('sessions sit side by side: the widest pane is split to the right, never down', () => {
     expect(pickSplit([{ pane_id: 'a', rect: { width: 205, height: 50 } }])).toEqual({ pane: 'a', direction: 'right' });
     const two = [{ pane_id: 'a', rect: { width: 103, height: 50 } }, { pane_id: 'b', rect: { width: 102, height: 50 } }];
-    expect(pickSplit(two)).toEqual({ pane: 'a', direction: 'down' });
-    const three = [{ pane_id: 'a', rect: { width: 103, height: 25 } }, { pane_id: 'c', rect: { width: 103, height: 25 } }, { pane_id: 'b', rect: { width: 102, height: 50 } }];
-    expect(pickSplit(three)).toEqual({ pane: 'b', direction: 'down' });
+    expect(pickSplit(two)).toEqual({ pane: 'a', direction: 'right' });
+    const three = [{ pane_id: 'a', rect: { width: 51, height: 50 } }, { pane_id: 'c', rect: { width: 51, height: 50 } }, { pane_id: 'b', rect: { width: 102, height: 50 } }];
+    expect(pickSplit(three)).toEqual({ pane: 'b', direction: 'right' });
     expect(pickSplit([])).toBeNull();
   });
 
