@@ -366,6 +366,10 @@ export function CommandCenter() {
   const th = snap.settings.thresholds;
   const blocked = snap.sessions.filter((s) => s.status === 'blocked');
   const near = snap.sessions.filter((s) => s.contextPct >= th.replace);
+  // Tasks a running session is actually working on: In progress, not held, and its session is running.
+  const live = new Set(snap.sessions.map((x) => x.name));
+  const inProgress = snap.tasks.filter((t) => t.stage === 2 && !t.held && t.session && live.has(t.session));
+  const busyOn = new Set(inProgress.map((t) => t.session)).size;
   // The lead session is always the big card; without one, whoever needs you, then the fullest context.
   const [spawning, setSpawning] = useState(false);
   const [replacing, setReplacing] = useState(false);
@@ -380,7 +384,8 @@ export function CommandCenter() {
       <section className="rise row" style={{ flexWrap: 'wrap', alignItems: 'stretch', justifyContent: 'space-between', gap: 32 }}>
         <div className="col" style={{ gap: 22, maxWidth: 900 }}>
           <span className="eyebrow"><Dot color={C.green} blink />Fleet · live · {snap.feed.length} recent events</span>
-          <h1 className="hero">{snap.sessions.length} sessions running.<br /><span className="faint">{blocked.length} need{blocked.length === 1 ? 's' : ''} you, {near.length} near the limit.</span></h1>
+          <h1 className="hero">{snap.sessions.length} sessions running.<br /><span className="faint">
+            <a href={href('tasks')} style={{ color: 'inherit' }} title={`Tasks in progress held by a running session, across ${busyOn} session${busyOn === 1 ? '' : 's'}`}>{inProgress.length} task{inProgress.length === 1 ? '' : 's'} in progress</a>, {blocked.length} need{blocked.length === 1 ? 's' : ''} you, {near.length} near the limit.</span></h1>
         </div>
         <div className="col" style={{ justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
           <div className="row tour-quick" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
