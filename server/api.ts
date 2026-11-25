@@ -328,7 +328,7 @@ export function makeApi(engine: Engine) {
         // Regroup running sessions into shared tabs (Settings → Sessions per tab). herdr moves live panes: nothing restarts.
         const b = await body<any>(req);
         const perTab = b.perTab === undefined ? undefined : Number(b.perTab);
-        if (perTab !== undefined && ![1, 2, 4].includes(perTab)) return json({ error: 'perTab must be 1, 2 or 4' }, 400);
+        if (perTab !== undefined && ![1, 2, 3, 4].includes(perTab)) return json({ error: 'perTab must be 1, 2, 3 or 4' }, 400);
         const g = await engine.act('tidy', perTab ? { perTab } : {}, { actor: actorOf(req), by: byOf(req, b), summary: `regroup herdr tabs so ${perTab ?? 'the set number of'} sessions share each` });
         return done(gated(g, (res) => json(res ?? { ok: true })));
       }

@@ -2,7 +2,7 @@
 // submits prompts the user typed. It never answers a permission prompt.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { inWorkspace, pickSplit, tabWithRoom, workspaceFor, type PaneInfo, type PaneRect, type TabInfo } from './panes';
+import { HANDOVER_MAX, inWorkspace, pickSplit, tabWithRoom, workspaceFor, type PaneInfo, type PaneRect, type TabInfo } from './panes';
 import { isStartupQuestion } from './fleet';
 
 const RAISE = join(import.meta.dir, '..', 'scripts', 'raise-herdr.ps1');
@@ -36,6 +36,8 @@ export interface HerdrAgent {
 }
 
 class SplitUnreadable extends Error {}
+/** A split was sent and may have happened: nothing else may be opened, or a bare shell is left behind. */
+class SplitUncertain extends Error {}
 
 /** herdr itself failed (not running, pane gone): the API answers 502, not 400. */
 export class HerdrError extends Error {}
@@ -93,13 +95,55 @@ export class Herdr {
   async movePane(pane: string, tab: string, target: string, split: 'right' | 'down'): Promise<void> {
     await run(this.bin, ['pane', 'move', pane, '--tab', tab, '--target-pane', target, '--split', split, '--no-focus']);
   }
+  /** Move a live pane into a tab of its own; returns that tab's id. */
+  async movePaneToNewTab(pane: string, label: string): Promise<string> {
+    await run(this.bin, ['pane', 'move', pane, '--new-tab', '--tab-label', label, '--no-focus']);
+    const p = (await this.panes()).find((x) => x.pane_id === pane);
+    if (!p) throw new Error('herdr moved it but the pane is gone');
+    return p.tab_id;
+  }
+  /**
+   * Split `at` and return the new pane. Once the split is sent, a slow or unreadable reply is not trusted: the tab
+   * is listed again and a pane that was not there before is the new one, so no bare shell is left behind unnoticed.
+   */
+  private async split(at: { pane: string; direction: 'right' | 'down' }, cwd: string, tab: string): Promise<string> {
+    const before = new Set((await this.panes()).filter((p) => p.tab_id === tab).map((p) => p.pane_id));
+    let refused = false; const t0 = Date.now();
+    try {
+      const out = JSON.parse(await run(this.bin, ['pane', 'split', at.pane, '--direction', at.direction, '--cwd', cwd, '--no-focus'], 20_000));
+      const pane: string | undefined = out?.result?.pane?.pane_id;
+      if (pane) return pane;
+    } catch (e) { refused = e instanceof HerdrError && Date.now() - t0 < 15_000; } // a quick error is herdr saying no; a timeout is not
+    // Look twice, a few seconds apart, for a split that landed late.
+    for (let i = 0; i < 2; i++) {
+      let now;
+      try { now = await this.panes(); } catch { throw new SplitUncertain('herdr may have split a pane but did not say; look for a bare shell in herdr'); }
+      const fresh = now.find((p) => p.tab_id === tab && !before.has(p.pane_id));
+      if (fresh) return fresh.pane_id;
+      if (refused) break;
+      await Bun.sleep(3000);
+    }
+    if (refused) throw new SplitUnreadable('herdr did not split the pane');
+    throw new SplitUncertain('herdr may have split a pane but did not say; look for a bare shell in herdr');
+  }
 
   /**
    * Where a new session goes: with perTab > 1, a split of the newest Claude-only tab that has room
    * (the biggest pane, so 4 make a 2x2); otherwise, or when every tab is full, a new tab.
    */
-  private async placeNewPane(opts: { name: string; cwd: string; workspace?: string; perTab?: number; avoidTabs?: Set<string> }): Promise<{ pane: string; split: boolean }> {
+  private async placeNewPane(opts: { name: string; cwd: string; workspace?: string; perTab?: number; avoidTabs?: Set<string>; beside?: string }): Promise<{ pane: string; split: boolean }> {
     const workspace = opts.workspace;
+    if (opts.beside) {
+      try {
+        const panes = await this.panes();
+        const home = panes.find((p) => p.pane_id === opts.beside);
+        const mates = home ? panes.filter((p) => p.tab_id === home.tab_id) : [];
+        if (home && mates.length < HANDOVER_MAX && mates.every((p) => p.agent === 'claude')) {
+          const at = pickSplit(await this.layout(home.pane_id));
+          if (at) return { pane: await this.split(at, opts.cwd, home.tab_id), split: true };
+        }
+      } catch (e) { if (e instanceof SplitUncertain) throw e; /* nothing was split: use the usual rule */ }
+    }
     if ((opts.perTab ?? 1) > 1) {
       try {
         const [allTabs, allPanes] = await Promise.all([this.tabs(), this.panes()]);
@@ -107,14 +151,8 @@ export class Herdr {
         const ws = workspaceFor(allTabs, opts.workspace ?? '');
         const room = tabWithRoom(inWorkspace(allTabs, ws), inWorkspace(allPanes, ws), opts.perTab!, opts.avoidTabs);
         const at = room ? pickSplit(await this.layout(room.panes[0])) : null;
-        if (at) {
-          const out = JSON.parse(await run(this.bin, ['pane', 'split', at.pane, '--direction', at.direction, '--cwd', opts.cwd, '--no-focus']));
-          const pane: string | undefined = out?.result?.pane?.pane_id;
-          // The split happened but its id is unreadable: stop, rather than leave an unknown shell behind and open a tab too.
-          if (!pane) throw new SplitUnreadable('herdr split a pane but did not say which; look for a bare shell in herdr');
-          return { pane, split: true };
-        }
-      } catch (e) { if (e instanceof SplitUnreadable) throw e; /* otherwise fall back to a tab of its own */ }
+        if (at && room) return { pane: await this.split(at, opts.cwd, room.tab), split: true };
+      } catch (e) { if (e instanceof SplitUncertain) throw e; /* no split happened: a tab of its own */ }
     }
     const tabArgs = ['tab', 'create', '--cwd', opts.cwd, '--label', opts.name, '--no-focus'];
     if (workspace) tabArgs.push('--workspace', workspace);
@@ -129,7 +167,7 @@ export class Herdr {
    * until Claude is ready for input. If Claude does not start in a split pane, the pane is closed again so no bare
    * shell is left in a shared tab (a startup question such as "trust this folder?" keeps it: the owner answers it).
    */
-  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string; resume?: string; perTab?: number; avoidTabs?: Set<string> }): Promise<string> {
+  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string; resume?: string; perTab?: number; avoidTabs?: Set<string>; beside?: string }): Promise<string> {
     const { pane, split } = await this.placeNewPane(opts);
     try {
       try { await this.renamePane(pane, opts.name); } catch { /* the label is cosmetic */ }
@@ -138,7 +176,11 @@ export class Herdr {
       if (claudeArgs.length) startArgs.push('--', ...claudeArgs);
       await run(this.bin, startArgs, 70_000); // herdr waits up to 60 s for Claude to be ready
     } catch (e) {
-      if (split && !isStartupQuestion((e as Error).message)) { try { await run(this.bin, ['pane', 'close', pane]); } catch { /* already gone */ } }
+      if (split && !isStartupQuestion((e as Error).message)) {
+        let loading = false;
+        try { loading = parseAgentList(await run(this.bin, ['agent', 'list']), '').some((a) => a.pane_id === pane); } catch { loading = true; } // unsure: leave it
+        if (!loading) { try { await run(this.bin, ['pane', 'close', pane]); } catch { /* already gone */ } }
+      }
       throw e;
     }
     return pane;

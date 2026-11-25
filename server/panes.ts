@@ -2,8 +2,12 @@
 // "Tidy into tabs" regroups running sessions. No herdr calls here; the engine runs them.
 import { baseName } from './fleet';
 
-export type PerTab = 1 | 2 | 4;
-export const PER_TAB_CHOICES: PerTab[] = [1, 2, 4];
+export type PerTab = 1 | 2 | 3 | 4;
+export const PER_TAB_CHOICES: PerTab[] = [1, 2, 3, 4];
+/** A replacement opens beside the session it replaces, so the handover can be watched; up to this many in that tab. */
+export const HANDOVER_MAX = 3;
+/** tidyPlan's target for a pane that needs a tab of its own (the engine creates it). */
+export const NEW_TAB = '__new';
 export const CLOSING_LABEL = 'old (closing)';
 
 export interface PaneInfo { pane_id: string; tab_id: string; agent?: string | null; label?: string | null; workspace_id?: string }
@@ -25,7 +29,8 @@ export function workspaceFor(tabs: TabInfo[], configured: string): string {
 /** The workspaces to tidy and label: the configured one, else every workspace that has tabs, each on its own. */
 export function workspacesOf(tabs: TabInfo[], configured: string): string[] {
   if (configured) return [configured];
-  const ws = [...new Set(tabs.map((t) => t.workspace_id ?? ''))];
+  // only real workspace ids: a tab without one must not pull every workspace into one group
+  const ws = [...new Set(tabs.map((t) => t.workspace_id ?? '').filter(Boolean))];
   return ws.length ? ws : [''];
 }
 export function inWorkspace<T extends { workspace_id?: string }>(xs: T[], ws: string): T[] {
@@ -71,17 +76,18 @@ export function pickSplit(rects: PaneRect[]): { pane: string; direction: 'right'
 
 const short = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 1) + '…');
 
-/** A tab's label from its sessions: "lead + shiftboss" (base names, no -vN), or "old (closing)" when every one is waiting to close. */
+/**
+ * A tab's label from its sessions, with their version so a handover reads clearly ("lead-v4 + shiftboss-v2"),
+ * or "old (closing)" when every one is waiting to close. Long names are cut, and whole trailing names dropped.
+ */
 export function tabLabel(names: string[], closing: Set<string> = new Set()): string {
   if (!names.length) return '';
   if (names.every((n) => closing.has(n))) return CLOSING_LABEL;
-  const live = names.filter((n) => !closing.has(n));
-  const bases = [...new Set(live.map((n) => baseName(n)))];
-  const each = bases.length <= 1 ? 32 : bases.length === 2 ? 18 : 10;
-  const parts = bases.map((b) => short(b, each));
-  // Drop whole trailing names rather than cutting one in half, so the label still reads as session names.
+  const live = [...new Set(names.filter((n) => !closing.has(n)))];
+  const each = live.length <= 1 ? 32 : live.length === 2 ? 20 : 14;
+  const parts = live.map((b) => short(b, each));
   let out = parts.join(' + ');
-  while (out.length > 40 && parts.length > 1) { parts.pop(); out = parts.join(' + ') + ' …'; }
+  while (out.length > 44 && parts.length > 1) { parts.pop(); out = parts.join(' + ') + ' …'; }
   return out;
 }
 
@@ -90,7 +96,8 @@ export function tabLabel(names: string[], closing: Set<string> = new Set()): str
  * "old (closing)", a session name or base name, or an earlier "a + b" label made of session names.
  * A name the owner typed stays.
  */
-export function isGeneratedTabLabel(label: string, sessionNames: Iterable<string>): boolean {
+export function isGeneratedTabLabel(label: string, sessionNames: Iterable<string>, written: Set<string> = new Set()): boolean {
+  if (written.has(label.trim()) || written.has(label.trim().replace(/ \d+$/, ''))) return true; // ShiftBoss wrote it, even if those sessions are gone now
   // herdr adds " 2", " 3" to a label another tab already has; " …" marks names dropped for length.
   const l = label.trim().replace(/ \d+$/, '').replace(/ …$/, '');
   if (!l || /^\d+$/.test(l) || l === CLOSING_LABEL) return true;
@@ -101,27 +108,36 @@ export function isGeneratedTabLabel(label: string, sessionNames: Iterable<string
 }
 
 /**
- * "Tidy into tabs": which sessions move to which tab. Fills under-full Claude-only tabs, oldest first, from
- * the newest under-full ones; a full tab is never broken up. Tabs holding a session that is waiting to close
+ * "Tidy into tabs": which sessions move to which tab, perTab to a tab. Over-full tabs give up their extra
+ * sessions; those and the sessions of the newest under-full tabs fill the oldest under-full tabs; whatever is
+ * left goes into new tabs (target NEW_TAB, grouped by `group`). Tabs holding a session that is waiting to close
  * stay as they are. The engine picks the split for each move from the tab's real layout.
  */
-export function tidyPlan(tabs: TabInfo[], panes: PaneInfo[], perTab: number, names: Map<string, string>, closing: Set<string>): { pane: string; tab: string }[] {
-  if (perTab <= 1) return [];
+export function tidyPlan(tabs: TabInfo[], panes: PaneInfo[], perTab: number, names: Map<string, string>, closing: Set<string>): { pane: string; tab: string; group?: number }[] {
+  const per = Math.max(1, perTab);
   const ok = claudeTabs(tabs, panes);
   const isLive = (p: PaneInfo) => !closing.has(names.get(p.pane_id) ?? '');
   const groups = tabs
-    .filter((t) => ok.has(t.tab_id) && ok.get(t.tab_id)!.every(isLive) && ok.get(t.tab_id)!.length < perTab)
+    .filter((t) => ok.has(t.tab_id) && ok.get(t.tab_id)!.every(isLive))
     .sort((a, b) => a.number - b.number)
     .map((t) => ({ tab: t.tab_id, panes: ok.get(t.tab_id)!.map((p) => p.pane_id) }));
-  const moves: { pane: string; tab: string }[] = [];
-  let lo = 0, hi = groups.length - 1;
-  while (lo < hi) {
-    const a = groups[lo], b = groups[hi];
-    if (a.panes.length >= perTab) { lo++; continue; }
-    if (!b.panes.length) { hi--; continue; }
-    const pane = b.panes.pop()!;
-    moves.push({ pane, tab: a.tab });
-    a.panes.push(pane);
+  const moves: { pane: string; tab: string; group?: number }[] = [];
+  const spare: string[] = [];
+  for (const g of groups) while (g.panes.length > per) spare.push(g.panes.pop()!);
+  const open = groups.filter((g) => g.panes.length < per);
+  // fill the oldest under-full tabs: first with spare sessions, then from the newest under-full tabs
+  let lo = 0, hi = open.length - 1;
+  while (lo < open.length) {
+    const a = open[lo];
+    if (a.panes.length >= per) { lo++; continue; }
+    let pane: string | undefined;
+    if (spare.length) pane = spare.shift();
+    else if (hi > lo && open[hi].panes.length) pane = open[hi].panes.pop();
+    else if (hi > lo) { hi--; continue; }
+    else break;
+    moves.push({ pane: pane!, tab: a.tab });
+    a.panes.push(pane!);
   }
+  spare.forEach((pane, i) => moves.push({ pane, tab: NEW_TAB, group: Math.floor(i / per) }));
   return moves;
 }
