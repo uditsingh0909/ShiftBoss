@@ -160,7 +160,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
       )}
 
       {view === 'Board' ? (
-        <section className="rise" aria-label="Board" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(180px, 1fr))', gap: 12, alignItems: 'start', overflowX: 'auto', paddingBottom: 8 }}>
+        <section className="rise" aria-label="Board" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(260px, 1fr))', gap: 12, alignItems: 'start', overflowX: 'auto', paddingBottom: 8 }}>
           {STAGES.map((label, i) => {
             const cards = list.filter((t) => t.stage === i);
             return (
