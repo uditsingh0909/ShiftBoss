@@ -147,6 +147,23 @@ for (const width of [1920, 390]) {
     await page.getByText('Needs you', { exact: false }).first().waitFor({ timeout: 6000 });
     if (new URL(page.url()).pathname !== '/needs') failures.push('urls: Back did not return to /needs');
   } catch (e) { failures.push('urls: ' + (e as Error).message.split('\n')[0]); }
+  // Lists: a date range and a pager on Intake; Custom asks for dates and refuses more than 90 days.
+  try {
+    await page.goto(BASE + '/intake');
+    await page.getByRole('group', { name: 'Date range' }).first().waitFor({ timeout: 6000 });
+    await page.getByRole('button', { name: 'Today', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Custom', exact: true }).first().click();
+    if (!(await page.locator('#intake-range-from').count())) failures.push('lists: Custom shows no date fields');
+    await page.fill('#intake-range-from', '2020-01-01');
+    if (!(await page.getByText('At most 90 days').count())) failures.push('lists: a 90+ day custom range was not refused');
+    await page.getByRole('button', { name: 'All', exact: true }).first().click();
+    await page.getByText(/of \d+ · page \d+ of \d+/).first().waitFor({ timeout: 6000 });
+    for (const path of ['/tasks', '/promises', '/audit', '/monitors']) {
+      await page.goto(BASE + path);
+      try { await page.getByRole('group', { name: 'Date range' }).first().waitFor({ timeout: 6000 }); }
+      catch { failures.push(`lists: no date range on ${path}`); }
+    }
+  } catch (e) { failures.push('lists: ' + (e as Error).message.split('\n')[0]); }
   await page.close();
 }
 await browser.close();
