@@ -20,7 +20,7 @@ export const HANDOFF_TIMEOUT_MS = 20 * 60e3;
  */
 export function wornOut(s: { contextPct: number; cache?: { read: number } | null }, t: { cacheReplaceM?: number }, _isLead = false): string | null {
   const readM = (s.cache?.read ?? 0) / 1e6;
-  const line = t.cacheReplaceM ?? 1000;
+  const line = t.cacheReplaceM ?? 500;
   if (readM >= line) return `cache ${readM >= 1000 ? (readM / 1000).toFixed(1) + 'B' : Math.round(readM) + 'M'} read (line ${line >= 1000 ? line / 1000 + 'B' : line + 'M'})`;
   return null;
 }
@@ -32,7 +32,7 @@ export function wornOut(s: { contextPct: number; cache?: { read: number } | null
  */
 export function pickWornOut<S extends { name: string; status: string; contextPct: number; cache?: { read: number } | null }>(
   sessions: S[],
-  opts: { lead: string | null; thresholds: { replace: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number }; replacements: { oldName: string; newName: string; state: string }[]; tried: Map<string, number>; nowMs: number; holdsJob: (s: S) => boolean },
+  opts: { lead: string | null; thresholds: { replace: number; cacheWarnM?: number; cacheReplaceM?: number }; replacements: { oldName: string; newName: string; state: string }[]; tried: Map<string, number>; nowMs: number; holdsJob: (s: S) => boolean },
 ): { s: S; why: string } | null {
   const over = new Set(['failed']); // a cancelled one is a "no": it is never retried by itself
   const replaced = new Set(opts.replacements.filter((r) => !over.has(r.state)).map((r) => r.oldName));

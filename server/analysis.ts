@@ -46,7 +46,7 @@ export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Sett
   // Worn out: the lifetime cache past the line. Compacting resets context but not the
   // cache, so a session can show 20 % context and still be due for a fresh start.
   const cacheM = (s.cache?.read ?? 0) / 1e6;
-  if (cacheM >= (t.cacheReplaceM ?? 1000)) { // cache only: context never decides a replace
+  if (cacheM >= (t.cacheReplaceM ?? 500)) { // cache only: context never decides a replace
     const byCache = true;
     return card('heavy', byCache ? `Cache ${fmtCache(s.cache.read)} read over its life (${s.cache.compactions} compaction${s.cache.compactions === 1 ? '' : 's'}), though context shows ${Math.round(s.contextPct)}%.` : `Context at ${Math.round(s.contextPct)}%.`,
       [byCache ? { k: 'cache', v: fmtCache(s.cache.read) + ' read · ' + s.cache.compactions + ' compactions', tone: 'red' } : { k: 'context', v: Math.round(s.contextPct) + '% of ' + Math.round(s.contextWindow / 1000) + 'k', tone: 'red' },

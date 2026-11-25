@@ -190,7 +190,7 @@ function Detail({ snap, model, scope, selected, onBack, onPick }: { snap: Snapsh
   const scopeList = scope?.kind === 'area' ? model.all.filter((d) => (scope.lane === '__idle' ? d.state === 'idle' : d.lane === scope.lane)) : model.all;
   const list = scopeList.slice().sort((x, y) => order[x.state] - order[y.state] || y.ctx - x.ctx);
   const t = snap.settings.thresholds;
-  const worn = list.filter((d) => d.cacheRead >= (t.cacheWarnM ?? 500) * 1e6).sort((x, y) => y.cacheRead - x.cacheRead).slice(0, 3);
+  const worn = list.filter((d) => d.cacheRead >= (t.cacheWarnM ?? 300) * 1e6).sort((x, y) => y.cacheRead - x.cacheRead).slice(0, 3);
   const counts = (['needs', 'stuck', 'working', 'finished', 'idle'] as const).map((k) => [k, list.filter((d) => d.state === k).length] as const);
   const run = (path: string, body: unknown, ok: string) => void api('POST', path, body).then(() => toast(ok), (e) => toast((e as Error).message));
   return (
@@ -203,7 +203,7 @@ function Detail({ snap, model, scope, selected, onBack, onPick }: { snap: Snapsh
             <i className="dot" style={{ background: DESK_COLOR[d.state] }} />
             <span className="fl-sname"><b className="mono ellipsis">{d.name}</b><span className="ellipsis">{d.task ?? d.lane}</span></span>
             <span className="fl-sbar" title={`context ${d.ctx}%`}><i style={{ width: `${Math.min(100, d.ctx)}%`, background: d.ctx >= t.replace ? 'var(--red)' : d.ctx >= t.warn ? 'var(--amber)' : 'rgba(255,255,255,.6)' }} /></span>
-            <em className="mono" style={{ color: d.cacheRead >= (t.cacheReplaceM ?? 1000) * 1e6 ? 'var(--red)' : d.cacheRead >= (t.cacheWarnM ?? 500) * 1e6 ? 'var(--amber)' : undefined }}>{fmtCache(d.cacheRead)}</em>
+            <em className="mono" style={{ color: d.cacheRead >= (t.cacheReplaceM ?? 500) * 1e6 ? 'var(--red)' : d.cacheRead >= (t.cacheWarnM ?? 300) * 1e6 ? 'var(--amber)' : undefined }}>{fmtCache(d.cacheRead)}</em>
           </button>
         ))}
         {!list.length && <span className="faint" style={{ fontSize: 13 }}>No sessions running in herdr.</span>}

@@ -292,8 +292,8 @@ export function SettingsPage({ section }: { section?: string }) {
         <SettingsSection id="warnings" title="Warnings" text="When a session counts as full, stuck or looping, and how many questions may wait on you.">
           <Range id="th-warn" label="Warn when context reaches" value={T.warn} min={50} max={90} unit="%" onChange={th('warn')} />
           <Range id="th-replace" label="Show context in red from" value={T.replace} min={70} max={95} unit="%" onChange={th('replace')} />
-          <Range id="th-cache-warn" label="Warn when its cache read reaches" value={T.cacheWarnM ?? 500} min={100} max={5000} unit="M" onChange={th('cacheWarnM')} />
-          <Range id="th-cache-replace" label="Replace a session (the lead too) at a cache read of" value={T.cacheReplaceM ?? 1000} min={200} max={10000} unit="M" onChange={th('cacheReplaceM')} />
+          <Range id="th-cache-warn" label="Warn when its cache read reaches" value={T.cacheWarnM ?? 300} min={100} max={5000} unit="M" onChange={th('cacheWarnM')} />
+          <Range id="th-cache-replace" label="Replace a session (the lead too) at a cache read of" value={T.cacheReplaceM ?? 500} min={200} max={10000} unit="M" onChange={th('cacheReplaceM')} />
           <Range id="th-stuck" label="Stuck after no progress for" value={T.stuckMin} min={5} max={60} unit=" min" onChange={th('stuckMin')} />
           <Range id="th-loop" label="Same command this many times is a loop" value={T.loopRepeats} min={2} max={6} onChange={th('loopRepeats')} />
           <Range id="th-stale" label="Handoff is stale after" value={T.staleMin} min={10} max={120} unit=" min" onChange={th('staleMin')} />

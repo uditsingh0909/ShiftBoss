@@ -51,8 +51,8 @@ export const fmtCache = (n: number) => (n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : 
 /** Where a session's wear stands, by lifetime cache read only (context is shown, but never decides a replace). */
 export function wear(s: { contextPct: number; cache?: { read: number } }, t: { cacheWarnM?: number; cacheReplaceM?: number }): 'ok' | 'warn' | 'replace' {
   const read = (s.cache?.read ?? 0) / 1e6;
-  if (read >= (t.cacheReplaceM ?? 1000)) return 'replace';
-  if (read >= (t.cacheWarnM ?? 500)) return 'warn';
+  if (read >= (t.cacheReplaceM ?? 500)) return 'replace';
+  if (read >= (t.cacheWarnM ?? 300)) return 'warn';
   return 'ok';
 }
 
@@ -166,7 +166,7 @@ export interface IntakeState {
 
 export interface Settings {
   /** cacheWarnM / cacheReplaceM: lifetime cache read, in millions of tokens. */
-  thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number };
+  thresholds: { warn: number; replace: number; needsCap: number; staleMin: number; stuckMin: number; loopRepeats: number; cacheWarnM?: number; cacheReplaceM?: number };
   switches: { autoDispatch: boolean; quietHours: boolean };
   budgets: { fiveHourTokens: number; weeklyTokens: number };
   herdrWorkspace: string;

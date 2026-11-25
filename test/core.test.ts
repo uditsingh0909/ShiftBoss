@@ -1710,7 +1710,7 @@ describe('replacing worn-out sessions', () => {
 
 describe('picking a worn-out session to replace', () => {
   const { pickWornOut } = require('../server/fleet');
-  const t = { replace: 85, cacheWarnM: 500, cacheReplaceM: 1000, leadReplace: 40 };
+  const t = { replace: 85, cacheWarnM: 500, cacheReplaceM: 1000 };
   const s = (name: string, read: number, status = 'idle', contextPct = 10) => ({ name, status, contextPct, cache: { read } });
   const base = { lead: null, thresholds: t, replacements: [], tried: new Map(), nowMs: 1e9, holdsJob: () => false };
   test('the most worn idle session goes first; working ones wait', () => {
@@ -1801,5 +1801,20 @@ describe('replacement names past 32 characters', () => {
     const base = { lead: null, thresholds: t, replacements: [], tried: new Map(), nowMs: 1e9, holdsJob: () => false };
     expect(pickWornOut([s(long), { ...s(long + '-v2'), cache: { read: 1e6 } }], base)).toBeNull();
     expect(pickWornOut([s('a')], { ...base, replacements: [{ oldName: 'a', newName: 'a-v2', state: 'cancelled' }] })).toBeNull();
+  });
+});
+
+describe('cache lines upgrade', () => {
+  test('old untouched defaults move to 500M / 300M once; a hand-set value is kept; the lead line goes', () => {
+    const { mkdtempSync } = require('node:fs'); const { join } = require('node:path'); const { tmpdir } = require('node:os');
+    const dir = mkdtempSync(join(tmpdir(), 'sb-'));
+    const a = new Store(dir);
+    a.saveSettings({ ...a.settings(), thresholds: { ...a.settings().thresholds, cacheReplaceM: 1000, cacheWarnM: 500, leadReplace: 40 } as any });
+    const b = new Store(dir);
+    expect(b.settings().thresholds.cacheReplaceM).toBe(500);
+    expect(b.settings().thresholds.cacheWarnM).toBe(300);
+    expect('leadReplace' in b.settings().thresholds).toBe(false);
+    b.saveSettings({ ...b.settings(), thresholds: { ...b.settings().thresholds, cacheReplaceM: 2000, cacheWarnM: 800 } });
+    expect(new Store(dir).settings().thresholds.cacheReplaceM).toBe(2000);
   });
 });

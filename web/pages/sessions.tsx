@@ -4,8 +4,8 @@ import { MONITOR_SESSION, resolveLead, type Replacement, type Session } from '..
 import { act, ago, api, Arrow, Bar, C, Card, ctxColor, Dot, Empty, fmtTok, Hero, hhmm, href, Pick, safeHref, Seg, toneColor, useSnap } from '../lib';
 import { fmtCache, wear, type Settings } from '../../shared/types';
 /** Lifetime cache against the replace line (Settings, Warnings), for bars and colours. */
-const cachePct = (s: Session, th: Settings['thresholds']) => Math.min(100, (s.cache.read / 1e6 / (th.cacheReplaceM ?? 1000)) * 100);
-const cacheColor = (s: Session, th: Settings['thresholds']) => { const m = s.cache.read / 1e6; return m >= (th.cacheReplaceM ?? 1000) ? C.red : m >= (th.cacheWarnM ?? 500) ? C.amber : C.fg; };
+const cachePct = (s: Session, th: Settings['thresholds']) => Math.min(100, (s.cache.read / 1e6 / (th.cacheReplaceM ?? 500)) * 100);
+const cacheColor = (s: Session, th: Settings['thresholds']) => { const m = s.cache.read / 1e6; return m >= (th.cacheReplaceM ?? 500) ? C.red : m >= (th.cacheWarnM ?? 300) ? C.amber : C.fg; };
 
 const statusColor = (s: Session['status']) => (s === 'blocked' ? C.amber : s === 'working' ? C.green : s === 'lost' ? C.red : C.faint);
 const lineColor = (k: string) => (k === 'tool' ? C.fg : k === 'out' ? C.faint : k === 'you' ? C.amber : k === 'sys' ? C.red : C.dim);
@@ -368,7 +368,7 @@ function ReplaceMany({ onDone }: { onDone: () => void }) {
     <section className="shell rise" aria-label="Replace sessions">
       <form className="core col" style={{ gap: 14 }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <span className="label">Replace sessions</span>
-        <span className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>Each one writes a handoff, then a fresh session (name-v2, -v3 …) starts in the same folder, reads it and takes over its tasks. The old sessions stay open for you to close. Ticked: past {fmtCache((th.cacheReplaceM ?? 1000) * 1e6)} of cache read.</span>
+        <span className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>Each one writes a handoff, then a fresh session (name-v2, -v3 …) starts in the same folder, reads it and takes over its tasks. The old sessions stay open for you to close. Ticked: past {fmtCache((th.cacheReplaceM ?? 500) * 1e6)} of cache read.</span>
         <fieldset className="col" style={{ gap: 4, border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
           <legend className="sr-only">Sessions</legend>
           {list.map((s) => (
@@ -625,7 +625,7 @@ export function SessionPage({ name }: { name: string }) {
           <div className="col" style={{ gap: 6, borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: 12 }} title="Unlike context, this never drops after a compact">
             <div className="row" style={{ justifyContent: 'space-between' }}><span className="label">Cache over its life</span><span className="mono" style={{ fontSize: 15, color: cacheColor(s, th) }}>{fmtCache(s.cache.read)} read</span></div>
             <Bar pct={cachePct(s, th)} color={cacheColor(s, th)} />
-            <span className="faint" style={{ fontSize: 12 }}>{fmtCache(s.cache.written)} written · {s.cache.compactions} compaction{s.cache.compactions === 1 ? '' : 's'}{s.cache.lastCompactAt ? ' · last ' + ago(s.cache.lastCompactAt) : ''}{s.cache.warm === null ? '' : s.cache.warm ? ` · warm${s.cache.expiresAt ? ' until ' + hhmm(s.cache.expiresAt) : ''}` : ' · cold'}{s.cache.hitRatio !== null ? ` · ${Math.round(s.cache.hitRatio * 100)}% hits` : ''} · replace at {fmtCache((th.cacheReplaceM ?? 1000) * 1e6)}</span>
+            <span className="faint" style={{ fontSize: 12 }}>{fmtCache(s.cache.written)} written · {s.cache.compactions} compaction{s.cache.compactions === 1 ? '' : 's'}{s.cache.lastCompactAt ? ' · last ' + ago(s.cache.lastCompactAt) : ''}{s.cache.warm === null ? '' : s.cache.warm ? ` · warm${s.cache.expiresAt ? ' until ' + hhmm(s.cache.expiresAt) : ''}` : ' · cold'}{s.cache.hitRatio !== null ? ` · ${Math.round(s.cache.hitRatio * 100)}% hits` : ''} · replace at {fmtCache((th.cacheReplaceM ?? 500) * 1e6)}</span>
           </div>
         </Card>
         <Card span={4} delay={60}>

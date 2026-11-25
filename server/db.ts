@@ -8,7 +8,7 @@ import type { ActionItem, ChatMsg, Direction, Dismissal, Monitor, MonitorCheck, 
 import { DEFAULT_NOTIFY, DEFAULT_SLACK } from '../shared/types';
 
 export const DEFAULT_SETTINGS: Settings = {
-  thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3, cacheWarnM: 500, cacheReplaceM: 1000, leadReplace: 40 },
+  thresholds: { warn: 70, replace: 85, needsCap: 3, staleMin: 30, stuckMin: 20, loopRepeats: 3, cacheWarnM: 300, cacheReplaceM: 500 },
   switches: { autoDispatch: false, quietHours: true },
   budgets: { fiveHourTokens: 0, weeklyTokens: 0 },
   herdrWorkspace: '',
@@ -93,6 +93,18 @@ export class Store {
     if (srow) { const v = JSON.parse(srow.value); if (!('mode' in v)) this.db.query("UPDATE settings SET value = ? WHERE key = 'settings'").run(JSON.stringify({ ...v, mode: 'auto', delegate: true })); }
     else if (!hadActions && (this.db.query('SELECT 1 FROM tasks LIMIT 1').get() || this.db.query('SELECT 1 FROM intake LIMIT 1').get()))
       this.db.query("INSERT INTO settings (key, value) VALUES ('settings', ?)").run(JSON.stringify({ mode: 'auto', delegate: true }));
+    // The cache lines moved from 1B / 500M to 500M / 300M (one trip through a 1M context is about 500-700M of cache
+    // read, so 500M replaces a session around its first auto-compaction). An install still on the old untouched
+    // defaults takes the new ones once; a value the owner set by hand is kept. Also drops the retired lead line.
+    const crow: any = this.db.query("SELECT value FROM settings WHERE key = 'settings'").get();
+    if (crow) {
+      const v = JSON.parse(crow.value), t = v.thresholds;
+      if (t && (('leadReplace' in t) || (t.cacheReplaceM === 1000 && t.cacheWarnM === 500))) {
+        const nt = { ...t }; delete nt.leadReplace;
+        if (t.cacheReplaceM === 1000 && t.cacheWarnM === 500) { nt.cacheReplaceM = 500; nt.cacheWarnM = 300; }
+        this.db.query("UPDATE settings SET value = ? WHERE key = 'settings'").run(JSON.stringify({ ...v, thresholds: nt }));
+      }
+    }
     // An approval that was running when ShiftBoss stopped (crash, self-update) did not finish: say so, unblock its key.
     this.db.exec("UPDATE actions SET state = 'failed', result = 'interrupted by a restart' WHERE state = 'approved'");
     const icols2 = this.db.query('PRAGMA table_info(intake)').all() as { name: string }[];
