@@ -561,10 +561,20 @@ an **Add link** field to fix it (or `shiftboss task link` / `shiftboss promise l
 
 ### Notifications
 
-Settings → **Notifications** asks your browser for permission and has a switch per event: a new Needs
-you item, a session waiting on a permission answer, a stuck or looping session, an overlap, an overdue
-promise, a monitor alert and ShiftBoss updating itself. The switches are stored in ShiftBoss, so every
-tab follows them. Only one open tab shows notifications, nothing that was already there when the page
+Settings → **Notifications** asks your browser for permission and has a switch per kind of event, all on
+by default, with **All on** / **All off**:
+
+- **You are needed**: a new Needs you item (a decision, an approval, a confused thread), a session waiting
+  on a permission answer, an overdue promise, a monitor alert.
+- **Sessions**: a session finished its turn, is stuck or looping, is nearly out of context, burns tokens
+  fast or was lost by herdr, an overlap, a replacement that finished, stalled or failed.
+- **Work**: a new task or a task moving stage, a promise kept, a PR merged, dev or prod running a new
+  version, every monitor check result, an approved action that ran or failed, a Dry run record.
+- **ShiftBoss**: usage past 80% or 95%, herdr not answering or the intake quiet for 15 minutes, a new
+  version available or installed.
+
+The switches are stored in ShiftBoss, so every tab follows them (`shiftboss settings set notify.tasks=false --as-owner`
+or ask Claude). Only one open tab shows notifications, nothing that was already there when the page
 opened notifies, and nothing is shown for the page you are already looking at. Clicking one opens that
 page. The tab title counts what waits on you, e.g. "(2) ShiftBoss".
 

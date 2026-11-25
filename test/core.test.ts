@@ -579,7 +579,8 @@ describe('source links and direction', () => {
 
   test('notification switches default to on, merge partially and reject non-booleans', () => {
     const s = mem();
-    expect(s.settings().notify).toEqual({ needs: true, blocked: true, stuck: true, overlap: true, promiseDue: true, monitor: true, updated: true });
+    expect(s.settings().notify).toEqual(DEFAULT_NOTIFY);
+    expect(Object.values(DEFAULT_NOTIFY).every(Boolean)).toBe(true);
     const next = mergeSettings(s.settings(), { notify: { overlap: false } });
     expect(next.notify).toMatchObject({ overlap: false, needs: true });
     s.saveSettings(next);
@@ -603,9 +604,9 @@ describe('browser notifications', () => {
     s.addPromise({ to: 'Sam', said: 'by Monday', dueAt: new Date(Date.now() - 6e4).toISOString() });
     const second = snapOf(s);
     const got = newNotifications(first, second, undefined);
-    expect(got.map((x) => x.kind).sort()).toEqual(['blocked', 'needs', 'promiseDue']);
+    expect(got.map((x) => x.kind).sort()).toEqual(['blocked', 'needs', 'promiseDue', 'tasks']); // the promise filed its task
     expect(got.find((x) => x.kind === 'needs')).toMatchObject({ title: 'Needs you: Ship it?', route: '#/needs' });
-    expect(newNotifications(first, second, { ...DEFAULT_NOTIFY, blocked: false, promiseDue: false }).map((x) => x.kind)).toEqual(['needs']);
+    expect(newNotifications(first, second, { ...DEFAULT_NOTIFY, blocked: false, promiseDue: false, tasks: false }).map((x) => x.kind)).toEqual(['needs']);
     expect(newNotifications(second, second, undefined)).toEqual([]); // nothing new the second time
   });
   test('stuck sessions, overlaps and monitor alerts (when present) notify; answered items do not', () => {
@@ -619,10 +620,35 @@ describe('browser notifications', () => {
     const got = newNotifications(a, b, undefined);
     expect(got.map((x) => x.kind).sort()).toEqual(['monitor', 'overlap', 'stuck']);
     expect(got.find((x) => x.kind === 'stuck')!.route).toBe('#/session/w1');
-    expect(notifyItems(snapOf(s)).length).toBe(0); // no monitors field: skipped
+    expect(notifyItems(snapOf(s, { herdrOk: true })).length).toBe(0); // no monitors field: skipped
     const n = s.addNeed({ kind: 'Decision', title: 'Q', answers: ['Yes'] });
     s.answerNeed(n.id, 'Yes');
-    expect(notifyItems(snapOf(s))).toEqual([]);
+    expect(notifyItems(snapOf(s, { herdrOk: true }))).toEqual([]);
+  });
+  test('everything else notifies once, when it changes: finished turns, tasks, releases, monitors, limits, herdr', () => {
+    const s = mem();
+    const sess = (status: string, at: string) => ({ name: 'w1', status, lastActivity: at, lines: [{ at, kind: 'say', text: 'All done' }] });
+    const mon = (over: Record<string, unknown>) => ({ id: 7, title: 'Texting', lastCheckAt: null, lastVerdict: null, lastSummary: null, finishedAt: null, finishReason: null, checksDone: 0, ...over });
+    const a = snapOf(s, {
+      sessions: [sess('working', '2026-01-01T10:00:00Z')],
+      tasks: [{ id: 'T-1', title: 'Fix', stage: 2, requester: 'Sam', source: 'Slack', session: 'w1' }],
+      releases: { envs: [{ name: 'dev', url: 'u', version: 'v1', ok: true, checkedAt: null }], merged: [], freeze: null },
+      monitors: [mon({})], limits: { fiveHourPct: 50, weeklyPct: 10, fiveHourTokens: 0, weeklyTokens: 0, estimate: false }, herdrOk: true,
+    });
+    const b = snapOf(s, {
+      sessions: [sess('done', '2026-01-01T10:05:00Z')],
+      tasks: [{ id: 'T-1', title: 'Fix', stage: 3, requester: 'Sam', source: 'Slack', session: 'w1' }, { id: 'T-2', title: 'New ask', stage: 0, requester: 'Sam', source: 'Slack', session: null }],
+      releases: { envs: [{ name: 'dev', url: 'u', version: 'v2', ok: true, checkedAt: null }], merged: [{ number: 5, title: 'Fix', author: 'Sam', mergedAt: '', url: '' }], freeze: null },
+      monitors: [mon({ lastCheckAt: '2026-01-01T10:04:00Z', lastVerdict: 'ok', lastSummary: 'Fine' })],
+      limits: { fiveHourPct: 82, weeklyPct: 10, fiveHourTokens: 0, weeklyTokens: 0, estimate: false }, herdrOk: false, herdrError: 'not running',
+    });
+    const got = newNotifications(a, b, undefined);
+    expect(got.map((x) => x.kind).sort()).toEqual(['finished', 'limits', 'monitorReport', 'releases', 'releases', 'system', 'tasks', 'tasks']);
+    expect(got.find((x) => x.kind === 'finished')).toMatchObject({ title: 'w1 finished its turn', body: 'All done', route: '#/session/w1' });
+    expect(got.filter((x) => x.kind === 'tasks').map((x) => x.title).sort()).toEqual(['New task T-2: New ask', 'T-1 is now PR open']);
+    expect(notifyItems({ ...b, sessions: [{ ...sess('done', 'x'), name: 'intake' }] }).some((x) => x.kind === 'finished')).toBe(false);
+    expect(newNotifications(b, b, undefined)).toEqual([]);
+    expect(newNotifications(a, b, { ...DEFAULT_NOTIFY, tasks: false, releases: false, finished: false, limits: false, system: false, monitorReport: false })).toEqual([]);
   });
   test('the tab title counts unanswered Needs you items', () => {
     const s = mem();

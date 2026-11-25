@@ -366,7 +366,7 @@ server.registerTool('settings_get', {
 
 server.registerTool('settings_set', {
   title: 'Change ShiftBoss settings',
-  description: 'Merge these fields into the settings, e.g. {"thresholds": {"warn": 70}}, {"switches": {"autoDispatch": true}}, {"watchedChannels": ["#team"]}, {"autoUpdate": false}. Use mode_set for the mode.',
+  description: 'Merge these fields into the settings, e.g. {"thresholds": {"warn": 70}}, {"switches": {"autoDispatch": true}}, {"watchedChannels": ["#team"]}, {"autoUpdate": false}, {"notify": {"finished": false}} (notify kinds: needs, blocked, stuck, overlap, promiseDue, monitor, updated, finished, trouble, tasks, releases, monitorReport, replaced, actions, limits, system). Use mode_set for the mode.',
   inputSchema: { changes: z.record(z.string(), z.any()), owner_asked: OWNER_ASKED, by: ME },
 }, wrap(async ({ changes, by }) => {
   const cur = (await call('GET', '/api/snapshot')).settings;

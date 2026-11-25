@@ -168,15 +168,27 @@ export interface Settings {
 
 /** Browser notification switches, one per kind of event. */
 export interface NotifySettings {
-  needs: boolean; // a new Needs you item (a decision a session asked for)
+  needs: boolean; // a new Needs you item (a decision a session asked for, an approval, a confused thread)
   blocked: boolean; // a session waits on a permission answer in herdr
   stuck: boolean; // a session is stuck or looping
   overlap: boolean; // two sessions touch the same thing
   promiseDue: boolean; // a promise became overdue
   monitor: boolean; // a monitor raised an alert
-  updated: boolean; // ShiftBoss installed a new version
+  updated: boolean; // ShiftBoss installed a new version, or a new one is available
+  finished: boolean; // a session finished its turn and waits for its next prompt
+  trouble: boolean; // a session's context is nearly full, it burns tokens fast, or herdr lost it
+  tasks: boolean; // a new task, or a task moved to another stage
+  releases: boolean; // a PR merged, or an environment runs a new version
+  monitorReport: boolean; // every monitor check result, and a monitor finishing
+  replaced: boolean; // a session replacement finished, stalled or failed
+  actions: boolean; // a held action ran, failed, or Dry run recorded one
+  limits: boolean; // the 5-hour or weekly usage passed 80% or 95%
+  system: boolean; // herdr stopped answering, or the intake went quiet
 }
-export const DEFAULT_NOTIFY: NotifySettings = { needs: true, blocked: true, stuck: true, overlap: true, promiseDue: true, monitor: true, updated: true };
+export const DEFAULT_NOTIFY: NotifySettings = {
+  needs: true, blocked: true, stuck: true, overlap: true, promiseDue: true, monitor: true, updated: true,
+  finished: true, trouble: true, tasks: true, releases: true, monitorReport: true, replaced: true, actions: true, limits: true, system: true,
+};
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
 export function resolveLead<T extends { name: string }>(sessions: T[], base: string): T | null {

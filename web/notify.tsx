@@ -93,15 +93,33 @@ export function useNotifications(snap: Snapshot | null) {
 
 // ---------------------------------------------------------------- Settings
 
-const KINDS: [keyof NotifySettings, string, string][] = [
-  ['needs', 'A new Needs you item', 'A session asks you to decide something.'],
-  ['blocked', 'A session needs a permission answer', 'It is blocked in herdr until you answer there.'],
-  ['stuck', 'A session is stuck or looping', 'No progress, or the same command again and again.'],
-  ['overlap', 'An overlap', 'Two sessions touch the same file, migration number or task.'],
-  ['promiseDue', 'A promise is overdue', 'Something you said you would do passed its due time.'],
-  ['monitor', 'A monitor alert', 'Only when monitors are set up.'],
-  ['updated', 'ShiftBoss updated', 'A new version was installed and the page reloaded.'],
+const GROUPS: { name: string; kinds: [keyof NotifySettings, string, string][] }[] = [
+  { name: 'You are needed', kinds: [
+    ['needs', 'A new Needs you item', 'A session asks you to decide something, an action waits for approval, or sessions look confused in a thread.'],
+    ['blocked', 'A session needs a permission answer', 'It is blocked in herdr until you answer there.'],
+    ['promiseDue', 'A promise is overdue', 'Something you said you would do passed its due time.'],
+    ['monitor', 'A monitor alert', 'A check after shipping came back bad.'],
+  ] },
+  { name: 'Sessions', kinds: [
+    ['finished', 'A session finished its turn', 'It is waiting for its next prompt.'],
+    ['stuck', 'A session is stuck or looping', 'No progress, or the same command again and again.'],
+    ['trouble', 'A session is in trouble', 'Context nearly full, tokens burning fast, or herdr lost the pane.'],
+    ['overlap', 'An overlap', 'Two sessions touch the same file, migration number or task.'],
+    ['replaced', 'A replacement finished, stalled or failed', 'A session handed over to a new one.'],
+  ] },
+  { name: 'Work', kinds: [
+    ['tasks', 'Tasks', 'A new task, a task moving stage (PR open, On dev, Live …), or a promise kept.'],
+    ['releases', 'Releases', 'A PR merged, or dev or prod runs a new version.'],
+    ['monitorReport', 'Every monitor check', 'Each ok / warn / bad result, and a monitor finishing.'],
+    ['actions', 'Actions ShiftBoss held', 'An approved action ran or failed, or Dry run recorded one.'],
+  ] },
+  { name: 'ShiftBoss', kinds: [
+    ['limits', 'Usage limits', 'The 5-hour or weekly usage passed 80% or 95%.'],
+    ['system', 'Something stopped', 'herdr is not answering, or the intake went quiet for 15 minutes.'],
+    ['updated', 'Updates', 'A new version is available, or one was installed.'],
+  ] },
 ];
+const ALL_KINDS = GROUPS.flatMap((g) => g.kinds.map((k) => k[0]));
 
 type SectionProps = { id: string; title: string; text: string; children: ReactNode };
 type SwitchProps = { label: string; hint?: string; on: boolean; onChange: (v: boolean) => void };
@@ -126,10 +144,13 @@ export function NotificationSettings({ Section, Switch }: { Section: ComponentTy
     if (perm !== 'granted') return toast('Allow notifications first');
     show('ShiftBoss', 'Notifications work. Click to come back here.', '#/settings', 'test');
   };
-  const flip = (k: keyof NotifySettings, v: boolean) => {
-    setPending((p) => ({ ...p, [k]: v }));
-    api('PUT', '/api/settings', { notify: { [k]: v } }).then(() => toast('Saved'), (e) => { setPending({}); toast((e as Error).message); });
+  const save = (patch: Partial<NotifySettings>) => {
+    setPending((p) => ({ ...p, ...patch }));
+    api('PUT', '/api/settings', { notify: patch }).then(() => toast('Saved'), (e) => { setPending({}); toast((e as Error).message); });
   };
+  const flip = (k: keyof NotifySettings, v: boolean) => save({ [k]: v });
+  const all = (v: boolean) => save(Object.fromEntries(ALL_KINDS.map((k) => [k, v])) as Partial<NotifySettings>);
+  const count = ALL_KINDS.filter((k) => on[k]).length;
   const status = perm === 'granted' ? ['Allowed in this browser.', C.green] : perm === 'denied' ? ['Blocked in this browser. Allow them in the site settings (the icon left of the address), then reload.', C.red]
     : perm === 'unsupported' ? ['This browser cannot show notifications.', C.faint] : ['Not allowed yet.', C.amber];
   return (
@@ -139,9 +160,17 @@ export function NotificationSettings({ Section, Switch }: { Section: ComponentTy
         {perm !== 'granted' && perm !== 'unsupported' && <button type="button" className="pill sm w" onClick={() => void ask()} disabled={perm === 'denied'}>Allow notifications</button>}
         <button type="button" className="pill sm" onClick={test} disabled={perm !== 'granted'}>Send a test</button>
       </div>
-      <div className="col" style={{ gridColumn: '1 / -1', gap: 18 }}>
-        {KINDS.map(([k, label, hint]) => <Switch key={k} label={label} hint={hint} on={on[k]} onChange={(v) => flip(k, v)} />)}
+      <div className="row" style={{ gridColumn: '1 / -1', gap: 8, flexWrap: 'wrap' }}>
+        <span className="faint" style={{ fontSize: 12, flex: '1 1 200px' }}>{count} of {ALL_KINDS.length} on</span>
+        <button type="button" className="pill sm" onClick={() => all(true)} disabled={count === ALL_KINDS.length}>All on</button>
+        <button type="button" className="pill sm" onClick={() => all(false)} disabled={count === 0}>All off</button>
       </div>
+      {GROUPS.map((g) => (
+        <div key={g.name} className="col" style={{ gridColumn: '1 / -1', gap: 18 }}>
+          <span className="faint" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>{g.name}</span>
+          {g.kinds.map(([k, label, hint]) => <Switch key={k} label={label} hint={hint} on={on[k]} onChange={(v) => flip(k, v)} />)}
+        </div>
+      ))}
     </Section>
   );
 }
