@@ -22,27 +22,6 @@ const STATUS: Record<string, [string, string]> = {
   working: ['working', C.fg], idle: ['idle', C.green], done: ['idle', C.green], blocked: ['waiting on a prompt in herdr', C.red], unknown: ['unknown', C.faint], lost: ['not running', C.red],
 };
 
-/** The button that opens the panel: in the sidebar foot, the phone top bar and the Floor's top bar. */
-export function ChatButton({ variant }: { variant: 'side' | 'icon' | 'floor' }) {
-  const snap = useSnap();
-  const lead = snap ? resolveLead(snap.sessions, snap.settings.leadSession ?? '') : null;
-  const fresh = useUnread(snap?.chat ?? []);
-  const icon = <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z" /><path d="M8.5 10.5h7" /></svg>;
-  const label = 'Chat with the lead' + (fresh ? ' (new reply)' : '');
-  if (variant === 'side') return (
-    <button type="button" className="side-item row" onClick={() => openChat()} aria-label={label} title={label}>
-      <span className="side-ico">{icon}{fresh && <span className="side-pip" style={{ background: C.green }} aria-hidden="true" />}</span>
-      <span className="side-text ellipsis" style={{ flex: 1, textAlign: 'left' }}>Chat with lead</span>
-      {lead && <span className="side-text mono faint ellipsis" style={{ fontSize: 11, maxWidth: 90 }}>{lead.name}</span>}
-    </button>
-  );
-  return (
-    <button type="button" className={variant === 'floor' ? 'fl-ibtn' : 'icon-btn'} aria-label={label} title={label} onClick={() => openChat()} style={{ position: 'relative' }}>
-      {icon}{fresh && <span className={variant === 'floor' ? 'fl-badge' : 'side-pip'} style={{ background: C.green, color: '#050505' }}>{variant === 'floor' ? '1' : ''}</span>}
-    </button>
-  );
-}
-
 /** A reply newer than the last time the panel was open. */
 function useUnread(chat: ChatMsg[]): boolean {
   const last = [...chat].reverse().find((m) => m.role === 'lead');
@@ -77,7 +56,8 @@ export function LeadChat() {
   useLayoutEffect(() => { const b = body.current; if (b && atBottom.current) b.scrollTop = b.scrollHeight; }, [sig, open]);
   useLayoutEffect(() => { const t = box.current; if (t) { t.style.height = '0'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; } }, [text, open]);
 
-  if (!open || !snap) return null;
+  if (!snap) return null;
+  const fresh = !open && useUnread(chat);
   const [word, tone] = lead ? STATUS[lead.status] ?? STATUS.unknown : ['no lead running', C.red];
   const lastYou = [...chat].reverse().find((m) => m.role === 'you');
   const answered = lastYou && chat.some((m) => m.role === 'lead' && m.id > lastYou.id);
@@ -93,8 +73,19 @@ export function LeadChat() {
   };
   const clear = async () => { try { await api('POST', '/api/chat/clear', {}); toast('Chat cleared'); } catch (e) { toast((e as Error).message); } };
 
+  const fab = (
+    <button type="button" className={'lc-fab' + (open ? ' on' : '')} aria-label={open ? 'Close the chat' : 'Chat with the lead' + (fresh ? ' (new reply)' : '')} aria-expanded={open}
+      title={open ? 'Close the chat' : 'Chat with the lead'} onClick={() => setOpen(!open)}>
+      {open
+        ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z" /><path d="M8.5 10.5h7" /></svg>}
+      {fresh && <span className="lc-fab-pip" aria-hidden="true" />}
+    </button>
+  );
+  if (!open) return fab;
   return (
     <>
+      {fab}
       <div className="lc-scrim" onClick={() => setOpen(false)} aria-hidden="true" />
       <aside className="lc" aria-label="Chat with the lead">
         <header className="lc-head">
@@ -103,9 +94,6 @@ export function LeadChat() {
             <span className="row lc-sub"><span className="dot" style={{ background: tone }} aria-hidden="true" /><span className="mono ellipsis">{lead ? `${lead.name} · ${word}` : 'Set one in Settings → Lead session'}</span></span>
           </div>
           {chat.length > 0 && <button type="button" className="pill xs" onClick={() => void clear()}>Clear</button>}
-          <button type="button" className="icon-btn" aria-label="Close the chat" onClick={() => setOpen(false)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
         </header>
 
         <div className="lc-body" ref={body} onScroll={(e) => { const b = e.currentTarget; atBottom.current = b.scrollHeight - b.scrollTop - b.clientHeight < 40; }}>

@@ -1,4 +1,4 @@
-import { ChatButton, LeadChat } from './chat';
+import { LeadChat } from './chat';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Snapshot } from '../shared/types';
 import { C, Dot, href, useSnap } from './lib';
@@ -109,7 +109,6 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
           <span className={'dot' + (connected ? ' blink' : '')} style={{ background: connected ? C.green : C.red }} />
         </a>
         <span style={{ flex: 1 }} />
-        <ChatButton variant="icon" />
         <button type="button" className="icon-btn" aria-label="Search or run a command" onClick={onSearch}><SearchIcon /></button>
       </header>
       {open && <div className="side-scrim" onClick={close} aria-hidden="true" />}
@@ -120,6 +119,10 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
             <span className="side-text" style={{ fontWeight: 500 }}>ShiftBoss</span>
             <span className={'dot' + (connected ? ' blink' : '')} title={connected ? 'Live' : 'Reconnecting'} aria-label={connected ? 'Live' : 'Reconnecting'} style={{ background: connected ? C.green : C.red }} />
           </a>
+          <button type="button" className="side-toggle" onClick={toggle} aria-pressed={collapsed} aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
+            <span className="st-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F4F5" strokeWidth="1.25" aria-hidden="true" style={{ flex: 'none' }}><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M8 9h8M8 12h5M8 15h7" /></svg></span>
+            <span className="st-drawer">{I('M4 5h16v14H4zM9.5 5v14')}</span>
+          </button>
           <button type="button" className="icon-btn side-close" aria-label="Close menu" onClick={close}>{I('M6 6l12 12M18 6L6 18')}</button>
         </div>
         <button type="button" className="side-search row" onClick={() => { close(); onSearch(); }} aria-label="Search or run a command (Ctrl K)" title="Search (Ctrl K)">
@@ -143,12 +146,7 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
           ))}
         </nav>
         <div className="side-foot col">
-          <ChatButton variant="side" />
           <ModeSwitch collapsed={collapsed} onDone={close} />
-          <button type="button" className="side-item side-collapse row" onClick={toggle} aria-pressed={collapsed} aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
-            <span className="side-ico">{I(collapsed ? 'M10 6l6 6-6 6' : 'M14 6l-6 6 6 6')}</span>
-            <span className="side-text">Collapse</span>
-          </button>
         </div>
       </aside>
       <div className="app-main"><ModeBanner />{children}</div>
