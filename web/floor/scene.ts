@@ -23,10 +23,10 @@ const ringColor = (st: DeskState) => (st === 'working' ? WT.slate : DESK_COLOR[s
 const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
-interface Placed { desk: Desk; group: THREE.Object3D; anchor: THREE.Vector3; ring?: THREE.Mesh; term?: Term; who?: Person; pin?: HTMLElement }
+interface Placed { desk: Desk; group: THREE.Object3D; anchor: THREE.Vector3; ring?: THREE.Mesh; term?: Term; who?: Person; pin?: HTMLElement; act?: string }
 interface Person { g: THREE.Group; body: THREE.Group; head: THREE.Mesh; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D }
 interface Term { c: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mat: THREE.MeshBasicMaterial; desk: Desk; frame: number }
-interface Label { el: HTMLElement; pos: THREE.Vector3 }
+interface Label { el: HTMLElement; pos: THREE.Vector3; area?: [number, number, number, number]; onClick?: () => void }
 
 export class FloorScene {
   private renderer: THREE.WebGLRenderer;
@@ -53,6 +53,11 @@ export class FloorScene {
   /** People walking from where they were to where they are now (desk to lounge, lounge to the lead office ...). */
   private trips: { who: Person; path: THREE.CurvePath<THREE.Vector3>; t0: number; dur: number; target: Person }[] = [];
   private owner: Person | null = null;
+  /** Where the owner can be, and what they do there: they pick one at random every minute or two and walk over. */
+  private ownerSpots: { x: number; z: number; y: number; ry: number; act: string; what: string }[] = [];
+  private ownerAt = 0;
+  private ownerNext = 0;
+  private ownerTrip: { path: THREE.CurvePath<THREE.Vector3>; t0: number; dur: number; to: number } | null = null;
   private gamers: Person[] = [];
   private game: { c: CanvasRenderingContext2D; tex: THREE.CanvasTexture } | null = null;
   private wall: { c: CanvasRenderingContext2D; tex: THREE.CanvasTexture; kind: string }[] = [];
@@ -65,7 +70,7 @@ export class FloorScene {
   private downAt: [number, number] | null = null;
   private disposed = false;
   private onResize = () => this.resize();
-  private onVis = () => { if (!document.hidden) this.loop(performance.now()); };
+  private onVis = () => { if (!document.hidden && !this.disposed) { cancelAnimationFrame(this.raf); this.raf = requestAnimationFrame(this.loop); } };
 
   constructor(private canvas: HTMLCanvasElement, private overlay: HTMLElement, private events: FloorEvents) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -80,7 +85,7 @@ export class FloorScene {
     this.scene.environment = pm.fromScene(new RoomEnvironment(), .04).texture;
     (this.scene as any).environmentIntensity = .32;
     this.scene.background = new THREE.Color('#050505');
-    this.scene.fog = new THREE.Fog('#050505', 140, 300);
+    this.scene.fog = new THREE.Fog('#050505', 160, 320);
     this.scene.add(new THREE.HemisphereLight('#ffffff', '#c7d2e6', .5));
     const sun = new THREE.DirectionalLight('#fff7ec', 2.7);
     sun.position.set(-18, 34, 22); sun.castShadow = true;
@@ -88,7 +93,10 @@ export class FloorScene {
     Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 30, bottom: -30 });
     this.scene.add(sun);
     const fill = new THREE.DirectionalLight('#9aa0aa', .35); fill.position.set(24, 12, -18); this.scene.add(fill);
-    const grid = new THREE.GridHelper(420, 140, '#1E222B', '#14171D'); grid.position.y = -1.02; this.scene.add(grid);
+    // a flat wireframe grid all around the floor: clear square cells, not shaded, faded only far away by the fog
+    const grid = new THREE.GridHelper(420, 140, '#3A414F', '#3A414F'); grid.position.y = -1.02;
+    for (const m of [grid.material].flat() as THREE.LineBasicMaterial[]) { m.transparent = true; m.opacity = .55; m.fog = true; m.toneMapped = false; }
+    this.scene.add(grid);
     this.scene.add(this.world);
     this.controls = new OrbitControls(this.camera, canvas);
     Object.assign(this.controls, { enableDamping: true, dampingFactor: .07, minDistance: 14, maxDistance: 130, maxPolarAngle: Math.PI * .44, minPolarAngle: Math.PI * .12, screenSpacePanning: false });
@@ -250,11 +258,14 @@ export class FloorScene {
   private hoverable(obj: THREE.Object3D, name: string) {
     obj.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.userData.session = name; this.clickables.push(o); } });
   }
-  private label(text: string, sub: string, pos: THREE.Vector3, onClick?: () => void) {
-    const el = document.createElement(onClick ? 'button' : 'div'); el.className = 'fl-tag'; el.innerHTML = `<b>${esc(text)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}`;
-    if (onClick) { (el as HTMLButtonElement).type = 'button'; el.onclick = onClick; }
-    this.overlay.appendChild(el); this.labels.push({ el, pos });
+  /** An area's label: hidden until the pointer is over the area (x0, z0, x1, z1 on the floor); clicking the area runs onClick. */
+  private label(text: string, sub: string, pos: THREE.Vector3, onClick?: () => void, area?: [number, number, number, number]) {
+    const el = document.createElement('div'); el.className = 'fl-tag'; el.innerHTML = `<b>${esc(text)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+    el.style.opacity = '0';
+    this.overlay.appendChild(el); this.labels.push({ el, pos, area, onClick });
   }
+  private hoveredArea: Label | null = null;
+  private floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
   // ---------- terminals ----------
   private makeTerm(d: Desk): Term {
@@ -330,7 +341,7 @@ export class FloorScene {
     this.world.clear(); this.placed.clear(); this.clickables = []; this.zones = []; this.gamers = []; this.wall = [];
     for (const l of this.labels) l.el.remove(); this.labels = [];
     this.overlay.querySelectorAll('.fl-pin').forEach((e) => e.remove());
-    this.trips = []; this.owner = null;
+    this.trips = []; this.owner = null; this.ownerSpots = []; this.ownerTrip = null;
   }
   private zone(delay: number) { const g = new THREE.Group(); this.world.add(g); this.zones.push({ g, delay }); return g; }
 
@@ -376,12 +387,12 @@ export class FloorScene {
       this.wall.push({ c: scv.getContext('2d')!, tex, kind: kinds[j][i] });
     }
     this.desk(ops, m.ops, x0 + 5, -D / 2 + 3.2, Math.PI, 0);
-    this.label('Ops wall', m.ops ? m.ops.name : 'monitors and releases', new THREE.Vector3(x0 + 5, 3.6, -D / 2 + .6));
+    this.label('Ops wall', m.ops ? m.ops.name : 'monitors and releases', new THREE.Vector3(x0 + 5, 3.6, -D / 2 + .6), m.ops ? () => this.events.onSelect(m.ops!.name) : undefined, [x0, -D / 2, x0 + 9, -D / 2 + 4.6]);
     const cx = x0 + 2 + workW - 3.8;
     A(ops, box(5.6, .95, .8, .05), mt.case, cx, .48, -D / 2 + 1.1); A(ops, box(5.7, .06, .9, .02), mt.deskTop, cx, .98, -D / 2 + 1.1);
     A(ops, box(.55, .55, .45, .05), mt.met, cx - 2, 1.28, -D / 2 + 1); A(ops, box(.9, 2, .7, .06), this.M('#E9EDF3'), cx + 2.4, 1, -D / 2 + .9);
     [WT.yellow, WT.blue, WT.green].forEach((c, i) => { A(ops, new THREE.CylinderGeometry(.22, .22, .08, 20), this.M(c), cx - 1.6 + i * 1.3, .78, -D / 2 + 2.2); A(ops, new THREE.CylinderGeometry(.04, .04, .74, 8), mt.met, cx - 1.6 + i * 1.3, .38, -D / 2 + 2.2); });
-    this.label('Coffee bar', '', new THREE.Vector3(cx, 2.4, -D / 2 + 1));
+    this.label('Coffee bar', '', new THREE.Vector3(cx, 2.4, -D / 2 + 1), undefined, [cx - 3.2, -D / 2, cx + 3.2, -D / 2 + 3]);
 
     // team pods: two rows, a column per two pods, walkways between
     const work = this.zone(300);
@@ -405,7 +416,7 @@ export class FloorScene {
       this.plant(work, px + 4.6, pz - 3.2, .9);
       const busy = pod.desks.filter((d) => d.state !== 'idle').length;
       const free = !pod.lane;
-      this.label(pod.label, free ? 'ready for new sessions' : `${pod.desks.length} session${pod.desks.length === 1 ? '' : 's'} · ${busy} busy`, new THREE.Vector3(px, 3.2, pz - 3.6), free ? undefined : () => this.events.onArea(pod.lane));
+      this.label(pod.label, free ? 'ready for new sessions' : `${pod.desks.length} session${pod.desks.length === 1 ? '' : 's'} · ${busy} busy`, new THREE.Vector3(px, 3.2, pz - 3.6), free ? undefined : () => this.events.onArea(pod.lane), [px - 5.2, pz - 3.8, px + 5.2, pz + 3.8]);
     });
 
     // rooms column on the right: lead office, conference, lounge
@@ -414,7 +425,7 @@ export class FloorScene {
     this.desk(lr, m.lead, 0, -1.4, 0, 1, true);
     A(lr, box(2.2, .5, .9, .1), this.M(WT.blue, { roughness: 1 }), 3.2, .25, 2.4); A(lr, box(2.2, .5, .25, .1), this.M(WT.blue, { roughness: 1 }), 3.2, .65, 2.85);
     this.plant(lr, -4.6, -3.2, 1.2); this.plant(lr, 4.6, -3.2, 1);
-    this.label('Lead office', m.lead ? m.lead.name : 'no lead set', new THREE.Vector3(xRooms, 3.6, -D / 2 + 1.2), m.lead ? () => this.events.onSelect(m.lead!.name) : undefined);
+    this.label('Lead office', m.lead ? m.lead.name : 'no lead set', new THREE.Vector3(xRooms, 3.6, -D / 2 + 1.2), m.lead ? () => this.events.onSelect(m.lead!.name) : undefined, [xRooms - 5.5, -D / 2 + 1, xRooms + 5.5, -D / 2 + 9]);
 
     const conf = this.zone(600);
     const cr = this.glassRoom(conf, xRooms, -2, 11, 7);
@@ -423,7 +434,7 @@ export class FloorScene {
     const ccv = document.createElement('canvas'); ccv.width = 512; ccv.height = 256; const ctex = new THREE.CanvasTexture(ccv); ctex.colorSpace = THREE.SRGBColorSpace;
     A(cr, box(3.4, 1.9, .08, .03), mt.tv, 0, 1.6, -3.1); A(cr, new THREE.PlaneGeometry(3.2, 1.7), new THREE.MeshBasicMaterial({ map: ctex, toneMapped: false }), 0, 1.6, -3.05, { cast: false });
     this.confScreen = { c: ccv.getContext('2d')!, tex: ctex };
-    this.label('Conference', 'the team at a glance', new THREE.Vector3(xRooms, 3.6, -5.6));
+    this.label('Conference', 'the team at a glance', new THREE.Vector3(xRooms, 3.6, -5.6), undefined, [xRooms - 5.5, -5.5, xRooms + 5.5, 1.5]);
 
     const chill = this.zone(750);
     const lz = 10;
@@ -445,20 +456,33 @@ export class FloorScene {
     A(chill, box(1.5, .08, 2.8, .02), this.M(WT.blueDk, { roughness: .4 }), ppx, .78, ppz); A(chill, box(1.5, .18, .02, .01), mt.case, ppx, .9, ppz);
     A(chill, box(1.5, .005, .03, .002), mt.case, ppx, .825, ppz - .7, { cast: false }); A(chill, box(.03, .005, 2.8, .002), mt.case, ppx, .825, ppz, { cast: false });
     [-1.2, 1.2].forEach((lz2) => A(chill, box(1.2, .74, .08, .02), mt.met, ppx, .37, ppz + lz2));
-    const seats: [number, number, number][] = [[0, 1.9, Math.PI], [-1, 1.9, Math.PI], [1, 1.9, Math.PI], [-2.6, .9, Math.PI / 2], [-1.4, -1, Math.PI * .75], [1.6, -.8, -Math.PI * .75], [-2.6, 1.9, Math.PI / 2]];
-    const players: [number, number, number][] = [[ppx, ppz - 1.95, 0], [ppx, ppz + 1.95, Math.PI]];
-    m.idle.slice(0, seats.length + players.length).forEach((d, i) => {
-      const standing = i >= seats.length; // the ping-pong players
-      const [x, z, ry] = standing ? players[i - seats.length] : [xRooms + seats[i][0], lz + seats[i][1], seats[i][2]];
-      const who = this.person(chill, x, z, ry, !standing);
-      if (i === 0) this.gamers.push(who);
-      const ring = this.ring(chill, d.state, x, z, .5);
-      this.hitBox(chill, d.name, x, 1, z, 1.2, 2, 1.2);
-      this.placed.set(d.name, { desk: d, group: who.g, anchor: new THREE.Vector3(0, 2.4, 0), ring, who });
+    // idle sessions spread out: the sofa, ping-pong, pool, the coffee bar, the arcade and foosball, one area after
+    // another so a few idle sessions do not all land on the sofa. Spots go by name, so nobody swaps on a refresh.
+    type Spot = { x: number; z: number; ry: number; seated: boolean; y?: number; act: string; where: string };
+    const onSofa = (dx: number, dz: number, ry: number): Spot => ({ x: xRooms + dx, z: lz + dz, ry, seated: true, act: 'sofa', where: 'lounge' });
+    const stool = (i: number): Spot => ({ x: cx - 1.6 + i * 1.3, z: -D / 2 + 2.2, ry: Math.PI, seated: true, y: .26, act: 'coffee', where: 'coffee bar' });
+    const byArea: Spot[][] = [
+      [{ ...onSofa(0, 1.9, Math.PI), act: 'tv' }, onSofa(-1, 1.9, Math.PI), onSofa(1, 1.9, Math.PI), onSofa(-2.6, .9, Math.PI / 2), onSofa(-1.4, -1, Math.PI * .75), onSofa(1.6, -.8, -Math.PI * .75), onSofa(-2.6, 1.9, Math.PI / 2)],
+      [{ x: ppx, z: ppz - 1.95, ry: 0, seated: false, act: 'pingpong', where: 'ping-pong' }, { x: ppx, z: ppz + 1.95, ry: Math.PI, seated: false, act: 'pingpong', where: 'ping-pong' }],
+      [{ x: gameX - 1.42, z: -5.5, ry: Math.PI / 2, seated: false, act: 'pool', where: 'pool' }, { x: gameX, z: -7.8, ry: 0, seated: false, act: 'pool', where: 'pool' }],
+      [stool(0), stool(1), stool(2)],
+      [{ x: gameX + 1.1, z: 9.75, ry: 0, seated: false, act: 'arcade', where: 'arcade' }],
+      [{ x: gameX - .78, z: -.4, ry: Math.PI / 2, seated: false, act: 'foos', where: 'foosball' }, { x: gameX + .78, z: -.4, ry: -Math.PI / 2, seated: false, act: 'foos', where: 'foosball' }],
+    ];
+    const spots: Spot[] = [];
+    for (let k = 0; spots.length < byArea.flat().length; k++) for (const area of byArea) if (area[k]) spots.push(area[k]);
+    const idleSorted = m.idle.slice().sort((a, b) => a.name.localeCompare(b.name));
+    idleSorted.slice(0, spots.length).forEach((d, i) => {
+      const sp = spots[i];
+      const who = this.person(chill, sp.x, sp.z, sp.ry, sp.seated); if (sp.y) who.g.position.y = sp.y;
+      if (sp.act === 'tv') this.gamers.push(who);
+      const ring = this.ring(chill, d.state, sp.x, sp.z, .5);
+      this.hitBox(chill, d.name, sp.x, 1, sp.z, 1.2, 2, 1.2);
+      this.placed.set(d.name, { desk: { ...d, lane: `${d.lane} · ${sp.where}` }, group: who.g, anchor: new THREE.Vector3(0, 2.4, 0), ring, who, act: sp.act });
       this.hoverable(who.g, d.name);
     });
-    const more = m.idle.length - seats.length - players.length;
-    this.label('Lounge', m.idle.length ? `${m.idle.length} idle${more > 0 ? ` · ${more} not shown` : ''}` : 'nobody idle', new THREE.Vector3(xRooms, 3.4, lz - 3.4), m.idle.length ? () => this.events.onArea('__idle') : undefined);
+    const more = m.idle.length - spots.length;
+    this.label('Lounge', m.idle.length ? `${m.idle.length} idle around the floor${more > 0 ? ` · ${more} not shown` : ''}` : 'nobody idle', new THREE.Vector3(xRooms, 3.4, lz - 3.4), m.idle.length ? () => this.events.onArea('__idle') : undefined, [xRooms - 5, lz - 4.4, xRooms + 5, lz + 4.4]);
 
     // games strip in the middle of the floor: pool table (ping-pong is just below it)
     const games = this.zone(850);
@@ -501,13 +525,13 @@ export class FloorScene {
       const scr = A(cab, new THREE.PlaneGeometry(.56, .42), new THREE.MeshBasicMaterial({ color: k < 0 ? '#FF5FA2' : '#7FD8FF', toneMapped: false }), 0, 1.38, .36, { cast: false }); scr.rotation.x = -.18;
       A(cab, box(.66, .06, .3, .02), mt.bezel, 0, 1.0, .42);
     }
-    this.label('Games', 'pool · foosball · ping-pong · arcade', new THREE.Vector3(gameX, 2.6, -2.6));
+    this.label('Games', 'pool · foosball · ping-pong · arcade', new THREE.Vector3(gameX, 2.6, -2.6), undefined, [gameX - 3.5, -D / 2 + 2.6, gameX + 3.5, D / 2 - 2.2]);
 
     // entrance: a doormat and two plants at the gap in the front wall
     const ent = this.zone(900);
     A(ent, box(2.4, .02, 1.4, .01), this.M('#2F3A55', { roughness: 1 }), entX, .09, D / 2 - .9, { cast: false });
     this.plant(ent, entX + 2, D / 2 - 1.1, 1.2); this.plant(ent, entX - 2, D / 2 - 1.1, 1);
-    this.label('Entrance', '', new THREE.Vector3(entX, 2.4, D / 2 - .6));
+    this.label('Entrance', '', new THREE.Vector3(entX, 2.4, D / 2 - .6), undefined, [entX - 2.6, D / 2 - 2.2, entX + 2.6, D / 2]);
 
     // the gym: the real people who run ShiftBoss, enjoying themselves while the agents work
     const gym = this.zone(980);
@@ -518,10 +542,6 @@ export class FloorScene {
     A(tm, box(.9, .22, 2.1, .06), mt.bezel, 0, .12, 0); A(tm, box(.7, .02, 1.7, .01), this.M('#3A3F4A', { roughness: .9 }), 0, .24, .05, { cast: false });
     for (const sx of [-.4, .4]) A(tm, box(.06, 1.1, .06, .02), mt.met, sx, .7, -.9);
     A(tm, box(.9, .32, .1, .03), mt.bezel, 0, 1.3, -.92); A(tm, new THREE.PlaneGeometry(.5, .2), new THREE.MeshBasicMaterial({ color: '#7FD8FF', toneMapped: false }), 0, 1.33, -.865, { cast: false });
-    this.owner = this.person(tm, 0, .1, Math.PI, false); this.owner.g.position.y = .24;
-    this.hitBox(tm, '__owner', 0, 1.1, .1, 1, 2.2, 1.4);
-    this.hoverable(this.owner.g, '__owner');
-    this.placed.set('__owner', { desk: { name: this.wallData.owner || 'You', lane: 'you', state: 'finished', task: null, ctx: 0, cacheRead: 0, lastTool: null, lines: [] }, group: this.owner.g, anchor: new THREE.Vector3(0, 2.3, 0) });
     // bench press with a loaded barbell
     A(gym, box(.42, .42, 1.4, .06), this.M(WT.blue), gcx - .8, .3, gz); A(gym, box(.36, .55, .1, .03), this.M(WT.blue), gcx - .8, .55, gz - .62);
     for (const sx of [-.5, .5]) A(gym, box(.06, 1.2, .06, .02), mt.met, gcx - .8 + sx, .6, gz - .5);
@@ -534,7 +554,25 @@ export class FloorScene {
     A(gym, box(.08, 2.3, .08, .02), mt.met, gcx + 3.9, 1.15, gz + .4); A(gym, box(.9, .08, .08, .02), mt.met, gcx + 3.5, 2.28, gz + .4);
     A(gym, new THREE.CylinderGeometry(.24, .24, 1.05, 20), this.M(WT.yellow, { roughness: .8 }), gcx + 3.1, 1.5, gz + .4);
     [[gcx + 1.4, gz + 1.2, WT.green], [gcx + 2.4, gz + 1.2, WT.blueLt]].forEach(([x, z, c]) => A(gym, box(.7, .02, 1.8, .01), this.M(c as string, { roughness: 1 }), x as number, .11, z as number, { cast: false }));
-    this.label('Gym', `${this.wallData.owner || 'You'} · enjoying it`, new THREE.Vector3(gcx, 2.6, gz - 1.6));
+    this.label('Gym', 'for the humans', new THREE.Vector3(gcx, 2.6, gz - 1.6), undefined, [gx0, gz - 2.7, gx1, gz + 2.7]);
+    // the owner wanders between these, at random
+    this.ownerSpots = [
+      { x: gcx - 3.6, z: gz + .1, y: .24, ry: Math.PI, act: 'run', what: 'on the treadmill' },
+      { x: gcx - .8, z: gz + 1.15, y: 0, ry: Math.PI, act: 'lift', what: 'lifting at the bench' },
+      { x: gcx + 3.1, z: gz + 1.25, y: 0, ry: Math.PI, act: 'box', what: 'on the punching bag' },
+      { x: gcx + 1.4, z: gz + 1.2, y: 0, ry: Math.PI, act: 'stretch', what: 'stretching on the mat' },
+      { x: gameX + 1.42, z: -5.5, y: 0, ry: -Math.PI / 2, act: 'pool', what: 'playing pool' },
+      { x: gameX - 1.1, z: 9.75, y: 0, ry: 0, act: 'arcade', what: 'on the arcade' },
+      { x: cx + 1.4, z: -D / 2 + 2.4, y: 0, ry: Math.PI, act: 'coffee', what: 'getting a coffee' },
+    ];
+    this.ownerAt = Math.floor(Math.random() * this.ownerSpots.length);
+    const sp = this.ownerSpots[this.ownerAt];
+    this.owner = this.person(this.world, sp.x, sp.z, sp.ry, false); this.owner.g.position.y = sp.y;
+    const ownerHit = this.add(this.owner.g, new THREE.BoxGeometry(1, 2.2, 1), new THREE.MeshBasicMaterial({ visible: false }), 0, 1.1, 0, { cast: false, recv: false });
+    ownerHit.userData.session = '__owner'; this.clickables.push(ownerHit);
+    this.hoverable(this.owner.g, '__owner');
+    this.placed.set('__owner', { desk: { name: this.wallData.owner || 'You', lane: 'you', state: 'finished', task: null, ctx: 0, cacheRead: 0, lastTool: null, lines: [] }, group: this.owner.g, anchor: new THREE.Vector3(0, 2.3, 0) });
+    this.ownerNext = performance.now() + 40_000 + Math.random() * 40_000;
 
     for (const p of this.placed.values()) this.syncPin(p);
     if (!this.intro) for (const [name, p] of this.placed) {
@@ -626,14 +664,17 @@ export class FloorScene {
     this.ray.setFromCamera(this.ptr, this.camera);
     const hit = this.ray.intersectObjects(this.clickables, false)[0];
     this.hovered = hit ? hit.object.userData.session : null;
-    this.canvas.style.cursor = this.hovered ? 'pointer' : this.downAt ? 'grabbing' : 'grab';
+    const at = this.ray.ray.intersectPlane(this.floorPlane, new THREE.Vector3());
+    this.hoveredArea = at ? this.labels.find((l) => l.area && at.x >= l.area[0] && at.x <= l.area[2] && at.z >= l.area[1] && at.z <= l.area[3]) ?? null : null;
+    this.canvas.style.cursor = this.hovered || this.hoveredArea?.onClick ? 'pointer' : this.downAt ? 'grabbing' : 'grab';
   };
   private onDown = (e: PointerEvent) => { this.downAt = [e.clientX, e.clientY]; };
   private onUp = (e: PointerEvent) => {
     if (this.downAt && Math.hypot(e.clientX - this.downAt[0], e.clientY - this.downAt[1]) < 5 && this.hovered && this.hovered !== '__owner') this.events.onSelect(this.hovered);
+    else if (this.downAt && Math.hypot(e.clientX - this.downAt[0], e.clientY - this.downAt[1]) < 5 && !this.hovered && this.hoveredArea?.onClick) this.hoveredArea.onClick();
     this.downAt = null;
   };
-  private onLeave = () => { this.hovered = null; };
+  private onLeave = () => { this.hovered = null; this.hoveredArea = null; };
 
   // ---------- camera and frame ----------
   private flyTo(pos: THREE.Vector3, target: THREE.Vector3, ms = 1400) { this.fly = { from: this.camera.position.clone(), to: pos.clone(), tFrom: this.controls.target.clone(), tTo: target.clone(), t0: performance.now(), ms }; }
@@ -666,6 +707,14 @@ export class FloorScene {
         if (p.ring) { const mm = p.ring.material as THREE.MeshBasicMaterial; if (st === 'needs') { mm.opacity = .35 + Math.abs(Math.sin(t * 3)) * .55; p.ring.scale.setScalar(1 + Math.abs(Math.sin(t * 3)) * .15); } else if (st === 'stuck') mm.opacity = .3 + Math.abs(Math.sin(t * 1.4)) * .4; }
       }
       for (const gm of this.gamers) { gm.body.rotation.z = Math.sin(t * 2.2) * .05; }
+      for (const [name, p] of this.placed) {
+        if (!p.act || !p.who) continue;
+        const w = p.who, ph = name.length * .7;
+        if (p.act === 'pingpong') { w.armR!.rotation.x = -1.1 + Math.sin(t * 4 + ph) * .5; w.body.rotation.y = Math.sin(t * 4 + ph) * .15; }
+        else if (p.act === 'pool') { w.body.rotation.x = .2; w.armL!.rotation.x = -1.2; w.armR!.rotation.x = -1.1 + Math.sin(t * 1.2 + ph) * .25; }
+        else if (p.act === 'arcade' || p.act === 'foos') { w.armL!.rotation.x = -1.05 + Math.sin(t * 14 + ph) * .06; w.armR!.rotation.x = -1.05 + Math.sin(t * 12 + ph) * .08; }
+        else if (p.act === 'coffee') { w.armR!.rotation.x = -1.7 + Math.sin(t * .7 + ph) * .12; }
+      }
       if (this.game && (t * 24 | 0) % 1 === 0) this.drawGame(t);
       if ((t * 2 | 0) !== ((t - dt) * 2 | 0)) this.wall.forEach((w) => this.drawWall(w, t));
       this.trips = this.trips.filter((tr) => {
@@ -676,18 +725,44 @@ export class FloorScene {
         tr.who.g.position.set(p.x, Math.abs(Math.cos(t * 7.5)) * .06, p.z); tr.who.g.rotation.y = Math.atan2(q.x, q.z);
         return true;
       });
-      if (this.owner) { const sw = Math.sin(t * 11); this.owner.legL!.rotation.x = sw * .7; this.owner.legR!.rotation.x = -sw * .7; this.owner.armL!.rotation.x = -sw * .6; this.owner.armR!.rotation.x = sw * .6; this.owner.body.position.y = Math.abs(Math.cos(t * 11)) * .05; }
+      if (this.owner && this.ownerSpots.length) {
+        const o = this.owner, L = o.legL!, R = o.legR!, AL = o.armL!, AR = o.armR!;
+        L.rotation.x = R.rotation.x = AL.rotation.x = AR.rotation.x = 0; o.body.position.y = 0; o.body.rotation.x = 0;
+        if (!this.ownerTrip && now >= this.ownerNext) {
+          let to = this.ownerAt; while (to === this.ownerAt) to = Math.floor(Math.random() * this.ownerSpots.length);
+          const a2 = this.ownerSpots[this.ownerAt], b2 = this.ownerSpots[to], aisle = -.3, path = new THREE.CurvePath<THREE.Vector3>();
+          const pts = [new THREE.Vector3(a2.x, 0, a2.z), new THREE.Vector3(a2.x, 0, aisle), new THREE.Vector3(b2.x, 0, aisle), new THREE.Vector3(b2.x, 0, b2.z)];
+          for (let i = 0; i < 3; i++) if (pts[i].distanceTo(pts[i + 1]) > .01) path.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
+          this.ownerTrip = { path, t0: now, dur: path.getLength() / 1.4 * 1000, to };
+        }
+        if (this.ownerTrip) {
+          const k = Math.min(1, (now - this.ownerTrip.t0) / this.ownerTrip.dur), sw = Math.sin(t * 7.5);
+          const p = this.ownerTrip.path.getPointAt(k), q = this.ownerTrip.path.getTangentAt(k);
+          L.rotation.x = sw * .55; R.rotation.x = -sw * .55; AL.rotation.x = -sw * .45; AR.rotation.x = sw * .45;
+          o.g.position.set(p.x, Math.abs(Math.cos(t * 7.5)) * .06, p.z); o.g.rotation.y = Math.atan2(q.x, q.z);
+          if (k >= 1) { this.ownerAt = this.ownerTrip.to; this.ownerTrip = null; const sp = this.ownerSpots[this.ownerAt]; o.g.position.set(sp.x, sp.y, sp.z); o.g.rotation.y = sp.ry; this.ownerNext = now + 60_000 + Math.random() * 90_000; }
+        } else {
+          const act = this.ownerSpots[this.ownerAt].act;
+          if (act === 'run') { const sw = Math.sin(t * 11); L.rotation.x = sw * .7; R.rotation.x = -sw * .7; AL.rotation.x = -sw * .6; AR.rotation.x = sw * .6; o.body.position.y = Math.abs(Math.cos(t * 11)) * .05; }
+          else if (act === 'lift') { const up = (Math.sin(t * 1.6) + 1) / 2; AL.rotation.x = AR.rotation.x = -Math.PI + .9 * (1 - up); o.body.position.y = -up * .04; }
+          else if (act === 'box') { const k2 = t * 5; AL.rotation.x = -1.45 - Math.max(0, Math.sin(k2)) * .3; AR.rotation.x = -1.45 - Math.max(0, Math.sin(k2 + Math.PI)) * .3; o.body.rotation.x = .08; }
+          else if (act === 'stretch') { AL.rotation.x = AR.rotation.x = -2.9; o.body.position.y = Math.sin(t * .9) * .03; o.body.rotation.x = Math.sin(t * .9) * .08; }
+          else if (act === 'pool') { o.body.rotation.x = .2; AL.rotation.x = -1.2; AR.rotation.x = -1.1 + Math.sin(t * 1.2) * .25; }
+          else if (act === 'arcade') { AL.rotation.x = -1.05 + Math.sin(t * 14) * .05; AR.rotation.x = -1.05 + Math.sin(t * 12 + 1) * .07; }
+          else if (act === 'coffee') { AR.rotation.x = -1.7 + Math.sin(t * .7) * .1; o.body.position.y = Math.sin(t * .8) * .01; }
+        }
+      }
     }
     if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
     // labels, pins and the hover card follow the camera
-    for (const l of this.labels) { const s = this.toScreen(l.pos); l.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`; l.el.style.opacity = s.behind ? '0' : '1'; }
+    for (const l of this.labels) { const s = this.toScreen(l.pos); l.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`; l.el.style.opacity = !s.behind && l === this.hoveredArea && !this.hovered ? '1' : '0'; }
     for (const p of this.placed.values()) if (p.pin) { const s = this.toScreen(p.group.localToWorld(p.anchor.clone().add(new THREE.Vector3(0, .6, 0)))); p.pin.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`; }
     const hv = this.hovered ? this.placed.get(this.hovered) : null;
     if (hv) {
       const s = this.toScreen(hv.group.localToWorld(hv.anchor.clone())), d = hv.desk;
       this.hoverEl.style.display = 'flex'; this.hoverEl.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, calc(-100% - 14px))`;
       this.hoverEl.innerHTML = this.hovered === '__owner'
-        ? `<div class="h1"><b>${esc(this.wallData.owner || 'You')}</b><span>you</span></div><div class="h2">on the treadmill while the agents work</div>`
+        ? `<div class="h1"><b>${esc(this.wallData.owner || 'You')}</b><span>you</span></div><div class="h2">${this.ownerTrip ? 'walking over' : esc(this.ownerSpots[this.ownerAt]?.what ?? '')} while the agents work</div>`
         : `<div class="h1"><i class="dot" style="background:${DESK_COLOR[d.state]}"></i><b>${esc(d.name)}</b><span>${DESK_WORD[d.state]}</span></div><div class="h2">${esc(d.task ?? d.lane)} · ctx ${d.ctx}% · cache ${fmtCache(d.cacheRead)}</div>`;
     } else this.hoverEl.style.display = 'none';
   };

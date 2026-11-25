@@ -1,5 +1,6 @@
 // The Floor: a full-screen 3D office for a second monitor. Every session sits at a desk; the panels on top show
 // what needs you and what is happening, and follow what you click (a session, a team area or the lounge).
+import { MODE_LABEL } from '../../server/gate';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clockTime, fmtCache, type Snapshot } from '../../shared/types';
 import { DESK_COLOR, DESK_WORD, FLOOR_NAME, floorModel, type Desk } from '../../shared/floor';
@@ -7,7 +8,6 @@ import { api, href, navigate, toast, useSnap } from '../lib';
 import type { FloorScene } from '../floor/scene';
 
 type Scope = { kind: 'session'; name: string } | { kind: 'area'; lane: string } | null;
-const MODE_LABEL: Record<string, string> = { dry: 'Dry run', ask: 'Ask first', safe: 'Safe auto', auto: 'Autopilot' };
 
 function inScopeFn(scope: Scope, all: Desk[]) {
   if (!scope) return () => true;
@@ -112,7 +112,7 @@ function TopBar({ snap, model, onFind }: { snap: Snapshot; model: ReturnType<typ
       <label className="fl-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4-4" /></svg>
         <input id="fl-q" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') find(); }} placeholder="Find a session, task or team" aria-label="Find a session, task or team" /><span className="kbd">/</span></label>
       <span style={{ flex: 1 }} />
-      <span className="eyebrow">{MODE_LABEL[snap.settings.mode ?? 'dry'] ?? 'Dry run'}</span>
+      <span className="eyebrow">{MODE_LABEL[snap.settings.mode ?? 'auto']}</span>
       {snap.limits && <span className="fl-meter">5h<i><em style={{ width: `${Math.min(100, snap.limits.fiveHourPct)}%` }} /></i><span className="mono">{Math.round(snap.limits.fiveHourPct)}%</span></span>}
       <button type="button" className="fl-ibtn" aria-label={`Notifications, ${unread} waiting`} aria-expanded={bell} onClick={() => setBell(!bell)}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20a2 2 0 0 0 4 0" /></svg>
