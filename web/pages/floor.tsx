@@ -190,7 +190,7 @@ function Detail({ snap, model, scope, selected, onBack, onPick }: { snap: Snapsh
   const scopeList = scope?.kind === 'area' ? model.all.filter((d) => (scope.lane === '__idle' ? d.state === 'idle' : d.lane === scope.lane)) : model.all;
   const list = scopeList.slice().sort((x, y) => order[x.state] - order[y.state] || y.ctx - x.ctx);
   const t = snap.settings.thresholds;
-  const worn = list.filter((d) => d.cacheRead >= (t.cacheWarnM ?? 500) * 1e6 || d.ctx >= t.warn).sort((x, y) => y.cacheRead - x.cacheRead).slice(0, 3);
+  const worn = list.filter((d) => d.cacheRead >= (t.cacheWarnM ?? 500) * 1e6).sort((x, y) => y.cacheRead - x.cacheRead).slice(0, 3);
   const counts = (['needs', 'stuck', 'working', 'finished', 'idle'] as const).map((k) => [k, list.filter((d) => d.state === k).length] as const);
   const run = (path: string, body: unknown, ok: string) => void api('POST', path, body).then(() => toast(ok), (e) => toast((e as Error).message));
   return (

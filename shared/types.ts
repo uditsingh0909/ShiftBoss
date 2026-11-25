@@ -48,11 +48,11 @@ export interface SessionCache {
 }
 /** "1.4B", "640M", "12K". */
 export const fmtCache = (n: number) => (n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? Math.round(n / 1e6) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n));
-/** Where a session's wear stands: context or lifetime cache, whichever is further along. */
-export function wear(s: { contextPct: number; cache?: { read: number } }, t: { warn: number; replace: number; cacheWarnM?: number; cacheReplaceM?: number }): 'ok' | 'warn' | 'replace' {
+/** Where a session's wear stands, by lifetime cache read only (context is shown, but never decides a replace). */
+export function wear(s: { contextPct: number; cache?: { read: number } }, t: { cacheWarnM?: number; cacheReplaceM?: number }): 'ok' | 'warn' | 'replace' {
   const read = (s.cache?.read ?? 0) / 1e6;
-  if (s.contextPct >= t.replace || read >= (t.cacheReplaceM ?? 1000)) return 'replace';
-  if (s.contextPct >= t.warn || read >= (t.cacheWarnM ?? 500)) return 'warn';
+  if (read >= (t.cacheReplaceM ?? 1000)) return 'replace';
+  if (read >= (t.cacheWarnM ?? 500)) return 'warn';
   return 'ok';
 }
 

@@ -43,11 +43,11 @@ export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Sett
       [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? clockTime(s.lastActivity) : 'unknown'), tone: 'red' }, { k: 'in progress', v: working.map((q) => q.id).join(', '), tone: 'amber' }],
       'ask it how ' + working[0].id + ' is going');
   }
-  // Worn out: context near the top, or the lifetime cache past the line. Compacting resets context but not the
+  // Worn out: the lifetime cache past the line. Compacting resets context but not the
   // cache, so a session can show 20 % context and still be due for a fresh start.
   const cacheM = (s.cache?.read ?? 0) / 1e6;
-  if (s.contextPct >= t.replace || cacheM >= (t.cacheReplaceM ?? 1000)) {
-    const byCache = s.contextPct < t.replace;
+  if (cacheM >= (t.cacheReplaceM ?? 1000)) { // cache only: context never decides a replace
+    const byCache = true;
     return card('heavy', byCache ? `Cache ${fmtCache(s.cache.read)} read over its life (${s.cache.compactions} compaction${s.cache.compactions === 1 ? '' : 's'}), though context shows ${Math.round(s.contextPct)}%.` : `Context at ${Math.round(s.contextPct)}%.`,
       [byCache ? { k: 'cache', v: fmtCache(s.cache.read) + ' read · ' + s.cache.compactions + ' compactions', tone: 'red' } : { k: 'context', v: Math.round(s.contextPct) + '% of ' + Math.round(s.contextWindow / 1000) + 'k', tone: 'red' },
       { k: 'handoff', v: s.handoffAgeMin == null ? 'no handoff file found' : 'updated ' + s.handoffAgeMin + ' min ago', tone: s.handoffAgeMin != null && s.handoffAgeMin <= t.staleMin ? 'green' : 'amber' }],

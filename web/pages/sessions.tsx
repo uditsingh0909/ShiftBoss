@@ -55,7 +55,7 @@ function Alerts() {
   for (const h of snap.health.filter((x) => !['healthy', 'waiting'].includes(x.verdict)))
     all.push({ key: `h:${h.session}:${h.verdict}`, tone: ['lost', 'looping', 'burning'].includes(h.verdict) ? 'red' : 'amber', what: `${h.session} is ${h.verdict}`, detail: h.suggest || h.title, to: href('session', h.session) });
   for (const s of snap.sessions.filter((x) => wear(x, th) === 'replace' && !snap.health.some((h) => h.session === x.name && h.verdict === 'heavy')))
-    all.push({ key: 'ctx' + s.name, tone: 'red', what: s.contextPct >= th.replace ? `${s.name} is at ${Math.round(s.contextPct)}% context` : `${s.name} has read ${fmtCache(s.cache.read)} of cache`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
+    all.push({ key: 'ctx' + s.name, tone: 'red', what: `${s.name} has read ${fmtCache(s.cache.read)} of cache`, detail: 'Time to hand off and replace it', to: href('session', s.name) });
   for (const o of snap.overlaps) all.push({ key: 'o' + o.id, tone: o.severity, what: o.title, detail: `${o.a.session} and ${o.b.session} · ${o.fix}`, to: href('overlap') });
   const due = snap.promises.filter((p) => p.state === 'due');
   if (due.length) all.push({ key: 'due:' + due.map((p) => p.id).join(','), tone: 'amber', what: `${due.length} promise${due.length === 1 ? '' : 's'} due`, detail: due.slice(0, 2).map((p) => `${p.to}: ${p.said}`).join(' · '), to: href('promises') });
@@ -368,7 +368,7 @@ function ReplaceMany({ onDone }: { onDone: () => void }) {
     <section className="shell rise" aria-label="Replace sessions">
       <form className="core col" style={{ gap: 14 }} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <span className="label">Replace sessions</span>
-        <span className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>Each one writes a handoff, then a fresh session (name-v2, -v3 …) starts in the same folder, reads it and takes over its tasks. The old sessions stay open for you to close. Ticked: over {th.replace}% context.</span>
+        <span className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>Each one writes a handoff, then a fresh session (name-v2, -v3 …) starts in the same folder, reads it and takes over its tasks. The old sessions stay open for you to close. Ticked: past {fmtCache((th.cacheReplaceM ?? 1000) * 1e6)} of cache read.</span>
         <fieldset className="col" style={{ gap: 4, border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
           <legend className="sr-only">Sessions</legend>
           {list.map((s) => (
@@ -476,7 +476,7 @@ export function CommandCenter() {
 
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} delay={80}>
-            <div className="row" style={{ justifyContent: 'space-between' }}><span className="eyebrow">Context pressure</span><span className="faint" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>replace at {th.replace}%</span></div>
+            <div className="row" style={{ justifyContent: 'space-between' }}><span className="eyebrow">Context pressure</span><span className="faint" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>red at {th.replace}%</span></div>
             {[...snap.sessions].sort((a, b) => b.contextPct - a.contextPct).slice(0, 5).map((s) => (
               <a key={s.name} href={href('session', s.name)} className="col" style={{ gap: 8 }}>
                 <span className="row" style={{ justifyContent: 'space-between' }}><span className="mono ellipsis" style={{ fontSize: 13 }}>{s.name}</span><span className="mono" style={{ fontSize: 13, color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span></span>
@@ -587,8 +587,8 @@ export function SessionPage({ name }: { name: string }) {
       {wear(s, th) === 'replace' && !hideAlert && !replacingNow && (
         <section role="alert" className="shell rise alert-red">
           <div className="core row" style={{ gap: 24, padding: '22px 26px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 40, fontWeight: 500, letterSpacing: '-0.04em', color: C.red }}>{s.contextPct >= th.replace ? Math.round(s.contextPct) + '%' : fmtCache(s.cache.read)}</span>
-            <span style={{ flex: '1 1 480px', lineHeight: 1.55, fontSize: 15 }}>{s.contextPct >= th.replace ? 'Context is nearly full and the session will start losing track.' : `It has read ${fmtCache(s.cache.read)} of cache over ${s.cache.compactions} compaction${s.cache.compactions === 1 ? '' : 's'}. Context looks low because compacting resets it, but every turn still re-reads a long history: slow, costly, and it loses detail.`} <span className="dim">Replace asks it to write its handoff, then starts a fresh session that reads it and takes over its tasks. This one stays open for you to close.</span></span>
+            <span style={{ fontSize: 40, fontWeight: 500, letterSpacing: '-0.04em', color: C.red }}>{fmtCache(s.cache.read)}</span>
+            <span style={{ flex: '1 1 480px', lineHeight: 1.55, fontSize: 15 }}>{`It has read ${fmtCache(s.cache.read)} of cache over ${s.cache.compactions} compaction${s.cache.compactions === 1 ? '' : 's'}. Context looks low because compacting resets it, but every turn still re-reads a long history: slow, costly, and it loses detail.`} <span className="dim">Replace asks it to write its handoff, then starts a fresh session that reads it and takes over its tasks. This one stays open for you to close.</span></span>
             <button type="button" className="pill" onClick={() => setHideAlert(true)}>Later</button>
             <button type="button" className="pill w" onClick={replace}>Replace<Arrow dark /></button>
           </div>

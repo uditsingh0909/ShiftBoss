@@ -257,7 +257,7 @@ export function SettingsPage({ section }: { section?: string }) {
         <SettingsSection id="automation" title="Automation" text="What ShiftBoss may do without asking you.">
           <div style={{ gridColumn: '1 / -1', gap: 22 }} className="col">
             <Switch label="Replace worn-out sessions by themselves" on={st.autoReplace !== false} onChange={(v) => setSt({ ...st, autoReplace: v })}
-              hint="When a session's lifetime cache read passes the replace line (context is the backstop), it writes a handoff and a fresh -vN takes over. Never while it works, waits on you or holds a scheduled job. The lead goes earlier." />
+              hint="When a session's lifetime cache read passes the replace line, it writes a handoff and a fresh -vN takes over. Context never triggers it. Never while it works, waits on you or holds a scheduled job. Same line for the lead." />
             <Switch label="Send queued tasks by itself when a session has room" on={st.switches.autoDispatch} onChange={sw('autoDispatch')}
               hint="Off: queued tasks wait for you to press Send on the card."
               warn="On: ShiftBoss prompts sessions without asking you first." />
@@ -291,10 +291,9 @@ export function SettingsPage({ section }: { section?: string }) {
 
         <SettingsSection id="warnings" title="Warnings" text="When a session counts as full, stuck or looping, and how many questions may wait on you.">
           <Range id="th-warn" label="Warn when context reaches" value={T.warn} min={50} max={90} unit="%" onChange={th('warn')} />
-          <Range id="th-replace" label="Ask to replace the session at" value={T.replace} min={70} max={95} unit="%" onChange={th('replace')} />
+          <Range id="th-replace" label="Show context in red from" value={T.replace} min={70} max={95} unit="%" onChange={th('replace')} />
           <Range id="th-cache-warn" label="Warn when its cache read reaches" value={T.cacheWarnM ?? 500} min={100} max={5000} unit="M" onChange={th('cacheWarnM')} />
-          <Range id="th-cache-replace" label="Ask to replace it at a cache read of" value={T.cacheReplaceM ?? 1000} min={200} max={10000} unit="M" onChange={th('cacheReplaceM')} />
-          <Range id="th-lead-replace" label="Replace the lead earlier, at context" value={T.leadReplace ?? 40} min={20} max={95} unit="%" onChange={th('leadReplace')} />
+          <Range id="th-cache-replace" label="Replace a session (the lead too) at a cache read of" value={T.cacheReplaceM ?? 1000} min={200} max={10000} unit="M" onChange={th('cacheReplaceM')} />
           <Range id="th-stuck" label="Stuck after no progress for" value={T.stuckMin} min={5} max={60} unit=" min" onChange={th('stuckMin')} />
           <Range id="th-loop" label="Same command this many times is a loop" value={T.loopRepeats} min={2} max={6} onChange={th('loopRepeats')} />
           <Range id="th-stale" label="Handoff is stale after" value={T.staleMin} min={10} max={120} unit=" min" onChange={th('staleMin')} />

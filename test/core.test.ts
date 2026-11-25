@@ -235,7 +235,7 @@ describe('health and overlaps', () => {
     expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [task], settings).verdict).not.toBe('stuck');
     expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [{ ...task, stage: 3 as const }], settings).verdict).not.toBe('stuck');
     expect(healthOf(session({ status: 'idle', lastActivity: old }), [], [{ ...task, stage: 2 as const }], settings).verdict).toBe('stuck');
-    expect(healthOf(session({ contextPct: 90 }), [], [], settings).verdict).toBe('heavy');
+    expect(healthOf(session({ contextPct: 90 }), [], [], settings).verdict).not.toBe('heavy'); // context never makes it heavy
   });
   test('same file and same migration number across sessions', () => {
     const o = overlapsOf([
@@ -723,13 +723,13 @@ describe('lifetime cache', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('wear: replace on context or on lifetime cache, whichever comes first; health says which', () => {
+  test('wear: replace on lifetime cache only (context never decides); health says which', () => {
     const th = { warn: 70, replace: 85, cacheWarnM: 500, cacheReplaceM: 1000 };
     const cache = (read: number) => ({ read, written: 0, compactions: 6, lastCompactAt: null, warm: null, expiresAt: null, hitRatio: null });
     expect(wear({ contextPct: 20, cache: cache(100e6) }, th)).toBe('ok');
     expect(wear({ contextPct: 20, cache: cache(600e6) }, th)).toBe('warn');
     expect(wear({ contextPct: 20, cache: cache(1.4e9) }, th)).toBe('replace');
-    expect(wear({ contextPct: 90, cache: cache(0) }, th)).toBe('replace');
+    expect(wear({ contextPct: 95, cache: cache(0) }, th)).toBe('ok');
     const h = healthOf(session({ contextPct: 18, status: 'idle', cache: cache(1.4e9) }), [], [], { ...mem().settings(), thresholds: { ...mem().settings().thresholds, ...th } });
     expect(h.verdict).toBe('heavy');
     expect(h.title).toContain('1.4B');
@@ -1699,15 +1699,12 @@ describe('the Floor', () => {
 describe('replacing worn-out sessions', () => {
   const { wornOut } = require('../server/fleet');
   const t = { replace: 85, cacheWarnM: 500, cacheReplaceM: 1000 };
-  test('lifetime cache is the trigger, context the backstop', () => {
+  test('lifetime cache is the only trigger, the same line for the lead', () => {
     expect(wornOut({ contextPct: 20, cache: { read: 1.2e9 } }, t, false)).toBe('cache 1.2B read (line 1B)');
     expect(wornOut({ contextPct: 20, cache: { read: 9e8 } }, t, false)).toBeNull();
-    expect(wornOut({ contextPct: 90, cache: { read: 1e8 } }, t, false)).toBe('context 90% (line 85%)');
-  });
-  test('the lead goes earlier: at the cache warning line or 40% context', () => {
-    expect(wornOut({ contextPct: 20, cache: { read: 6e8 } }, t, true)).toBe('cache 600M read (line 500M)');
-    expect(wornOut({ contextPct: 45, cache: { read: 1e8 } }, t, true)).toBe('context 45% (line 40%)');
-    expect(wornOut({ contextPct: 30, cache: { read: 1e8 } }, t, true)).toBeNull();
+    expect(wornOut({ contextPct: 95, cache: { read: 1e8 } }, t, false)).toBeNull();
+    expect(wornOut({ contextPct: 60, cache: { read: 6e8 } }, t, true)).toBeNull();
+    expect(wornOut({ contextPct: 10, cache: { read: 1.1e9 } }, t, true)).toBe('cache 1.1B read (line 1B)');
   });
 });
 
@@ -1729,9 +1726,9 @@ describe('picking a worn-out session to replace', () => {
     expect(pickWornOut([s('a', 2e9)], { ...base, tried: new Map([['a', 1e9 - 60e3]]) })).toBeNull();
     expect(pickWornOut([s('a', 2e9)], { ...base, holdsJob: () => true })).toBeNull();
   });
-  test('the lead goes at its own context line', () => {
-    expect(pickWornOut([s('lead', 1e8, 'idle', 45)], { ...base, lead: 'lead' })?.why).toBe('context 45% (line 40%)');
-    expect(pickWornOut([s('lead', 1e8, 'idle', 45)], base)).toBeNull();
+  test('context never picks a session, the lead included', () => {
+    expect(pickWornOut([s('lead', 1e8, 'idle', 45)], { ...base, lead: 'lead' })).toBeNull();
+    expect(pickWornOut([s('a', 1e8, 'idle', 97)], base)).toBeNull();
   });
 });
 

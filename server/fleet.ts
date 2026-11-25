@@ -14,16 +14,14 @@ export const SPAWN_MANY_CAP = 20;
 export const HANDOFF_TIMEOUT_MS = 20 * 60e3;
 
 /**
- * Whether a session is worn out enough to replace by itself. Lifetime cache read is the real wear (it never drops
- * after a compact); context is the backstop. The lead is replaced earlier, at the cache warning line or 40 %
- * context, because its frequent check-ins pile up cache fastest. Returns why, or null.
+ * Whether a session is worn out enough to replace by itself: its lifetime cache read is past the replace line
+ * (it never drops after a compact). Context is not a trigger: Claude Code compacts on its own, and the owner
+ * wants sessions, the lead included, to live until the cache line. Returns why, or null.
  */
-export function wornOut(s: { contextPct: number; cache?: { read: number } | null }, t: { replace: number; cacheWarnM?: number; cacheReplaceM?: number; leadReplace?: number }, isLead: boolean): string | null {
+export function wornOut(s: { contextPct: number; cache?: { read: number } | null }, t: { cacheReplaceM?: number }, _isLead = false): string | null {
   const readM = (s.cache?.read ?? 0) / 1e6;
-  const cacheLine = isLead ? (t.cacheWarnM ?? 500) : (t.cacheReplaceM ?? 1000);
-  const ctxLine = isLead ? Math.min(t.leadReplace ?? 40, t.replace) : t.replace;
-  if (readM >= cacheLine) return `cache ${readM >= 1000 ? (readM / 1000).toFixed(1) + 'B' : Math.round(readM) + 'M'} read (line ${cacheLine >= 1000 ? cacheLine / 1000 + 'B' : cacheLine + 'M'})`;
-  if (s.contextPct >= ctxLine) return `context ${Math.round(s.contextPct)}% (line ${ctxLine}%)`;
+  const line = t.cacheReplaceM ?? 1000;
+  if (readM >= line) return `cache ${readM >= 1000 ? (readM / 1000).toFixed(1) + 'B' : Math.round(readM) + 'M'} read (line ${line >= 1000 ? line / 1000 + 'B' : line + 'M'})`;
   return null;
 }
 
