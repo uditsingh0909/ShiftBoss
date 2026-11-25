@@ -656,7 +656,8 @@ The MCP tools and the CLI call the same API. Sessions should prefer the tools.
 | `onboarding_ask` | `shiftboss setup ask <session…> \| --all` | Ask running sessions to register their work on the board |
 | `onboarding_backfill` | `shiftboss setup backfill <1\|2\|3\|7\|14>` | Send the intake back that many days |
 | `onboarding_done` | `shiftboss setup done` | Mark setup finished |
-| `session_spawn` | `shiftboss session spawn <name> --cwd DIR [--model …] [--prompt …]` | Start Claude Code in a new herdr tab |
+| `session_spawn` | `shiftboss session spawn <name> --cwd DIR [--model …] [--prompt …]` | Start Claude Code in herdr (joins the newest tab with room, Settings → Sessions per tab) |
+| `herdr_tidy` | `shiftboss session tidy` | Regroup running sessions into shared tabs and name each tab; nothing restarts |
 | | `shiftboss session spawn-many <file.json>` | Start up to 20 sessions one after another |
 | `session_replace` | `shiftboss session replace <name…>` | Replace sessions through a handoff (see below) |
 | `monitor_add` | `shiftboss monitor add "<title>" --prompt … --days 1\|3\|7\|14 --every 1\|3\|6\|12\|24 [--pr URL] [--ticket URL] [--dashboard URL] [--task T-12]` | Watch something you shipped for a few days |
@@ -723,7 +724,8 @@ Every stored link must be http(s); anything else is a 400. A promise in the snap
 `url`, else its task's source link with `via` set to that task id (worked out when read, never stored).
 | `POST /api/import` | `{tasks: [...]}` | Import tasks, matched on `extId` |
 | `POST /api/sessions/:name/prompt\|focus\|interrupt\|meta` | | Act on a session in herdr |
-| `POST /api/sessions/spawn` | `{name, cwd, model?, prompt?}` | Start Claude Code in a new herdr tab |
+| `POST /api/sessions/spawn` | `{name, cwd, model?, prompt?}` | Start Claude Code in herdr (newest tab with room) |
+| `POST /api/herdr/tidy` | `{}` | Regroup sessions into shared tabs (Sessions per tab); nothing restarts |
 | `POST /api/sessions/spawn-many` | `{sessions: [{name, cwd, model?, prompt?}, …]}` | Start up to 20, one after another; every row is checked before any starts |
 | `POST /api/sessions/replace` | `{sessions: [name, …]}` | Start a handoff replacement for each; progress is `replacements` in the snapshot |
 | `POST /api/replacements/:id/cancel` | | Stop a replacement before its new session starts |

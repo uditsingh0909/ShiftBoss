@@ -1572,3 +1572,75 @@ describe('report: live today', () => {
     expect(first).not.toBeNull();
   });
 });
+
+describe('shared herdr tabs', () => {
+  const { pickSplit, tabWithRoom, tabLabel, tidyPlan, CLOSING_LABEL } = require('../server/panes');
+  const tab = (id: string, number: number, pane_count = 1) => ({ tab_id: id, number, pane_count });
+  const pane = (id: string, t: string, agent = 'claude') => ({ pane_id: id, tab_id: t, agent });
+
+  test('a new session joins the newest Claude-only tab with room', () => {
+    const tabs = [tab('t1', 1), tab('t2', 2, 2), tab('t3', 3), tab('t4', 4)];
+    const panes = [pane('a', 't1'), pane('b', 't2'), pane('c', 't2'), pane('d', 't3'), pane('e', 't4', 'shell')];
+    expect(tabWithRoom(tabs, panes, 2)).toEqual({ tab: 't3', panes: ['d'] }); // t4 has a shell in it, t2 is full
+    expect(tabWithRoom(tabs, panes, 2, new Set(['t3']))).toEqual({ tab: 't1', panes: ['a'] });
+    expect(tabWithRoom(tabs, panes, 1)).toBeNull();
+    expect(tabWithRoom([tab('t2', 2, 2)], [pane('b', 't2'), pane('c', 't2')], 2)).toBeNull();
+  });
+
+  test('splitting the biggest pane makes 2 side by side and 4 a 2x2', () => {
+    expect(pickSplit([{ pane_id: 'a', rect: { width: 205, height: 50 } }])).toEqual({ pane: 'a', direction: 'right' });
+    const two = [{ pane_id: 'a', rect: { width: 103, height: 50 } }, { pane_id: 'b', rect: { width: 102, height: 50 } }];
+    expect(pickSplit(two)).toEqual({ pane: 'a', direction: 'down' });
+    const three = [{ pane_id: 'a', rect: { width: 103, height: 25 } }, { pane_id: 'c', rect: { width: 103, height: 25 } }, { pane_id: 'b', rect: { width: 102, height: 50 } }];
+    expect(pickSplit(three)).toEqual({ pane: 'b', direction: 'down' });
+    expect(pickSplit([])).toBeNull();
+  });
+
+  test('a tab is named after its sessions, without -vN', () => {
+    expect(tabLabel(['alpha-lead-v3', 'beta-v2'])).toBe('alpha-lead + beta');
+    expect(tabLabel(['gamma-v2'])).toBe('gamma');
+    expect(tabLabel(['old-a', 'old-b'], new Set(['old-a', 'old-b']))).toBe(CLOSING_LABEL);
+    expect(tabLabel(['old-a', 'new-b'], new Set(['old-a']))).toBe('new-b');
+    expect(tabLabel(['a-really-long-session-name-here', 'another-long-session-name']).length).toBeLessThanOrEqual(40);
+    expect(tabLabel([])).toBe('');
+  });
+
+  test('tidy fills under-full tabs oldest first, never breaks up a full tab, leaves closing and shell tabs alone', () => {
+    const tabs = [tab('t1', 1), tab('t2', 2), tab('t3', 3), tab('t4', 4), tab('t5', 5)];
+    const panes = [pane('a', 't1'), pane('b', 't2'), pane('c', 't3'), pane('x', 't4'), pane('s', 't5', 'shell')];
+    const names = new Map([['a', 'a'], ['b', 'b'], ['c', 'c'], ['x', 'old-x']]);
+    expect(tidyPlan(tabs, panes, 2, names, new Set(['old-x']))).toEqual([{ pane: 'c', tab: 't1' }]);
+    // t2 is full: it is not a source, so nothing moves
+    expect(tidyPlan([tab('t1', 1), tab('t2', 2, 2)], [pane('a', 't1'), pane('b', 't2'), pane('c', 't2')], 2, new Map(), new Set())).toEqual([]);
+    const four = tidyPlan([tab('t1', 1), tab('t2', 2), tab('t3', 3), tab('t4', 4)], [pane('a', 't1'), pane('b', 't2'), pane('c', 't3'), pane('d', 't4')], 4, new Map(), new Set());
+    expect(four).toEqual([{ pane: 'd', tab: 't1' }, { pane: 'c', tab: 't1' }, { pane: 'b', tab: 't1' }]);
+    expect(tidyPlan(tabs, panes, 1, names, new Set())).toEqual([]);
+  });
+
+  test('placement and tidy stay in one workspace', () => {
+    const { workspaceFor, inWorkspace } = require('../server/panes');
+    const tabs = [{ ...tab('a1', 1), workspace_id: 'A' }, { ...tab('b5', 5), workspace_id: 'B', focused: true }, { ...tab('b6', 6), workspace_id: 'B' }];
+    expect(workspaceFor(tabs, '')).toBe('B');
+    expect(workspaceFor(tabs, 'A')).toBe('A');
+    expect(workspaceFor(tabs.map((t) => ({ ...t, focused: false })), '')).toBe('B'); // most tabs
+    expect(inWorkspace(tabs, 'A').map((t: any) => t.tab_id)).toEqual(['a1']);
+    expect(inWorkspace(tabs, '').length).toBe(3);
+  });
+
+  test('a tab the owner named keeps its name', () => {
+    const { isGeneratedTabLabel } = require('../server/panes');
+    const names = ['alpha-lead-v3', 'beta-v2', 'gamma-v2'];
+    expect(isGeneratedTabLabel('', names)).toBe(true);
+    expect(isGeneratedTabLabel('6', names)).toBe(true);
+    expect(isGeneratedTabLabel('alpha-lead-v3', names)).toBe(true);
+    expect(isGeneratedTabLabel('alpha-lead + beta', names)).toBe(true);
+    expect(isGeneratedTabLabel('old (closing)', names)).toBe(true);
+    expect(isGeneratedTabLabel('release work', names)).toBe(false);
+    expect(isGeneratedTabLabel('alpha-lead + release', names)).toBe(false);
+    expect(isGeneratedTabLabel('old (closing) 2', names)).toBe(true); // herdr's suffix for a repeated label
+    const four = ['first-long-session-v3', 'second-long-session-v2', 'third-long-session-v1', 'fourth-long-session-v1'];
+    const l4 = tabLabel(four);
+    expect(l4.length).toBeLessThanOrEqual(42);
+    expect(isGeneratedTabLabel(l4, four)).toBe(true); // ShiftBoss can always rename its own label
+  });
+});

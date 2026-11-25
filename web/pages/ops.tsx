@@ -170,6 +170,16 @@ function UpdateRow() {
   );
 }
 
+/** Settings → Tidy into tabs, with the value picked now (saved or not), and what actually happened. */
+async function tidy(perTab: number) {
+  try {
+    const r: any = await api('POST', '/api/herdr/tidy', { perTab });
+    if (r?.held) return toast(r.message);
+    const moved = r?.moved ?? 0, failed: string[] = r?.failed ?? [];
+    toast(failed.length ? `Moved ${moved}; could not move ${failed.length}: ${failed[0]}` : moved ? `Moved ${moved} session${moved === 1 ? '' : 's'}: ${perTab} per tab` : `Tabs already hold up to ${perTab} each`);
+  } catch (e) { toast((e as Error).message); }
+}
+
 export function SettingsPage({ section }: { section?: string }) {
   const snap = useSnap()!;
   const [st, setSt] = useState<Settings>(snap.settings);
@@ -253,6 +263,13 @@ export function SettingsPage({ section }: { section?: string }) {
           <Field id="close-old" label="Close a replaced session" hint="After a replacement, the old session closes this long after the new one took over. Never while it is working or waiting on a permission prompt. Its transcript stays, so it can be resumed.">
             <Pick id="close-old" label="Close a replaced session" value={String(st.closeOldAfterMin ?? 30)} onChange={(v) => setSt({ ...st, closeOldAfterMin: Number(v) })}
               options={[['0', 'Never: I close it'], ['10', 'After 10 minutes'], ['30', 'After 30 minutes'], ['60', 'After 1 hour'], ['120', 'After 2 hours']].map(([value, label]) => ({ value, label }))} />
+          </Field>
+          <Field id="per-tab" label="Sessions per herdr tab" hint="New sessions join the newest tab with room as split panes; 4 make a 2x2. Each tab is named after its sessions. Tidy regroups the running ones without restarting them.">
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <Seg label="Sessions per herdr tab" value={String(st.sessionsPerTab ?? 2) as '1' | '2' | '4'} options={['1', '2', '4'] as const}
+                onChange={(v) => setSt({ ...st, sessionsPerTab: Number(v) as 1 | 2 | 4 })} />
+              <button type="button" className="pill sm" onClick={() => void tidy(st.sessionsPerTab ?? 2)}>Tidy into tabs</button>
+            </div>
           </Field>
         </SettingsSection>
 

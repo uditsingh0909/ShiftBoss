@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   delegate: false, // a new install: only ShiftBoss's own screens make the owner's decisions
   notify: { ...DEFAULT_NOTIFY },
   closeOldAfterMin: 30, // a replaced session closes 30 min after its successor took over; 0 = never
+  sessionsPerTab: 2, // two sessions side by side per herdr tab; 4 is tight on a laptop
 };
 
 const now = () => new Date().toISOString();

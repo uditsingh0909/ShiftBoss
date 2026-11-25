@@ -21,6 +21,7 @@ const Patch = z.object({
   instructions: z.string().max(4000).optional(),
   instructionsPrev: z.string().max(4000).optional(),
   closeOldAfterMin: z.number().int().min(0).max(1440).optional(),
+  sessionsPerTab: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional(),
   slack: z.object({
     dm: z.object({ on: z.boolean(), userId: z.string().regex(/^[UW][A-Z0-9]{1,20}$/).nullable(), label: z.string().max(100).nullable() }).partial(),
     channel: z.object({ on: z.boolean(), id: z.string().regex(/^[CG][A-Z0-9]{1,20}$/).nullable(), name: z.string().max(100).nullable() }).partial(),

@@ -2,6 +2,8 @@
 // submits prompts the user typed. It never answers a permission prompt.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { inWorkspace, pickSplit, tabWithRoom, workspaceFor, type PaneInfo, type PaneRect, type TabInfo } from './panes';
+import { isStartupQuestion } from './fleet';
 
 const RAISE = join(import.meta.dir, '..', 'scripts', 'raise-herdr.ps1');
 
@@ -27,10 +29,13 @@ export interface HerdrAgent {
   cwd: string;
   focused: boolean;
   pane_id: string;
+  tab_id?: string;
   name?: string; // set with `herdr agent rename`; wins over the terminal title
   terminal_title_stripped?: string;
   workspace_id: string;
 }
+
+class SplitUnreadable extends Error {}
 
 /** herdr itself failed (not running, pane gone): the API answers 502, not 400. */
 export class HerdrError extends Error {}
@@ -70,17 +75,72 @@ export class Herdr {
     await run(this.bin, ['agent', 'focus', pane]);
     await raiseHerdrWindow();
   }
-  /** New tab with a Claude Code session in it. Returns the pane id. Waits until Claude is ready for input. */
-  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string; resume?: string }): Promise<string> {
+  async panes(workspace = ''): Promise<PaneInfo[]> {
+    const ps: (PaneInfo & { workspace_id?: string })[] = JSON.parse(await run(this.bin, ['pane', 'list']))?.result?.panes ?? [];
+    return ps.filter((p) => !workspace || p.workspace_id === workspace);
+  }
+  async tabs(workspace = ''): Promise<TabInfo[]> {
+    const ts: TabInfo[] = JSON.parse(await run(this.bin, ['tab', 'list']))?.result?.tabs ?? [];
+    return ts.filter((t) => !workspace || t.workspace_id === workspace);
+  }
+  async layout(pane: string): Promise<PaneRect[]> {
+    return JSON.parse(await run(this.bin, ['pane', 'layout', '--pane', pane]))?.result?.layout?.panes ?? [];
+  }
+  async renamePane(pane: string, label: string): Promise<void> { await run(this.bin, ['pane', 'rename', pane, label]); }
+  async renameAgent(pane: string, name: string): Promise<void> { await run(this.bin, ['agent', 'rename', pane, name]); }
+  async renameTab(tab: string, label: string): Promise<void> { await run(this.bin, ['tab', 'rename', tab, label]); }
+  /** Move a live pane next to another one (in another tab). Nothing restarts. */
+  async movePane(pane: string, tab: string, target: string, split: 'right' | 'down'): Promise<void> {
+    await run(this.bin, ['pane', 'move', pane, '--tab', tab, '--target-pane', target, '--split', split, '--no-focus']);
+  }
+
+  /**
+   * Where a new session goes: with perTab > 1, a split of the newest Claude-only tab that has room
+   * (the biggest pane, so 4 make a 2x2); otherwise, or when every tab is full, a new tab.
+   */
+  private async placeNewPane(opts: { name: string; cwd: string; workspace?: string; perTab?: number; avoidTabs?: Set<string> }): Promise<{ pane: string; split: boolean }> {
+    const workspace = opts.workspace;
+    if ((opts.perTab ?? 1) > 1) {
+      try {
+        const [allTabs, allPanes] = await Promise.all([this.tabs(), this.panes()]);
+        // With no workspace set, share tabs in the one the owner is looking at; a new tab still goes to herdr's default.
+        const ws = workspaceFor(allTabs, opts.workspace ?? '');
+        const room = tabWithRoom(inWorkspace(allTabs, ws), inWorkspace(allPanes, ws), opts.perTab!, opts.avoidTabs);
+        const at = room ? pickSplit(await this.layout(room.panes[0])) : null;
+        if (at) {
+          const out = JSON.parse(await run(this.bin, ['pane', 'split', at.pane, '--direction', at.direction, '--cwd', opts.cwd, '--no-focus']));
+          const pane: string | undefined = out?.result?.pane?.pane_id;
+          // The split happened but its id is unreadable: stop, rather than leave an unknown shell behind and open a tab too.
+          if (!pane) throw new SplitUnreadable('herdr split a pane but did not say which; look for a bare shell in herdr');
+          return { pane, split: true };
+        }
+      } catch (e) { if (e instanceof SplitUnreadable) throw e; /* otherwise fall back to a tab of its own */ }
+    }
     const tabArgs = ['tab', 'create', '--cwd', opts.cwd, '--label', opts.name, '--no-focus'];
-    if (opts.workspace) tabArgs.push('--workspace', opts.workspace);
+    if (workspace) tabArgs.push('--workspace', workspace);
     const out = JSON.parse(await run(this.bin, tabArgs));
     const pane: string | undefined = out?.result?.root_pane?.pane_id;
     if (!pane) throw new Error('herdr did not return a pane for the new tab');
-    const startArgs = ['agent', 'start', opts.name, '--kind', 'claude', '--pane', pane, '--timeout', '60000'];
-    const claudeArgs = [...(opts.model ? ['--model', opts.model] : []), ...(opts.resume ? ['--resume', opts.resume] : [])];
-    if (claudeArgs.length) startArgs.push('--', ...claudeArgs);
-    await run(this.bin, startArgs);
+    return { pane, split: false };
+  }
+
+  /**
+   * A Claude Code session in a new pane (see placeNewPane), labelled with its name. Returns the pane id. Waits
+   * until Claude is ready for input. If Claude does not start in a split pane, the pane is closed again so no bare
+   * shell is left in a shared tab (a startup question such as "trust this folder?" keeps it: the owner answers it).
+   */
+  async spawnClaude(opts: { name: string; cwd: string; workspace?: string; model?: string; resume?: string; perTab?: number; avoidTabs?: Set<string> }): Promise<string> {
+    const { pane, split } = await this.placeNewPane(opts);
+    try {
+      try { await this.renamePane(pane, opts.name); } catch { /* the label is cosmetic */ }
+      const startArgs = ['agent', 'start', opts.name, '--kind', 'claude', '--pane', pane, '--timeout', '60000'];
+      const claudeArgs = [...(opts.model ? ['--model', opts.model] : []), ...(opts.resume ? ['--resume', opts.resume] : [])];
+      if (claudeArgs.length) startArgs.push('--', ...claudeArgs);
+      await run(this.bin, startArgs, 70_000); // herdr waits up to 60 s for Claude to be ready
+    } catch (e) {
+      if (split && !isStartupQuestion((e as Error).message)) { try { await run(this.bin, ['pane', 'close', pane]); } catch { /* already gone */ } }
+      throw e;
+    }
     return pane;
   }
   /**

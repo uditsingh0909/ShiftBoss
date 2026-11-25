@@ -27,6 +27,7 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `server/db.ts` | SQLite store and in-place migrations |
 | `server/api.ts` | HTTP API |
 | `server/herdr.ts` | herdr CLI wrapper |
+| `server/panes.ts` | Pure rules for sharing herdr tabs: which tab a new session joins, which pane to split, tab names, the Tidy plan |
 | `server/fleet.ts` | Pure rules for starting many sessions and replacing one through a handoff (names, handoff check, prompts); the engine runs the replacement state machine |
 | `server/config.ts` | Defaults + `shiftboss.config.json` (gitignored) + `SHIFTBOSS_*` env overrides |
 | `shared/types.ts` | Types shared by server and UI, plus small pure helpers (`resolveLead`) |
@@ -37,7 +38,7 @@ and passkeys, `shiftboss login` via the OAuth device flow, a phone app, and an a
 | `web/filters.tsx` | Shared list controls: date range (max 90 days custom), filter bar, search, pager |
 | `web/source.tsx` | "Open in Slack" button, ↓/↑ direction chip, "No source link" marker and the "Add link" field |
 | `web/` | React 18 UI, no build step: Bun bundles `web/index.html` on request |
-| `mcp/server.ts` | MCP server (`shiftboss`), 56 tools over the HTTP API: every action in the UI, so Claude can do it too |
+| `mcp/server.ts` | MCP server (`shiftboss`), 57 tools over the HTTP API: every action in the UI, so Claude can do it too |
 | `server/monitors.ts` | Pure rules for monitors (schedule, alerting, due-check selection, prompts); the engine sends checks only through `Engine.sendMonitorCheck` |
 | `scripts/setup.ts` | One-shot setup (checks, config, start, and opt-in MCP / status line / login / intake). `SETUP.md` is the runbook Claude Code follows with it |
 | `server/update.ts` | Self-update: fetch, fast-forward only, reinstall packages if needed, build check, roll back, exit 75 for run.sh |

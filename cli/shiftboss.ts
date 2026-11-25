@@ -76,6 +76,7 @@ Everything you can do in ShiftBoss, from the command line:
   shiftboss sessions                              every session: status, context, task
   shiftboss session prompt <name> "<text>"        send a prompt (goes through the mode)
   shiftboss session interrupt <name>              Esc (refused while it waits on a permission prompt)
+  shiftboss session tidy                          regroup herdr tabs (Sessions per tab), nothing restarts
   shiftboss session screen <name>                 what its terminal shows now
   shiftboss session lane <name> "<lane>" [--slots N]
   shiftboss session cancel-replace <id>
@@ -388,6 +389,7 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
     }
     case 'session': {
       if (sub === 'prompt') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/prompt`, { text: a2 }); return console.log('sent to ' + a1); }
+      if (sub === 'tidy') { const r = await call('POST', '/api/herdr/tidy', {}); return console.log(`moved ${r.moved ?? 0}` + (r.failed?.length ? `; could not move: ${r.failed.join('; ')}` : '')); }
       if (sub === 'interrupt') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/interrupt`, {}); return console.log('interrupted ' + a1); }
       if (sub === 'screen') { const r = await call('GET', `/api/sessions/${encodeURIComponent(a1)}/screen`); return console.log(r.text); }
       if (sub === 'lane') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/meta`, { lane: a2 ?? '', ...(flags.slots ? { slots: Number(flags.slots) } : {}) }); return console.log(`${a1}: lane saved`); }

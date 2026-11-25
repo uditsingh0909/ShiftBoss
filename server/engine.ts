@@ -8,6 +8,8 @@ import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
+import { claudeTabs, inWorkspace, isGeneratedTabLabel, pickSplit, tabLabel, tidyPlan, workspacesOf } from './panes';
+import { NAME_RE } from './fleet';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
 import { heatOf, holdsScheduledJob, Transcripts } from './transcripts';
@@ -33,6 +35,11 @@ export class Engine {
   herdrError: string | null = null;
   private status = new Map<string, StatusInfo>(); // by session name
   private footerTurn = 0;
+  /** pane id -> herdr tab id, from the last agent list. */
+  private paneTabs = new Map<string, string>();
+  private labelTurn = 0;
+  /** Pane labels ShiftBoss itself set from a terminal title: never promoted to an agent name. */
+  private labelsSet = new Map<string, string>();
   private feed: { at: string; who: string; text: string }[] = [];
   private lastStatus = new Map<string, AgentStatus>();
   private releases: Snapshot['releases'] = { envs: [], merged: [], freeze: null };
@@ -111,12 +118,14 @@ export class Engine {
         } catch { /* pane busy */ }
       }
       this.sessions = agents.map((a) => this.buildSession(a));
+      this.paneTabs = new Map(agents.filter((a) => a.tab_id).map((a) => [a.pane_id, a.tab_id!]));
       this.syncNeeds();
       await this.flushAnswers();
       this.dispatch(settings.switches.autoDispatch);
       await this.advanceReplacements();
       await this.runMonitors();
       await this.closeReplaced();
+      if (this.herdrOk && this.labelTurn++ % 15 === 0) await this.syncLabels(); // every ~30 s
       this.emit();
       try { this.slack.tick(this.snapshot()); } catch (e) { this.pushFeed('slack', 'could not check for alerts: ' + (e as Error).message.slice(0, 160)); }
     } catch (e) {
@@ -355,6 +364,11 @@ export class Engine {
         if (pane(p.session).status === 'blocked') throw new Error(`${p.session} is waiting on a permission prompt: answer it in herdr`);
         await this.herdr.interrupt(pane(p.session).paneId); this.pushFeed(who, 'interrupted ' + p.session); return 'interrupted';
       }
+      case 'tidy': { // in the spawn queue, so a split and a move never take the same free slot
+        let out: { moved: number; failed: string[] } = { moved: 0, failed: [] };
+        await this.queueSpawn(async () => { out = await this.tidyTabs(p.perTab); });
+        return out;
+      }
       case 'close-old': {
         const r = this.store.getReplacement(p.replacementId);
         if (!r) throw new Error('No such replacement');
@@ -530,7 +544,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   spawnOne(spec: SpawnSpec, tag = ''): Promise<void> {
     return this.queueSpawn(async () => {
       try {
-        const pane = await this.herdr.spawnClaude({ name: spec.name, cwd: spec.cwd, model: spec.model || undefined, resume: spec.resume || undefined, workspace: this.store.settings().herdrWorkspace || undefined });
+        const pane = await this.herdr.spawnClaude({ name: spec.name, cwd: spec.cwd, model: spec.model || undefined, resume: spec.resume || undefined, workspace: this.workspace() || undefined, ...this.placement() });
         if (spec.prompt) await this.herdr.prompt(pane, spec.prompt);
         if (spec.taskId && spec.prompt) {
           // Started for a task: its brief was the first prompt, so the task is in progress now.
@@ -695,7 +709,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   private async startReplacement(r: Replacement) {
     let pane: string | null = null;
     try {
-      pane = await this.herdr.spawnClaude({ name: r.newName, cwd: r.cwd, model: r.model ?? undefined, workspace: this.store.settings().herdrWorkspace || undefined });
+      pane = await this.herdr.spawnClaude({ name: r.newName, cwd: r.cwd, model: r.model ?? undefined, workspace: this.workspace() || undefined, ...this.placement() });
       this.store.updateReplacement(r.id, { state: 'started', error: null });
       this.pushFeed('shiftboss', `${r.newName} is up to replace ${r.oldName}`);
     } catch (e) {
@@ -737,6 +751,110 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   monitorSession(): Session | null { return resolveLead(this.sessions, MONITOR_SESSION); }
 
   private closeNoted = new Set<string>();
+  /** Names of replaced sessions that are only waiting for auto-close. */
+  private closingNames(): Set<string> {
+    try { return new Set(this.store.replacementsToClose().filter((r) => r.promptedAt).map((r) => r.oldName)); } catch { return new Set(); }
+  }
+  /** Settings → Sessions per tab, and the tabs a new session must not join (only closing sessions in them). */
+  private placement(): { perTab: number; avoidTabs: Set<string> } {
+    const closing = this.closingNames();
+    const live = new Set<string>(), avoid = new Set<string>();
+    for (const s of this.sessions) {
+      const tab = this.paneTabs.get(s.paneId);
+      if (!tab) continue;
+      if (closing.has(s.name)) avoid.add(tab); else live.add(tab);
+    }
+    for (const t of live) avoid.delete(t);
+    return { perTab: this.store.settings().sessionsPerTab ?? 2, avoidTabs: avoid };
+  }
+
+  /** The herdr workspace ShiftBoss works in ('' = all), the same everywhere. */
+  private workspace(): string { return this.store.settings().herdrWorkspace || this.cfg.herdrWorkspace || ''; }
+
+  /**
+   * Keep herdr's labels in step with the names ShiftBoss shows. A pane with no label gets its session's name. An
+   * unnamed agent takes its pane label as its name only when a person or herdr set that label (never one ShiftBoss
+   * copied from a terminal title), it is a valid name, and no other session uses it, so two sessions never share
+   * a name. Each Claude-only tab is named after its sessions ("lead + intake", or "old (closing)") unless the owner
+   * gave it a name of their own. Best effort; a failure waits for the next pass.
+   */
+  async syncLabels(): Promise<{ panes: number; agents: number; tabs: number }> {
+    const done = { panes: 0, agents: 0, tabs: 0 };
+    let panes, tabs, agents: HerdrAgent[];
+    try { [panes, tabs, agents] = await Promise.all([this.herdr.panes(), this.herdr.tabs(), this.herdr.list('')]); }
+    catch (e) { this.noteLabels('herdr did not list its panes: ' + (e as Error).message.slice(0, 120)); return done; }
+    const wss = new Set(workspacesOf(tabs, this.workspace()));
+    panes = panes.filter((p) => !p.workspace_id || wss.has(p.workspace_id));
+    tabs = tabs.filter((t) => wss.has(t.workspace_id ?? ''));
+    const byPane = new Map(agents.map((a) => [a.pane_id, a]));
+    const taken = new Map<string, number>();
+    const count = (n: string) => { if (n) taken.set(n, (taken.get(n) ?? 0) + 1); };
+    for (const a of agents) count((a.name ?? '').trim());
+    for (const p of panes) if (!byPane.get(p.pane_id)?.name) count((p.label ?? '').trim());
+    const shown = new Map<string, string>();
+    for (const p of panes) {
+      const a = byPane.get(p.pane_id);
+      if (!a) continue;
+      const label = (p.label ?? '').trim();
+      let name = (a.name ?? '').trim();
+      try {
+        // A label ShiftBoss copied from the title (now, or before a restart: it still equals the title) never becomes a name.
+        const ours = this.labelsSet.get(p.pane_id) === label || label === (a.terminal_title_stripped ?? '').trim() || label === p.pane_id;
+        if (!name && label && !ours && NAME_RE.test(label) && taken.get(label) === 1) { await this.herdr.renameAgent(p.pane_id, label); name = label; done.agents++; }
+        const want = name || nameOf(a);
+        if (!label || (name && label !== name)) {
+          await this.herdr.renamePane(p.pane_id, want); done.panes++;
+          if (!name) this.labelsSet.set(p.pane_id, want); else this.labelsSet.delete(p.pane_id);
+        }
+        shown.set(p.pane_id, name || label || want);
+      } catch (e) { this.noteLabels('could not rename a pane or session: ' + (e as Error).message.slice(0, 120)); shown.set(p.pane_id, name || label || nameOf(a)); }
+    }
+    const closing = this.closingNames();
+    const allNames = [...shown.values(), ...this.sessions.map((x) => x.name)];
+    for (const [tab, ps] of claudeTabs(tabs, panes)) {
+      const want = tabLabel(ps.map((p) => shown.get(p.pane_id) ?? '').filter(Boolean), closing);
+      const cur = tabs.find((t) => t.tab_id === tab)?.label ?? '';
+      if (!want || want === cur || !isGeneratedTabLabel(cur, allNames)) continue;
+      try { await this.herdr.renameTab(tab, want); done.tabs++; } catch (e) { this.noteLabels('could not rename a tab: ' + (e as Error).message.slice(0, 120)); }
+    }
+    return done;
+  }
+
+  /**
+   * "Tidy into tabs": regroup running sessions perTab to a tab (Settings → Sessions per tab unless given), in one
+   * workspace, without restarting any, then name the tabs. Each move splits the biggest pane of the target tab, as a
+   * new session would, so 4 make a 2x2.
+   */
+  async tidyTabs(perTabArg?: number): Promise<{ moved: number; failed: string[] }> {
+    const perTab = perTabArg ?? this.store.settings().sessionsPerTab ?? 2;
+    const [allPanes, allTabs, agents] = await Promise.all([this.herdr.panes(), this.herdr.tabs(), this.herdr.list('')]);
+    const names = new Map(agents.map((a) => [a.pane_id, nameOf(a)]));
+    const closing = this.closingNames();
+    // Each workspace on its own: a session never moves to another workspace.
+    const plan = workspacesOf(allTabs, this.workspace()).flatMap((ws) => tidyPlan(inWorkspace(allTabs, ws), inWorkspace(allPanes, ws), perTab, names, closing));
+    let moved = 0; const failed: string[] = [];
+    for (const m of plan) {
+      try {
+        const into = (await this.herdr.panes()).filter((p) => p.tab_id === m.tab);
+        const at = into.length ? pickSplit(await this.herdr.layout(into[0].pane_id)) : null;
+        if (!at) throw new Error('its target tab is gone');
+        await this.herdr.movePane(m.pane, m.tab, at.pane, at.direction); moved++;
+      } catch (e) { failed.push(`${names.get(m.pane) ?? m.pane}: ${(e as Error).message.slice(0, 120)}`); }
+    }
+    await this.syncLabels();
+    if (failed.length) this.pushFeed('shiftboss', `tidy moved ${moved} session${moved === 1 ? '' : 's'}; could not move ${failed.join('; ')}`);
+    else this.pushFeed('shiftboss', moved ? `tidied herdr: moved ${moved} session${moved === 1 ? '' : 's'} so tabs hold ${perTab} each` : `herdr tabs already hold up to ${perTab} each`);
+    return { moved, failed };
+  }
+
+  /** One feed line per kind of label failure (until it changes), not one every pass. */
+  private labelNoted = '';
+  private noteLabels(why: string) {
+    if (this.labelNoted === why) return;
+    this.labelNoted = why;
+    this.pushFeed('shiftboss', 'herdr tab and pane names: ' + why);
+  }
+
   /** One feed line per replacement and reason, not one per tick. */
   private noteClose(r: Replacement, why: string) {
     const k = r.id + ':' + why;

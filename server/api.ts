@@ -324,6 +324,14 @@ export function makeApi(engine: Engine) {
         if (g.status === 'done') engine.pushFeed('you', `starting session ${name}`);
         return done(gated(g, () => json({ ok: true, name }, 202)));
       }
+      if (p === '/api/herdr/tidy' && write) {
+        // Regroup running sessions into shared tabs (Settings → Sessions per tab). herdr moves live panes: nothing restarts.
+        const b = await body<any>(req);
+        const perTab = b.perTab === undefined ? undefined : Number(b.perTab);
+        if (perTab !== undefined && ![1, 2, 4].includes(perTab)) return json({ error: 'perTab must be 1, 2 or 4' }, 400);
+        const g = await engine.act('tidy', perTab ? { perTab } : {}, { actor: actorOf(req), by: byOf(req, b), summary: `regroup herdr tabs so ${perTab ?? 'the set number of'} sessions share each` });
+        return done(gated(g, (res) => json(res ?? { ok: true })));
+      }
       if (p === '/api/sessions/spawn-many' && write) {
         // Start up to SPAWN_MANY_CAP sessions, one after another. Every row is checked like a single
         // spawn before any starts, so a typo never leaves half a batch running.

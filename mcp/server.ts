@@ -280,6 +280,12 @@ server.registerTool('session_spawn_many', {
   inputSchema: { sessions: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_-]{1,31}$/), cwd: z.string().max(400), model: z.enum(['sonnet', 'opus', 'haiku']).optional(), prompt: z.string().max(8000).optional() })).min(1).max(20), by: ME },
 }, wrap(async ({ sessions, by }) => { const r = await call('POST', '/api/sessions/spawn-many', { sessions, by }); return r.__held ? r.message : `starting ${r.names.join(', ')}`; }));
 
+server.registerTool('herdr_tidy', {
+  title: 'Tidy herdr into shared tabs',
+  description: "Regroups the running sessions so each herdr tab holds Settings → Sessions per tab (default 2) as split panes, and names each tab after its sessions. Moves live panes; nothing restarts. Goes through the owner's mode.",
+  inputSchema: { by: ME },
+}, wrap(async ({ by }) => { const r = await call('POST', '/api/herdr/tidy', { by }); return r.__held ? r.message : `moved ${r.moved ?? 0}${r.failed?.length ? '; could not move: ' + r.failed.join('; ') : ''}`; }));
+
 server.registerTool('task_update', {
   title: 'Change a task',
   description: 'Change a task\'s priority, title, ask, direction or source link, or put it on hold / resume it.',

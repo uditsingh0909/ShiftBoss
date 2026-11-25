@@ -189,6 +189,8 @@ export interface Settings {
   notify?: NotifySettings;
   /** Close a replaced session this many minutes after its successor has its first prompt. 0: never (you close it). */
   closeOldAfterMin?: number;
+  /** How many sessions share one herdr tab as split panes: 1, 2 or 4 (2x2). New sessions fill the newest tab with room. */
+  sessionsPerTab?: 1 | 2 | 4;
   /** The ShiftBoss Slack bot: where its alerts go and which. The token is kept apart and never in the snapshot. */
   slack?: SlackSettings;
 }
