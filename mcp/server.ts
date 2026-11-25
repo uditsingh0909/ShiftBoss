@@ -240,9 +240,10 @@ server.registerTool('monitor_add', {
     every_hours: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)]).describe('How often to check, in hours'),
     pr: z.string().url().optional(), ticket: z.string().url().optional(), dashboard: z.string().url().optional(),
     task: TASK.optional(),
+    tell_lead: z.boolean().optional().describe('Send the lead session a note when a check comes back bad, and when it is fine again (default true)'),
   },
 }, wrap(async (a) => {
-  const m = await call('POST', '/api/monitors', { title: a.title, prompt: a.prompt, durationDays: a.days, intervalHours: a.every_hours, links: { pr: a.pr, ticket: a.ticket, dashboard: a.dashboard }, taskId: a.task });
+  const m = await call('POST', '/api/monitors', { title: a.title, prompt: a.prompt, durationDays: a.days, intervalHours: a.every_hours, links: { pr: a.pr, ticket: a.ticket, dashboard: a.dashboard }, taskId: a.task, informLead: a.tell_lead });
   return `monitor ${m.id} watching "${m.title}" for ${m.durationDays} day(s), every ${m.intervalHours} h; the first check is due now`;
 }));
 
@@ -421,13 +422,13 @@ server.registerTool('replacement_cancel', {
 
 server.registerTool('monitor_update', {
   title: 'Change a monitor',
-  description: 'Pause, resume or stop a monitor, run its check now, or edit its title, prompt, days or interval.',
-  inputSchema: { id: z.number().int(), action: z.enum(['pause', 'resume', 'stop', 'check_now']).optional(), title: z.string().max(200).optional(), prompt: z.string().max(4000).optional(),
+  description: 'Pause, resume or stop a monitor, run its check now (e.g. to see if a fix worked), resolve (mark an alerting monitor fixed without a check), turn telling the lead on or off, or edit its title, prompt, days or interval.',
+  inputSchema: { id: z.number().int(), action: z.enum(['pause', 'resume', 'stop', 'check_now', 'resolve']).optional(), tell_lead: z.boolean().optional(), title: z.string().max(200).optional(), prompt: z.string().max(4000).optional(),
     days: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(14)]).optional(), every_hours: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)]).optional() },
-}, wrap(async ({ id, action, title, prompt, days, every_hours }) => {
+}, wrap(async ({ id, action, title, prompt, days, every_hours, tell_lead }) => {
   if (action === 'check_now') { const r = await call('POST', `/api/monitors/${id}/check-now`, {}); return r.waiting ? 'queued: ' + r.waiting : 'check queued; the monitor session gets it when it is idle'; }
   const e: any = {};
-  if (title) e.title = title; if (prompt) e.prompt = prompt; if (days) e.durationDays = days; if (every_hours) e.intervalHours = every_hours; if (action) e.action = action;
+  if (title) e.title = title; if (prompt) e.prompt = prompt; if (days) e.durationDays = days; if (every_hours) e.intervalHours = every_hours; if (action) e.action = action; if (tell_lead !== undefined) e.informLead = tell_lead;
   await call('PATCH', `/api/monitors/${id}`, e);
   return `monitor ${id} updated`;
 }));

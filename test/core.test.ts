@@ -1086,6 +1086,47 @@ describe('monitors', () => {
     expect(sent[1]).toContain('Store B');
     expect(e.snapshot().monitors.length).toBe(2);
   });
+
+  test('tell the lead: a bad check prompts the lead (never a blocked one), recovery sends a second note; Mark fixed clears the alert', async () => {
+    const store = mem();
+    store.saveSettings({ ...store.settings(), mode: 'auto', leadSession: 'lead' });
+    const sent: { pane: string; text: string }[] = [];
+    const e = new Engine(loadConfig(), store, { prompt: async (pane: string, text: string) => { sent.push({ pane, text }); } } as any);
+    e.herdrOk = true;
+    const m = store.addMonitor({ title: 'Store A', prompt: 'texts send', durationDays: 3, intervalHours: 6, informLead: true, links: { pr: 'https://github.com/acme/api/pull/1' } });
+    const quiet = store.addMonitor({ title: 'Store B', prompt: 'look', durationDays: 3, intervalHours: 6 });
+    expect(store.getMonitor(quiet.id).informLead).toBe(false); // the store default; the API defaults new ones to true
+    e.sessions = [session({ name: 'lead-v2', paneId: 'p-lead', status: 'blocked' }), session({ name: 'monitor', paneId: 'p-mon', status: 'idle' })];
+    await e.tellLeadAboutMonitor(store.getMonitor(m.id), '3 texts failed', false);
+    expect(sent.length).toBe(0); // a lead waiting on a permission prompt is never typed into
+    e.sessions[0] = session({ name: 'lead-v2', paneId: 'p-lead', status: 'working' });
+    await e.tellLeadAboutMonitor(store.getMonitor(quiet.id), 'x', false);
+    expect(sent.length).toBe(0); // monitor not set to tell the lead
+    await e.tellLeadAboutMonitor(store.getMonitor(m.id), '3 texts failed', false);
+    expect(sent.length).toBe(1);
+    expect(sent[0].pane).toBe('p-lead');
+    expect(sent[0].text).toContain('"Store A" came back bad');
+    expect(sent[0].text).toContain('3 texts failed');
+    expect(sent[0].text).toContain('https://github.com/acme/api/pull/1');
+    expect(sent[0].text).toContain('check_now');
+    await e.tellLeadAboutMonitor(store.getMonitor(m.id), 'all sent', true);
+    expect(sent[1].text).toContain('is fine again');
+    // Mark fixed: the bad check no longer counts; a later bad one alerts again.
+    const T = Date.now();
+    expect(store.reportMonitor(m.id, { verdict: 'bad', summary: 'failed' }, T).monitor.state).toBe('alerting');
+    expect(() => store.setMonitorState(quiet.id, 'resolve', T)).toThrow('not alerting');
+    expect(store.setMonitorState(m.id, 'resolve', T + 1000).state).toBe('active');
+    expect(store.getMonitor(m.id).resolvedAt).not.toBeNull();
+    const again = store.reportMonitor(m.id, { verdict: 'bad', summary: 'failed again' }, T + 2000);
+    expect(again.becameAlerting).toBe(true);
+    expect(store.reportMonitor(m.id, { verdict: 'ok', summary: 'fine' }, T + 3000).recovered).toBe(true);
+  });
+
+  test('telling the lead is routine: it runs in Safe auto, waits in Ask first', () => {
+    expect(decide('safe', 'auto', 'monitor-lead')).toBe('run');
+    expect(decide('ask', 'auto', 'monitor-lead')).toBe('ask');
+    expect(decide('dry', 'auto', 'monitor-lead')).toBe('record');
+  });
 });
 
 describe('monitor checks go through the gate', () => {

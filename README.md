@@ -494,6 +494,14 @@ first prompt pointing at [`docs/MONITOR.md`](docs/MONITOR.md). Then:
   A check with no report after 30 minutes is recorded as an error and the schedule moves on.
 - A **bad** check, or two **errors** in a row, makes the monitor *alerting*: it joins the *Needs
   attention* strip on Sessions. The next good check clears it.
+- **Tell the lead** (on by default, a switch per monitor): when a check comes back bad, or the monitor
+  starts alerting, your lead session gets a short note with what was found, the links and the monitor id,
+  so it can route or fix it. When it is fine again, the lead gets a second note. The note goes through
+  the mode like any other action (it is routine, so it runs in Safe auto), and never into a lead that is
+  waiting on a permission prompt.
+- **Fixed it?** An alerting monitor offers **Check if it is fixed** (a fresh check now) and **Mark fixed**
+  (for a false alarm: the bad check stops counting, the next check confirms). Sessions can do both:
+  `monitor_update` with `check_now` or `resolve`, or `shiftboss monitor check|resolve <id>`.
 
 Each monitor shows its state (watching, alerting, paused, finished), the next check, the last result and
 every check so far. **Check now**, **Pause** / **Resume**, **Stop** and **Edit** act on it. A paused

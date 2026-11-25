@@ -72,6 +72,27 @@ export function monitorPrompt(m: Monitor, prev: { at: string; verdict: MonitorVe
   ].filter(Boolean).join('\n');
 }
 
+/** The note the lead session gets about a monitor set to tell the lead: it came back bad, or it is fine again. */
+export function leadAlertPrompt(m: Pick<Monitor, 'id' | 'title' | 'prompt' | 'links' | 'taskId'>, summary: string, port: number, recovered = false): string {
+  const links = linkList(m.links);
+  if (recovered) return [
+    `ShiftBoss monitor update: "${m.title}" is fine again.`,
+    `Latest check: ${summary}`,
+    'Nothing more to do for it unless you were still working on it.',
+  ].join('\n');
+  return [
+    `ShiftBoss monitor alert: "${m.title}" came back bad.`,
+    `What the monitor session found: ${summary}`,
+    'What was being watched:',
+    '> ' + m.prompt.replace(/\n/g, '\n> '),
+    links.length ? 'Links:\n' + links.map((l) => `- ${l.label}: ${l.url}`).join('\n') : '',
+    m.taskId ? `ShiftBoss task: ${m.taskId}` : '',
+    `Full check history: http://127.0.0.1:${port}/#/monitors (monitor ${m.id}).`,
+    'Look into it and route it to the session that owns this area, or fix it if it is yours. Ask the owner (ask_owner) before anything that touches production.',
+    `Once it is fixed, ask for a fresh check: monitor_update with id ${m.id} and action check_now (or: shiftboss monitor check ${m.id}). If it was a false alarm, action resolve marks it fixed without a check.`,
+  ].filter(Boolean).join('\n');
+}
+
 /** The first prompt of the monitor session itself. */
 export function monitorSessionPrompt(ownerName: string, repoPath: string): string {
   return [

@@ -295,6 +295,10 @@ export interface Monitor {
   checksDone: number;
   checksLeft: number; // still to run, counting the one due next
   inFlight: { checkId: number; sentAt: string } | null;
+  /** Send the lead session a short note when a check comes back bad (or the monitor starts alerting). */
+  informLead: boolean;
+  /** When the owner (or a session) marked the last alert fixed; checks before it no longer count for alerting. */
+  resolvedAt: string | null;
 }
 
 export interface Snapshot {

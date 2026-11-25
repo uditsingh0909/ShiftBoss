@@ -381,10 +381,11 @@ export function makeApi(engine: Engine) {
         const edit = monitorInput(b, store, false);
         if (Object.keys(edit).length) mon = store.updateMonitor(id, edit);
         if (b.action !== undefined) {
-          if (!['pause', 'resume', 'stop'].includes(b.action)) throw new Error('action must be pause, resume or stop');
+          if (!['pause', 'resume', 'stop', 'resolve'].includes(b.action)) throw new Error('action must be pause, resume, stop or resolve');
           mon = store.setMonitorState(id, b.action);
-          if (b.action !== 'resume') engine.ownerMonitorChecks.delete(id);
-          engine.pushFeed('you', `${b.action === 'pause' ? 'paused' : b.action === 'resume' ? 'resumed' : 'stopped'} the monitor for ${mon.title}`);
+          if (b.action !== 'resume' && b.action !== 'resolve') engine.ownerMonitorChecks.delete(id);
+          const who = req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session');
+          engine.pushFeed(who, b.action === 'resolve' ? `marked ${mon.title} fixed` : `${b.action === 'pause' ? 'paused' : b.action === 'resume' ? 'resumed' : 'stopped'} the monitor for ${mon.title}`);
         }
         return done(json(mon));
       }
@@ -410,6 +411,8 @@ export function makeApi(engine: Engine) {
         const res = store.reportMonitor(Number(r[1]), { verdict: b.verdict, summary: str(b.summary, 'summary', 500), details: optStr(b.details, 4000), links });
         engine.pushFeed('monitor', `${res.monitor.title}: ${b.verdict}, ${res.check.summary}`);
         if (res.becameAlerting) engine.pushFeed('monitor', `${res.monitor.title} is alerting`);
+        if (b.verdict === 'bad' || res.becameAlerting) void engine.tellLeadAboutMonitor(res.monitor, res.check.summary, false);
+        else if (res.recovered) void engine.tellLeadAboutMonitor(res.monitor, res.check.summary, true);
         return done(json(res));
       }
       // ----- self-update -----
@@ -617,6 +620,10 @@ function monitorInput(b: any, store: Engine['store'], create: boolean): Record<s
     if (!(MONITOR_HOURS as readonly number[]).includes(h)) throw new Error('every must be ' + MONITOR_HOURS.join(', ') + ' hours');
     out.intervalHours = h;
   }
+  if (b.informLead !== undefined) {
+    if (typeof b.informLead !== 'boolean') throw new Error('informLead must be true or false');
+    out.informLead = b.informLead;
+  } else if (create) out.informLead = true; // new monitors tell the lead unless asked not to
   return out;
 }
 

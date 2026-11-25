@@ -61,7 +61,8 @@ function Alerts() {
   if (silent) out.push({ key: 'intake', tone: 'amber', what: 'Intake has not checked in for 10+ min', detail: 'New Slack and Gmail asks are not being filed', to: href('intake'),
     action: snap.sessions.some((x) => /intake/i.test(x.name)) ? { label: 'Check now', run: () => void act(() => api('POST', '/api/intake/run'), 'Intake is checking now') } : undefined });
   for (const m of (snap.monitors ?? []).filter((x) => x.state === 'alerting'))
-    out.push({ key: 'mon' + m.id, tone: 'red', what: `Monitor: ${m.title} ${m.lastVerdict === 'error' ? 'could not be checked twice in a row' : 'looks bad'}`, detail: (m.lastSummary ?? '') + ' · ' + ago(m.lastCheckAt), to: href('monitors') });
+    out.push({ key: 'mon' + m.id, tone: 'red', what: `Monitor: ${m.title} ${m.lastVerdict === 'error' ? 'could not be checked twice in a row' : 'looks bad'}`, detail: (m.lastSummary ?? '') + ' · ' + ago(m.lastCheckAt), to: href('monitors'),
+      action: m.inFlight ? undefined : { label: 'Check if fixed', run: () => void act(() => api('POST', `/api/monitors/${m.id}/check-now`), 'Asked the monitor session for a fresh check') } });
   const watched = (snap.monitors ?? []).filter((x) => x.state === 'active' || x.state === 'alerting');
   if (watched.length && snap.herdrOk && !resolveLead(snap.sessions, MONITOR_SESSION))
     out.push({ key: 'mon-session', tone: 'amber', what: 'No monitor session running', detail: `${watched.length} monitor${watched.length === 1 ? '' : 's'} not being checked`, to: href('monitors') });

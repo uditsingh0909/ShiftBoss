@@ -127,6 +127,9 @@ export class Store {
         links TEXT NOT NULL DEFAULT '[]');
       CREATE INDEX IF NOT EXISTS monitor_checks_monitor ON monitor_checks(monitor_id, id);
     `);
+    const mcols = this.db.query('PRAGMA table_info(monitors)').all() as { name: string }[];
+    if (!mcols.some((c) => c.name === 'inform_lead')) this.db.exec('ALTER TABLE monitors ADD COLUMN inform_lead INTEGER NOT NULL DEFAULT 0');
+    if (!mcols.some((c) => c.name === 'resolved_at')) this.db.exec('ALTER TABLE monitors ADD COLUMN resolved_at TEXT');
   }
 
   /**
@@ -588,7 +591,8 @@ export class Store {
     const done = this.db.query('SELECT * FROM monitor_checks WHERE monitor_id = ? AND reported_at IS NOT NULL ORDER BY id DESC LIMIT 2').all(r.id).map(this.rowCheck);
     const count = (this.db.query('SELECT COUNT(*) AS n FROM monitor_checks WHERE monitor_id = ? AND reported_at IS NOT NULL').get(r.id) as { n: number }).n;
     const fl: any = this.db.query('SELECT id, sent_at FROM monitor_checks WHERE monitor_id = ? AND reported_at IS NULL AND sent_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(r.id);
-    const verdicts = done.map((c) => c.verdict).filter((v): v is MonitorVerdict => !!v);
+    // A check from before the last 'Mark fixed' no longer makes it alert.
+    const verdicts = done.filter((c) => !r.resolved_at || (c.reportedAt ?? '') > r.resolved_at).map((c) => c.verdict).filter((v): v is MonitorVerdict => !!v);
     const finished = r.state === 'finished';
     return {
       id: r.id, title: r.title, prompt: r.prompt, links: { pr: null, ticket: null, dashboard: null, ...JSON.parse(r.links) }, taskId: r.task_id,
@@ -598,6 +602,7 @@ export class Store {
       lastVerdict: done[0]?.verdict ?? null, lastSummary: done[0]?.summary ?? null, lastCheckAt: done[0]?.reportedAt ?? null,
       checksDone: count, checksLeft: finished ? 0 : checksLeft(r.next_due_at ? Date.parse(r.next_due_at) : null, Date.parse(r.ends_at), r.interval_hours),
       inFlight: fl ? { checkId: fl.id, sentAt: fl.sent_at } : null,
+      informLead: !!r.inform_lead, resolvedAt: r.resolved_at ?? null,
     };
   }
   getMonitor(id: number): Monitor {
@@ -616,18 +621,18 @@ export class Store {
     return this.db.query('SELECT * FROM monitor_checks WHERE monitor_id = ? ORDER BY id DESC LIMIT ?').all(id, limit).map(this.rowCheck);
   }
   /** The first check is due straight away, so the session notes a baseline while the change is fresh. */
-  addMonitor(m: { title: string; prompt: string; links?: Partial<MonitorLinks>; taskId?: string | null; durationDays: number; intervalHours: number }, nowMs = Date.now()): Monitor {
+  addMonitor(m: { title: string; prompt: string; links?: Partial<MonitorLinks>; taskId?: string | null; durationDays: number; intervalHours: number; informLead?: boolean }, nowMs = Date.now()): Monitor {
     const at = new Date(nowMs).toISOString();
-    const res = this.db.query(`INSERT INTO monitors (title, prompt, links, task_id, duration_days, interval_hours, state, started_at, ends_at, next_due_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`).run(m.title, m.prompt, JSON.stringify({ pr: null, ticket: null, dashboard: null, ...m.links }), m.taskId ?? null,
-      m.durationDays, m.intervalHours, at, new Date(nowMs + m.durationDays * 864e5).toISOString(), at, at, at);
+    const res = this.db.query(`INSERT INTO monitors (title, prompt, links, task_id, duration_days, interval_hours, state, started_at, ends_at, next_due_at, created_at, updated_at, inform_lead)
+      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`).run(m.title, m.prompt, JSON.stringify({ pr: null, ticket: null, dashboard: null, ...m.links }), m.taskId ?? null,
+      m.durationDays, m.intervalHours, at, new Date(nowMs + m.durationDays * 864e5).toISOString(), at, at, at, m.informLead ? 1 : 0);
     return this.getMonitor(Number(res.lastInsertRowid));
   }
   /**
    * Edit what is watched. A new duration counts from the start; a new interval moves the next check.
    * A monitor that ran out (not one that was stopped) reopens if its new end is later.
    */
-  updateMonitor(id: number, patch: { title?: string; prompt?: string; links?: Partial<MonitorLinks>; taskId?: string | null; durationDays?: number; intervalHours?: number }, nowMs = Date.now()): Monitor {
+  updateMonitor(id: number, patch: { title?: string; prompt?: string; links?: Partial<MonitorLinks>; taskId?: string | null; durationDays?: number; intervalHours?: number; informLead?: boolean }, nowMs = Date.now()): Monitor {
     const r: any = this.db.query('SELECT * FROM monitors WHERE id = ?').get(id);
     if (!r) throw new NotFound('No monitor ' + id);
     const links = { pr: null, ticket: null, dashboard: null, ...JSON.parse(r.links), ...(patch.links ?? {}) };
@@ -641,17 +646,21 @@ export class Store {
       nextDue = new Date(lastDue ? nextDueAfter(Date.parse(lastDue), hours, nowMs) : nowMs).toISOString();
     }
     this.db.query(`UPDATE monitors SET title=?, prompt=?, links=?, task_id=?, duration_days=?, interval_hours=?, ends_at=?, state=?, next_due_at=?,
-      finished_at=?, finish_reason=?, updated_at=? WHERE id=?`).run(patch.title ?? r.title, patch.prompt ?? r.prompt, JSON.stringify(links),
-      patch.taskId !== undefined ? patch.taskId : r.task_id, days, hours, new Date(endsMs).toISOString(), state, nextDue, finishedAt, reason, new Date(nowMs).toISOString(), id);
+      finished_at=?, finish_reason=?, updated_at=?, inform_lead=? WHERE id=?`).run(patch.title ?? r.title, patch.prompt ?? r.prompt, JSON.stringify(links),
+      patch.taskId !== undefined ? patch.taskId : r.task_id, days, hours, new Date(endsMs).toISOString(), state, nextDue, finishedAt, reason, new Date(nowMs).toISOString(),
+      patch.informLead !== undefined ? (patch.informLead ? 1 : 0) : r.inform_lead, id);
     return this.getMonitor(id);
   }
   /** Pause, resume or stop. Resuming a monitor whose check fell due while paused runs that check now; stopping is final. */
-  setMonitorState(id: number, action: 'pause' | 'resume' | 'stop', nowMs = Date.now()): Monitor {
+  setMonitorState(id: number, action: 'pause' | 'resume' | 'stop' | 'resolve', nowMs = Date.now()): Monitor {
     const r: any = this.db.query('SELECT * FROM monitors WHERE id = ?').get(id);
     if (!r) throw new NotFound('No monitor ' + id);
     const at = new Date(nowMs).toISOString();
     if (r.state === 'finished') throw new Error(action === 'stop' ? 'This monitor has already finished.' : 'This monitor has finished. Edit its duration to watch it longer.');
-    if (action === 'pause') {
+    if (action === 'resolve') {
+      if (this.getMonitor(id).state !== 'alerting') throw new Error('This monitor is not alerting.');
+      this.db.query('UPDATE monitors SET resolved_at=?, updated_at=? WHERE id=?').run(at, at, id);
+    } else if (action === 'pause') {
       if (r.state === 'paused') throw new Error('Already paused.');
       this.db.query("UPDATE monitors SET state='paused', paused_at=?, updated_at=? WHERE id=?").run(at, at, id);
     } else if (action === 'resume') {
@@ -706,7 +715,7 @@ export class Store {
    * The monitor session's answer. It completes this monitor's check in flight; with none in flight (a
    * report nobody asked for, e.g. from the CLI) it is recorded as an extra check and the schedule stays.
    */
-  reportMonitor(id: number, rep: { verdict: MonitorVerdict; summary: string; details?: string; links?: string[] }, nowMs = Date.now()): { monitor: Monitor; check: MonitorCheck; becameAlerting: boolean } {
+  reportMonitor(id: number, rep: { verdict: MonitorVerdict; summary: string; details?: string; links?: string[] }, nowMs = Date.now()): { monitor: Monitor; check: MonitorCheck; becameAlerting: boolean; recovered: boolean } {
     const before = this.getMonitor(id);
     const at = new Date(nowMs).toISOString();
     const links = JSON.stringify((rep.links ?? []).slice(0, 5));
@@ -721,7 +730,8 @@ export class Store {
         .run(id, at, at, rep.verdict, rep.summary, rep.details ?? '', links).lastInsertRowid);
     }
     const monitor = this.getMonitor(id);
-    return { monitor, check: this.rowCheck(this.db.query('SELECT * FROM monitor_checks WHERE id = ?').get(checkId)), becameAlerting: monitor.state === 'alerting' && before.state !== 'alerting' };
+    return { monitor, check: this.rowCheck(this.db.query('SELECT * FROM monitor_checks WHERE id = ?').get(checkId)), becameAlerting: monitor.state === 'alerting' && before.state !== 'alerting',
+      recovered: before.state === 'alerting' && rep.verdict === 'ok' };
   }
   /** Checks sent more than `timeoutMs` ago with no report become an error, and the schedule moves on. */
   timeoutMonitorChecks(timeoutMs: number, nowMs = Date.now()): { monitor: Monitor; becameAlerting: boolean }[] {

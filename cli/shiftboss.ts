@@ -71,8 +71,8 @@ Everything you can do in ShiftBoss, from the command line:
   shiftboss session screen <name>                 what its terminal shows now
   shiftboss session lane <name> "<lane>" [--slots N]
   shiftboss session cancel-replace <id>
-  shiftboss monitor pause|resume|stop|check <id>
-  shiftboss monitor edit <id> [--title T] [--prompt T] [--days N] [--every N]
+  shiftboss monitor pause|resume|stop|check|resolve <id>   (check = see if a fix worked; resolve = mark fixed)
+  shiftboss monitor edit <id> [--title T] [--prompt T] [--days N] [--every N] [--tell-lead=true|false]
   shiftboss intake run                            ask the intake for a pass now
   shiftboss intake resolve <id>                   dismiss a flagged thread
   shiftboss slack approve <message-id> --as-owner      ask the owning session to post an approved draft
@@ -252,7 +252,7 @@ async function main() {
       return console.log('logged');
     }
     case 'monitor': {
-      if (['pause', 'resume', 'stop'].includes(sub)) { await call('PATCH', `/api/monitors/${a1}`, { action: sub }); return console.log(`monitor ${a1}: ${sub}`); }
+      if (['pause', 'resume', 'stop', 'resolve'].includes(sub)) { await call('PATCH', `/api/monitors/${a1}`, { action: sub }); return console.log(`monitor ${a1}: ${sub === 'resolve' ? 'marked fixed' : sub}`); }
       if (sub === 'check') { const r = await call('POST', `/api/monitors/${a1}/check-now`, {}); return console.log(r.waiting ? 'queued: ' + r.waiting : 'check queued; the monitor session gets it when it is idle'); }
       if (sub === 'edit') {
         const e: any = {};
@@ -260,13 +260,15 @@ async function main() {
         if (flags.prompt) e.prompt = flags.prompt;
         if (flags.days) e.durationDays = Number(flags.days);
         if (flags.every) e.intervalHours = Number(flags.every);
+        if (flags['tell-lead'] !== undefined) e.informLead = flags['tell-lead'] !== 'false';
         await call('PATCH', `/api/monitors/${a1}`, e);
         return console.log(`monitor ${a1} updated`);
       }
       if (sub === 'add') {
         if (!a1) throw new Error('usage: shiftboss monitor add "<title>" --prompt TEXT --days N --every H');
         const m = await call('POST', '/api/monitors', { title: a1, prompt: flags.prompt, durationDays: Number(flags.days), intervalHours: Number(flags.every),
-          links: { pr: flags.pr, ticket: flags.ticket, dashboard: flags.dashboard }, taskId: flags.task });
+          links: { pr: flags.pr, ticket: flags.ticket, dashboard: flags.dashboard }, taskId: flags.task,
+          ...(flags['tell-lead'] !== undefined ? { informLead: flags['tell-lead'] !== 'false' } : {}) });
         return console.log(`monitor ${m.id}: watching for ${m.durationDays} day(s), every ${m.intervalHours} h; first check due now`);
       }
       if (sub === 'list') {

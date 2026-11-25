@@ -2,8 +2,8 @@
 // (auto "needs you" items for blocked panes, dispatch), and builds the snapshot the UI streams.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { MONITOR_SESSION, resolveLead, type AgentStatus, type EnvVersion, type Limits, type MergedPr, type Replacement, type Session, type Snapshot } from '../shared/types';
-import { MONITOR_REPORT_TIMEOUT_MS, MONITOR_RETRY_MS, monitorPrompt, pickDue } from './monitors';
+import { MONITOR_SESSION, resolveLead, type AgentStatus, type EnvVersion, type Limits, type MergedPr, type Monitor, type Replacement, type Session, type Snapshot } from '../shared/types';
+import { MONITOR_REPORT_TIMEOUT_MS, MONITOR_RETRY_MS, leadAlertPrompt, monitorPrompt, pickDue } from './monitors';
 import { healthOf, loopKeys, overlapsOf } from './analysis';
 import { contextWindowFor, type Config } from './config';
 import { Store } from './db';
@@ -340,6 +340,17 @@ export class Engine {
       case 'interrupt': {
         if (pane(p.session).status === 'blocked') throw new Error(`${p.session} is waiting on a permission prompt: answer it in herdr`);
         await this.herdr.interrupt(pane(p.session).paneId); this.pushFeed(who, 'interrupted ' + p.session); return 'interrupted';
+      }
+      case 'monitor-lead': {
+        const lead = resolveLead(this.sessions, this.store.settings().leadSession ?? '');
+        if (!lead) throw new Error('No lead session is running (Settings: Lead session)');
+        if (lead.name === this.monitorSession()?.name) throw new Error('The lead is the monitor session itself');
+        // Typing into a pane that waits on a permission prompt could answer it: never.
+        if (lead.status === 'blocked') throw new Error(`${lead.name} is waiting on a permission prompt; answer it in herdr, then approve again`);
+        const m = this.store.getMonitor(p.monitorId);
+        await this.herdr.prompt(lead.paneId, leadAlertPrompt(m, p.summary, this.cfg.port, !!p.recovered) + this.rules());
+        this.pushFeed(who, `told ${lead.name} that ${m.title} ${p.recovered ? 'is fine again' : 'came back bad'}`);
+        return 'told ' + lead.name;
       }
       case 'monitor-check': {
         const s = this.monitorSession();
@@ -692,6 +703,15 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
   // ---------- monitors ----------
   /** The monitor session: `monitor`, or its newest replacement (monitor-v2, …). */
   monitorSession(): Session | null { return resolveLead(this.sessions, MONITOR_SESSION); }
+
+  /** For a monitor set to tell the lead: a short note when it comes back bad, and one when it is fine again. Goes through the gate. */
+  async tellLeadAboutMonitor(m: Monitor, summary: string, recovered: boolean) {
+    if (!m.informLead) return;
+    try {
+      const word = recovered ? 'is fine again' : 'came back bad';
+      await this.act('monitor-lead', { monitorId: m.id, summary, recovered }, { actor: 'auto', by: 'shiftboss', summary: `Tell the lead that ${m.title} ${word}`, detail: summary });
+    } catch (e) { this.pushFeed('monitor', `could not tell the lead about ${m.title}: ` + (e as Error).message.slice(0, 200)); }
+  }
   /** A monitor whose send just failed waits a minute before the next try, so one bad row cannot spin. */
   private monitorRetryAt = new Map<number, number>();
   private sendingMonitor = false;
@@ -706,7 +726,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       for (const m of this.store.finishMonitors(nowMs)) this.pushFeed('monitor', `finished watching ${m.title} (${m.checksDone} check${m.checksDone === 1 ? '' : 's'}, last: ${m.lastVerdict ?? 'none'})`);
       for (const { monitor: m, becameAlerting } of this.store.timeoutMonitorChecks(MONITOR_REPORT_TIMEOUT_MS, nowMs)) {
         this.pushFeed('monitor', `no report for ${m.title} within ${MONITOR_REPORT_TIMEOUT_MS / 60e3} min; recorded as an error`);
-        if (becameAlerting) this.pushFeed('monitor', `${m.title} is alerting: two checks in a row could not be done`);
+        if (becameAlerting) { this.pushFeed('monitor', `${m.title} is alerting: two checks in a row could not be done`); void this.tellLeadAboutMonitor(m, 'two checks in a row could not be done', false); }
       }
     } catch (e) { this.pushFeed('monitor', 'could not update monitors: ' + (e as Error).message.slice(0, 200)); }
     if (!this.herdrOk || this.sendingMonitor) return;

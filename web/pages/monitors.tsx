@@ -18,20 +18,20 @@ function when(iso: string | null): string {
   return d.toLocaleString([], far ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' } : { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-type Form = { title: string; prompt: string; pr: string; ticket: string; dashboard: string; taskId: string; durationDays: string; intervalHours: string };
-const EMPTY: Form = { title: '', prompt: '', pr: '', ticket: '', dashboard: '', taskId: '', durationDays: '3', intervalHours: '6' };
-const toForm = (m: Monitor): Form => ({ title: m.title, prompt: m.prompt, pr: m.links.pr ?? '', ticket: m.links.ticket ?? '', dashboard: m.links.dashboard ?? '', taskId: m.taskId ?? '', durationDays: String(m.durationDays), intervalHours: String(m.intervalHours) });
+type Form = { title: string; prompt: string; pr: string; ticket: string; dashboard: string; taskId: string; durationDays: string; intervalHours: string; informLead: boolean };
+const EMPTY: Form = { title: '', prompt: '', pr: '', ticket: '', dashboard: '', taskId: '', durationDays: '3', intervalHours: '6', informLead: true };
+const toForm = (m: Monitor): Form => ({ title: m.title, prompt: m.prompt, pr: m.links.pr ?? '', ticket: m.links.ticket ?? '', dashboard: m.links.dashboard ?? '', taskId: m.taskId ?? '', durationDays: String(m.durationDays), intervalHours: String(m.intervalHours), informLead: m.informLead });
 
 /** New monitor, or edit one. */
 function MonitorForm({ initial, id, onDone }: { initial: Form; id?: number; onDone: () => void }) {
   const snap = useSnap()!;
   const [f, setF] = useState(initial);
-  const set = (k: keyof Form) => (v: string) => setF({ ...f, [k]: v });
+  const set = (k: Exclude<keyof Form, 'informLead'>) => (v: string) => setF({ ...f, [k]: v });
   const p = id ? 'em' + id : 'nm';
   const taskOptions = [{ value: '', label: 'No task' }, ...snap.tasks.filter((t) => t.stage < 6).map((t) => ({ value: t.id, label: `${t.id} · ${t.title}` }))];
   const checks = Math.ceil((Number(f.durationDays) * 24) / Number(f.intervalHours));
   const submit = () => act(async () => {
-    const body = { title: f.title, prompt: f.prompt, links: { pr: f.pr, ticket: f.ticket, dashboard: f.dashboard }, taskId: f.taskId, durationDays: Number(f.durationDays), intervalHours: Number(f.intervalHours) };
+    const body = { title: f.title, prompt: f.prompt, links: { pr: f.pr, ticket: f.ticket, dashboard: f.dashboard }, taskId: f.taskId, durationDays: Number(f.durationDays), intervalHours: Number(f.intervalHours), informLead: f.informLead };
     await api(id ? 'PATCH' : 'POST', id ? `/api/monitors/${id}` : '/api/monitors', body);
     onDone();
   }, id ? 'Saved' : 'Watching it · the first check goes to the monitor session now');
@@ -58,6 +58,10 @@ function MonitorForm({ initial, id, onDone }: { initial: Form; id?: number; onDo
         <button type="button" className="pill sm" onClick={onDone}>Cancel</button>
         <button type="submit" className="pill w" disabled={!f.title.trim() || !f.prompt.trim()}>{id ? 'Save' : 'Watch'}<Arrow dark /></button>
       </div>
+      <label className="row" style={{ gridColumn: 'span 12', gap: 10, fontSize: 13, cursor: 'pointer', alignItems: 'flex-start' }}>
+        <input type="checkbox" checked={f.informLead} onChange={(e) => setF({ ...f, informLead: e.target.checked })} style={{ marginTop: 2 }} />
+        <span>Tell the lead session when it goes bad <span className="faint">· it gets what the check found and the links, and a second note when it is fine again</span></span>
+      </label>
       <span className="faint" style={{ gridColumn: 'span 12', fontSize: 12 }}>
         {id ? 'A new duration counts from when it started.' : `${checks} check${checks === 1 ? '' : 's'} in all, the first one now.`} A bad check, or two checks in a row that could not be done, puts it on the Sessions page under Needs attention.
       </span>
@@ -139,7 +143,8 @@ function MonitorCard({ m, onChanged }: { m: Full; onChanged: () => void }) {
       onChanged();
     } catch (e) { toast((e as Error).message); }
   };
-  const action = (a: 'pause' | 'resume' | 'stop') => run(() => api('PATCH', `/api/monitors/${m.id}`, { action: a }), a === 'pause' ? 'Paused' : a === 'resume' ? 'Resumed' : 'Stopped watching');
+  const action = (a: 'pause' | 'resume' | 'stop' | 'resolve') => run(() => api('PATCH', `/api/monitors/${m.id}`, { action: a }), a === 'pause' ? 'Paused' : a === 'resume' ? 'Resumed' : a === 'resolve' ? 'Marked fixed' : 'Stopped watching');
+  const flipLead = () => run(() => api('PATCH', `/api/monitors/${m.id}`, { informLead: !m.informLead }), m.informLead ? 'The lead will not be told' : 'The lead will be told when it goes bad');
   const links = ([['pr', 'Pull request'], ['ticket', 'Ticket'], ['dashboard', 'Dashboard']] as const).filter(([k]) => m.links[k]);
   const watched = m.state === 'active' || m.state === 'alerting';
   return (
@@ -149,6 +154,7 @@ function MonitorCard({ m, onChanged }: { m: Full; onChanged: () => void }) {
         <span className="label" style={{ color: stateColor(m.state) }}>{STATE_WORD[m.state]}</span>
         <span style={{ fontSize: 17, flex: '1 1 240px', minWidth: 0, overflowWrap: 'anywhere' }}>{m.title}</span>
         {m.taskId && <a className="mono" style={{ fontSize: 12, color: C.amber }} href={href('task', m.taskId)}>{m.taskId}</a>}
+        {m.informLead && <span className="faint" style={{ fontSize: 12 }}>tells the lead</span>}
       </div>
       <div className="row" style={{ gap: 18, flexWrap: 'wrap', fontSize: 13 }}>
         <span className="dim">{m.inFlight ? `Checking now (asked ${when(m.inFlight.sentAt)})` : watched ? (m.nextDueAt && Date.parse(m.nextDueAt) <= Date.now() ? 'Check due now · it goes when the monitor session is free' : `Next check ${when(m.nextDueAt)}`) : m.state === 'paused' ? 'Paused: no checks until you resume' : m.finishReason === 'stopped' ? `Stopped ${when(m.finishedAt)}` : `Finished ${when(m.finishedAt)}`}</span>
@@ -165,11 +171,20 @@ function MonitorCard({ m, onChanged }: { m: Full; onChanged: () => void }) {
           {links.map(([k, label]) => <a key={k} className="pill sm" href={safeHref(m.links[k])} target="_blank" rel="noreferrer">{label} ↗</a>)}
         </div>
       )}
+      {m.state === 'alerting' && (
+        <div className="row well" style={{ gap: 8, flexWrap: 'wrap', padding: '10px 12px' }}>
+          <span style={{ fontSize: 13, flex: '1 1 220px' }}>Fixed it? Ask for a fresh check, or mark it fixed if it was a false alarm.</span>
+          <button type="button" className="pill sm w" disabled={!!m.inFlight} onClick={() => void checkNow()}>{m.inFlight ? 'Checking…' : 'Check if it is fixed'}</button>
+          <button type="button" className="pill sm" onClick={() => void action('resolve')}>Mark fixed</button>
+        </div>
+      )}
+      {m.resolvedAt && m.state !== 'alerting' && (!m.lastCheckAt || m.lastCheckAt <= m.resolvedAt) && <span className="faint" style={{ fontSize: 12 }}>Marked fixed {when(m.resolvedAt)} · the next check confirms it</span>}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {watched && <button type="button" className="pill sm w" disabled={!!m.inFlight} onClick={() => void checkNow()}>Check now</button>}
+        {watched && m.state !== 'alerting' && <button type="button" className="pill sm w" disabled={!!m.inFlight} onClick={() => void checkNow()}>Check now</button>}
         {watched && <button type="button" className="pill sm" onClick={() => void action('pause')}>Pause</button>}
         {m.state === 'paused' && <button type="button" className="pill sm w" onClick={() => void action('resume')}>Resume</button>}
         {m.state !== 'finished' && <button type="button" className="pill sm" onClick={() => { if (confirm(`Stop watching "${m.title}"? No more checks will run.`)) void action('stop'); }}>Stop</button>}
+        {m.state !== 'finished' && <button type="button" className="pill sm" aria-pressed={m.informLead} onClick={() => void flipLead()}>{m.informLead ? 'Stop telling the lead' : 'Tell the lead'}</button>}
         <button type="button" className="pill sm" aria-expanded={editing} onClick={() => setEditing(!editing)}>Edit</button>
         <button type="button" className="pill sm" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide checks' : `All checks (${m.checks.length})`}</button>
       </div>
