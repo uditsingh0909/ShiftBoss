@@ -4,6 +4,7 @@ import { STAGES, type AuditEntry, type Need, type PromiseItem, type Task } from 
 import { act, ago, agoText, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
 import { DateRange, FilterBar, inRange, Pager, Search, usePaged, type Range } from '../filters';
+import { SessionPick } from '../session-pick';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
@@ -171,8 +172,7 @@ function StartWork({ t }: { t: Task }) {
   return (
     <div className="row well" style={{ gap: 8, padding: '8px 12px', flexWrap: 'wrap', alignItems: 'center' }}>
       <span className="faint" style={{ fontSize: 12 }}>{t.stage === 1 ? `Queued${t.held ? ', on hold' : ''}.` : 'Not started.'} Start the work:</span>
-      <Pick width={170} label={`Session for ${t.id}`} value={session} onChange={setSession}
-        options={[{ value: '', label: 'Pick a session' }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} placeholder="Session…" />
+      <SessionPick width={170} label={`Session for ${t.id}`} task={t} value={session} onChange={setSession} emptyLabel="Pick a session" placeholder="Session…" />
       {t.stage === 0 && <button type="button" className="pill sm" disabled={!session} onClick={() => void queue()} title={auto ? 'ShiftBoss sends the brief when the session has room' : 'Waits in Queued until you send it'}>Queue</button>}
       <button type="button" className="pill sm w" disabled={!session} onClick={() => void send()}>Send brief now</button>
     </div>

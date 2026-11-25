@@ -9,6 +9,7 @@ const HELP = `shiftboss: tell ShiftBoss what happened
   shiftboss task add "<title>" [--ask TEXT] [--from NAME] [--source WHERE] [--url URL] [--direction inbound|outbound] [--session NAME] [--prio P1|P2|P3]
   shiftboss task stage <T-n> queued|progress|pr|dev|live|told
   shiftboss task assign <T-n> <session>
+  shiftboss task new-session <T-n> [--name N] [--cwd DIR] [--model M]   start a fresh session with the task's brief
   shiftboss task note <T-n> "<text>" [--src Session|GitHub|Slack] [--who NAME]
   shiftboss task link <T-n> <URL> [--direction inbound|outbound]     set a missing source link
   shiftboss slack <T-n> "<text>" --kind ask|promise|draft|sent [--who NAME] [--url THREAD-PERMALINK]
@@ -199,6 +200,11 @@ async function main() {
       return;
     }
     case 'task': {
+      if (sub === 'new-session') {
+        if (!a1) throw new Error('usage: shiftboss task new-session <T-n> [--name N] [--cwd DIR] [--model opus|sonnet|haiku]');
+        const r = await call('POST', `/api/tasks/${a1}/new-session`, { name: flags.name, cwd: flags.cwd, model: flags.model });
+        return console.log(r.held ? r.message : `starting ${r.name} in ${r.cwd}; its first prompt is the ${a1} brief`);
+      }
       if (sub === 'add') {
         const t = await call('POST', '/api/tasks', { title: a1, ask: flags.ask, requester: flags.from, source: flags.source, sourceUrl: flags.url, direction: flags.direction, session: flags.session, prio: flags.prio });
         return console.log(t.id);

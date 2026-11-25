@@ -524,6 +524,12 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       try {
         const pane = await this.herdr.spawnClaude({ name: spec.name, cwd: spec.cwd, model: spec.model || undefined, resume: spec.resume || undefined, workspace: this.store.settings().herdrWorkspace || undefined });
         if (spec.prompt) await this.herdr.prompt(pane, spec.prompt);
+        if (spec.taskId && spec.prompt) {
+          // Started for a task: its brief was the first prompt, so the task is in progress now.
+          const t = this.store.getTask(spec.taskId);
+          if (t && t.stage <= 1 && t.session === spec.name) this.store.updateTask(t.id, { stage: 2 }, 'ShiftBoss');
+          this.store.addEvent(spec.taskId, 'ShiftBoss', 'dispatcher', `Started ${spec.name} for it; the brief was its first prompt`);
+        }
         this.pushFeed('shiftboss', `${tag}session ${spec.name} is ${spec.resume ? 'back, running in herdr with its full history' : 'ready'}${spec.prompt ? ' and has its first prompt' : ''}`);
       } catch (e) {
         const msg = (e as Error).message;

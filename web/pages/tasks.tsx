@@ -4,6 +4,7 @@ import { STAGES, type IntakeItem, type PromiseItem, type SlackMsg, type Stage, t
 import { act, ago, agoText, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, toast, usePage, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
 import { DateRange, FilterBar, inRange, Pager, rangeBounds, Search, usePaged, type Range } from '../filters';
+import { NEW_SESSION, NewSessionForm, SessionPick } from '../session-pick';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
@@ -44,9 +45,8 @@ function QuickActions({ t, ready }: { t: Task; ready: boolean }) {
       {t.stage > 0 && stepBtn(t.stage - 1, '←')}
       {t.stage < 6 && stepBtn(t.stage + 1, '→')}
       <button type="button" className="pill xs" onClick={() => void patch({ held: !t.held }, t.held ? `${t.id} resumed` : `${t.id} on hold`)}>{t.held ? 'Resume' : 'Hold'}</button>
-      <Pick width={128} label={`Session for ${t.id}`} value={t.session ?? ''}
-        onChange={(v) => { if (v !== (t.session ?? '')) void patch({ session: v || null }, v ? `${t.id} assigned to ${v}` : `${t.id} unassigned`); }}
-        options={[{ value: '', label: 'Unassigned' }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} placeholder="Assign…" />
+      <SessionPick width={128} label={`Session for ${t.id}`} task={t} value={t.session ?? ''}
+        onChange={(v) => { if (v !== (t.session ?? '')) void patch({ session: v || null }, v ? `${t.id} assigned to ${v}` : `${t.id} unassigned`); }} />
       {t.session && t.stage <= 1 && !ready && <button type="button" className="pill xs w" onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Brief sent to ' + t.session)}>Send brief</button>}
     </div>
   );
@@ -65,8 +65,18 @@ function NewTask({ onDone }: { onDone: () => void }) {
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="nt-ask" className="label">The ask, in their words</label><textarea id="nt-ask" className="field" rows={2} value={f.ask} onChange={(e) => setF({ ...f, ask: e.target.value })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><span className="label">Priority</span><Seg label="Priority" value={f.prio} options={['P1', 'P2', 'P3'] as const} onChange={(p) => setF({ ...f, prio: p })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><label htmlFor="nt-s" className="label">Session</label>
-          <Pick id="nt-s" value={f.session} onChange={(v) => setF({ ...f, session: v })} options={[{ value: '', label: 'Inbox (triage later)' }, ...snap.sessions.map((s) => ({ value: s.name, hint: s.lane || undefined }))]} /></div>
-        <div style={{ gridColumn: 'span 2' }}><button type="submit" className="pill w" disabled={!f.title.trim()}>Add<Arrow dark /></button></div>
+          <Pick id="nt-s" value={f.session} onChange={(v) => setF({ ...f, session: v })} options={[{ value: '', label: 'Inbox (triage later)' }, ...snap.sessions.map((s) => ({ value: s.name, hint: s.lane || undefined })),
+            { value: NEW_SESSION, label: 'New session for it…', hint: 'starts it now' }]} /></div>
+        <div style={{ gridColumn: 'span 2' }}>{f.session !== NEW_SESSION && <button type="submit" className="pill w" disabled={!f.title.trim()}>Add<Arrow dark /></button>}</div>
+        {f.session === NEW_SESSION && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <NewSessionForm task={null} onDone={onDone} onStart={async (spec) => {
+              if (!f.title.trim()) throw new Error('Write what needs doing first');
+              const t = await api<Task>('POST', '/api/tasks', { ...f, session: null, who: 'you' });
+              await api('POST', `/api/tasks/${t.id}/new-session`, { name: spec.name || undefined, cwd: spec.cwd, model: spec.model || undefined });
+            }} />
+          </div>
+        )}
       </form>
     </section>
   );
@@ -215,9 +225,8 @@ export function TaskPage({ id }: { id: string }) {
         </div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="pill" onClick={() => patch({ held: !t.held }, t.held ? 'Resumed' : 'On hold')}>{t.held ? 'Resume' : 'Hold'}</button>
-          <Pick pill width={240} label="Session" value={t.session ?? ''} onChange={(v) => patch({ session: v || null }, v ? 'Assigned to ' + v : 'Unassigned')}
-            prefix="Session"
-            options={[{ value: '', label: 'Unassigned' }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} placeholder="Session" />
+          <SessionPick pill width={240} label="Session" task={t} value={t.session ?? ''} onChange={(v) => patch({ session: v || null }, v ? 'Assigned to ' + v : 'Unassigned')}
+            prefix="Session" placeholder="Session" />
           {t.session && t.stage <= 1 && <button type="button" className="pill w" onClick={() => act(() => api('POST', `/api/tasks/${t.id}/dispatch`, {}), 'Brief sent')}>Send brief<Arrow dark /></button>}
         </div>
       </section>

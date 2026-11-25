@@ -219,6 +219,17 @@ export const DEFAULT_NOTIFY: NotifySettings = {
 };
 
 /** The running session that is the lead: the base name itself, or its newest replacement (name-v2, name-v3 …). */
+/** A name for a new session that works one task: "t12-fix-texting-numbers", made unique against `taken`. */
+export function taskSessionName(t: { id: string; title: string }, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  const words = t.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((w) => w && !['the', 'a', 'an', 'to', 'for', 'of', 'and', 'on', 'in'].includes(w));
+  let base = (t.id.toLowerCase().replace('-', '') + '-' + words.join('-')).slice(0, 34).replace(/-+$/, '');
+  if (base.length < 2) base = 'task-' + base;
+  let name = base, i = 2;
+  while (used.has(name)) name = `${base}-${i++}`;
+  return name;
+}
+
 export function resolveLead<T extends { name: string }>(sessions: T[], base: string): T | null {
   const b = base.trim().toLowerCase();
   if (!b) return null;

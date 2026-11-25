@@ -19,7 +19,7 @@ import { needsInstall, Updater } from '../server/update';
 import { actionKey, decide } from '../server/gate';
 import { join } from 'node:path';
 import { checksLeft, checksTotal, effectiveState, isAlerting, monitorPrompt, nextDueAfter, pickDue } from '../server/monitors';
-import { DEFAULT_NOTIFY, type Session } from '../shared/types';
+import { DEFAULT_NOTIFY, taskSessionName, type Session } from '../shared/types';
 import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
 import { inRange, rangeBounds } from '../web/filters';
 import { inQuiet, SlackNotifier } from '../server/slack';
@@ -659,6 +659,39 @@ describe('browser notifications', () => {
     s.addNeed({ kind: 'Decision', title: 'B', answers: ['Yes'] });
     expect(tabTitle(snapOf(s))).toBe('(2) ShiftBoss');
     expect(tabTitle(null)).toBe('ShiftBoss');
+  });
+});
+
+describe('a new session for a task', () => {
+  test('names: task id plus the title words, unique', () => {
+    expect(taskSessionName({ id: 'T-12', title: 'Fix the texting numbers for Green' }, [])).toBe('t12-fix-texting-numbers-green');
+    expect(taskSessionName({ id: 'T-12', title: 'Fix the texting numbers for Green' }, ['t12-fix-texting-numbers-green'])).toBe('t12-fix-texting-numbers-green-2');
+    expect(taskSessionName({ id: 'T-3', title: '!!!' }, [])).toBe('t3');
+    expect(taskSessionName({ id: 'T-7', title: 'A very long title that keeps going and going past the limit' }, []).length).toBeLessThanOrEqual(34);
+  });
+
+  test('the owner starts one from a task: assigned, queued, and the brief is its first prompt', async () => {
+    const store = mem();
+    store.saveSettings({ ...store.settings(), mode: 'auto' });
+    const spawned: any[] = [], prompted: string[] = [];
+    const herdr = { spawnClaude: async (o: any) => { spawned.push(o); return 'p-new'; }, prompt: async (_p: string, t: string) => { prompted.push(t); } };
+    const e = new Engine(loadConfig(), store, herdr as any);
+    e.sessions = [session({ name: 'lead', cwd: tmpdir() })];
+    const handle = makeApi(e);
+    const call = async (method: string, path: string, body?: unknown) => {
+      const res = (await handle(new Request('http://x' + path, { method, headers: { 'x-shiftboss': '1', 'x-shiftboss-actor': 'owner', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }), new URL('http://x' + path)))!;
+      return { status: res.status, body: await res.json() as any };
+    };
+    const t = store.addTask({ title: 'Fix the export', ask: 'Export is empty', requester: 'Sam' });
+    const r = await call('POST', `/api/tasks/${t.id}/new-session`, {});
+    expect(r.status).toBe(202);
+    expect(r.body.name).toBe(taskSessionName(t, ['lead']));
+    expect(store.getTask(t.id)).toMatchObject({ session: r.body.name, vetted: true }); // queued, then In progress once the brief is in
+    await new Promise((res) => setTimeout(res, 20)); // the spawn runs in the background
+    expect(spawned[0]).toMatchObject({ name: r.body.name, cwd: tmpdir() });
+    expect(prompted[0]).toContain(`ShiftBoss task ${t.id}`);
+    expect(store.getTask(t.id)!.stage).toBe(2);
+    expect((await call('POST', `/api/tasks/${t.id}/new-session`, { name: 'lead' })).status).toBe(400); // already running
   });
 });
 

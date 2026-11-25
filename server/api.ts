@@ -1,6 +1,6 @@
 // HTTP API. Every write needs the X-ShiftBoss header, so a web page on another origin
 // cannot trigger one (the custom header forces a CORS preflight that we never allow).
-import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../shared/types';
+import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, taskSessionName, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../shared/types';
 import { monitorSessionPrompt } from './monitors';
 import type { Engine } from './engine';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -13,7 +13,7 @@ import { HerdrError } from './herdr';
 import { checkDirection, NotFound } from './db';
 import { mergeSettings } from './settings';
 import { onboardingPrompt } from './onboarding';
-import { checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
+import { checkSpawn, checkSpawnMany, SPAWN_MANY_CAP } from './fleet';
 import { isSessionId, listOutside } from './outside';
 import { PaneBlockedError } from './herdr';
 import { SnapshotHub } from './stream';
@@ -96,7 +96,25 @@ export function makeApi(engine: Engine) {
         engine.pushFeed('shiftboss', `filed ${t.id}: ${t.title}`);
         return done(json(t, 201));
       }
-      let r = m(/^\/api\/tasks\/(T-\d+)$/);
+      let r = m(/^\/api\/tasks\/(T-\d+)\/new-session$/);
+      if (r && write) {
+        // Start a new session just for this task: assign it, and its first prompt is the task's brief.
+        const t = store.getTask(r[1]);
+        if (!t) return fail('No task ' + r[1], 404);
+        if (t.stage >= 6) return fail(`${t.id} is finished`, 409);
+        const b = await body<any>(req);
+        const running = engine.snapshot().sessions;
+        const name = optStr(b.name, 40)?.trim() || taskSessionName(t, running.map((x) => x.name));
+        const lead = resolveLead(running, store.settings().leadSession ?? '');
+        const cwd = optStr(b.cwd, 400)?.trim() || running.find((x) => x.name === t.session)?.cwd || lead?.cwd || running[0]?.cwd || '';
+        const spec = { ...checkSpawn({ name, cwd, model: optStr(b.model, 20) ?? null }, new Set(running.map((x) => x.name))), prompt: engine.briefFor(t.id), taskId: t.id };
+        store.updateTask(t.id, { session: name, ...(t.stage === 0 ? { stage: 1 as Stage } : {}) }, 'you');
+        if (actorOf(req) === 'owner') store.vetTask(t.id);
+        const g = await engine.act('spawn', { spec }, { actor: actorOf(req), by: byOf(req, b), summary: `start a new session ${name} for ${t.id}`, detail: t.title });
+        if (g.status === 'done') engine.pushFeed('you', `starting ${name} for ${t.id}`);
+        return done(gated(g, () => json({ ok: true, name, cwd }, 202)));
+      }
+      r = m(/^\/api\/tasks\/(T-\d+)$/);
       if (r && req.method === 'GET') {
         const t = store.getTask(r[1]);
         if (!t) return fail('No task ' + r[1], 404);

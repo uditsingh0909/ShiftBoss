@@ -10,7 +10,7 @@ export const SPAWN_MANY_CAP = 20;
 /** A handoff not written within this long after the request is shown as stalled. */
 export const HANDOFF_TIMEOUT_MS = 20 * 60e3;
 
-export interface SpawnSpec { name: string; cwd: string; model: string | null; prompt: string | null; /** Claude session id to continue (claude --resume) */ resume?: string | null }
+export interface SpawnSpec { name: string; cwd: string; model: string | null; prompt: string | null; /** Claude session id to continue (claude --resume) */ resume?: string | null; /** The task this session was started for: its first prompt is the brief */ taskId?: string | null }
 
 /**
  * The same checks the single spawn makes, for one row. `taken` holds names already running or

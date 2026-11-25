@@ -299,6 +299,12 @@ server.registerTool('task_send', {
   inputSchema: { task: TASK, by: ME },
 }, wrap(async ({ task, by }) => heldOr(await call('POST', `/api/tasks/${task}/dispatch`, { by }), `${task}: brief sent`)));
 
+server.registerTool('task_new_session', {
+  title: 'Start a new session for a task',
+  description: 'Starts a fresh Claude session in herdr just for this task: it is assigned the task and its first prompt is the task brief. Name and folder are optional (default: named after the task, in the folder of the lead session). Goes through the mode of the owner like any new session.',
+  inputSchema: { task: TASK, name: z.string().max(40).optional(), cwd: z.string().max(400).optional(), model: z.enum(['opus', 'sonnet', 'haiku', 'fable']).optional(), by: ME },
+}, wrap(async ({ task, name, cwd, model, by }) => heldOr(await call('POST', `/api/tasks/${task}/new-session`, { name, cwd, model, by }), `${task}: starting a new session for it`)));
+
 server.registerTool('tasks_list', {
   title: 'List tasks',
   description: 'Tasks on the board, filtered by stage and/or session. Stages: inbox, queued, progress, pr, dev, live, told.',
