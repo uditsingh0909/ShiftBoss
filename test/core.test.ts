@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { checksLeft, checksTotal, effectiveState, isAlerting, monitorPrompt, nextDueAfter, pickDue } from '../server/monitors';
 import { DEFAULT_NOTIFY, type Session } from '../shared/types';
 import { newNotifications, notifyItems, tabTitle } from '../shared/notify';
+import { inRange, rangeBounds } from '../web/filters';
 import { baseName, checkSpawnMany, HANDOFF_MARKER, HANDOFF_SECTIONS, handoffCheck, handoffPathFor, handoffRequest, modelArg, nextReplacementName, replacementPrompt } from '../server/fleet';
 
 const mem = () => new Store('', ':memory:');
@@ -605,7 +606,7 @@ describe('browser notifications', () => {
     const second = snapOf(s);
     const got = newNotifications(first, second, undefined);
     expect(got.map((x) => x.kind).sort()).toEqual(['blocked', 'needs', 'promiseDue', 'tasks']); // the promise filed its task
-    expect(got.find((x) => x.kind === 'needs')).toMatchObject({ title: 'Needs you: Ship it?', route: '#/needs' });
+    expect(got.find((x) => x.kind === 'needs')).toMatchObject({ title: 'Needs you: Ship it?', route: '/needs' });
     expect(newNotifications(first, second, { ...DEFAULT_NOTIFY, blocked: false, promiseDue: false, tasks: false }).map((x) => x.kind)).toEqual(['needs']);
     expect(newNotifications(second, second, undefined)).toEqual([]); // nothing new the second time
   });
@@ -619,7 +620,7 @@ describe('browser notifications', () => {
     });
     const got = newNotifications(a, b, undefined);
     expect(got.map((x) => x.kind).sort()).toEqual(['monitor', 'overlap', 'stuck']);
-    expect(got.find((x) => x.kind === 'stuck')!.route).toBe('#/session/w1');
+    expect(got.find((x) => x.kind === 'stuck')!.route).toBe('/session/w1');
     expect(notifyItems(snapOf(s, { herdrOk: true })).length).toBe(0); // no monitors field: skipped
     const n = s.addNeed({ kind: 'Decision', title: 'Q', answers: ['Yes'] });
     s.answerNeed(n.id, 'Yes');
@@ -644,7 +645,7 @@ describe('browser notifications', () => {
     });
     const got = newNotifications(a, b, undefined);
     expect(got.map((x) => x.kind).sort()).toEqual(['finished', 'limits', 'monitorReport', 'releases', 'releases', 'system', 'tasks', 'tasks']);
-    expect(got.find((x) => x.kind === 'finished')).toMatchObject({ title: 'w1 finished its turn', body: 'All done', route: '#/session/w1' });
+    expect(got.find((x) => x.kind === 'finished')).toMatchObject({ title: 'w1 finished its turn', body: 'All done', route: '/session/w1' });
     expect(got.filter((x) => x.kind === 'tasks').map((x) => x.title).sort()).toEqual(['New task T-2: New ask', 'T-1 is now PR open']);
     expect(notifyItems({ ...b, sessions: [{ ...sess('done', 'x'), name: 'intake' }] }).some((x) => x.kind === 'finished')).toBe(false);
     expect(newNotifications(b, b, undefined)).toEqual([]);
@@ -657,6 +658,33 @@ describe('browser notifications', () => {
     s.addNeed({ kind: 'Decision', title: 'B', answers: ['Yes'] });
     expect(tabTitle(snapOf(s))).toBe('(2) ShiftBoss');
     expect(tabTitle(null)).toBe('ShiftBoss');
+  });
+});
+
+describe('list paging and date ranges', () => {
+  test('the intake log pages on the server with kind, direction, search and dates', () => {
+    const s = mem();
+    for (let i = 0; i < 7; i++) s.addIntake({ src: i % 2 ? '#team' : 'DM', who: 'Sam', text: 'ask ' + i, verdict: i % 3 === 0 ? 'filed T-' + i : 'dropped', taskId: null, url: null, direction: i % 2 ? 'inbound' : 'outbound' });
+    expect(s.pageIntake({ limit: 3 })).toMatchObject({ total: 7 });
+    expect(s.pageIntake({ limit: 3 }).items.map((x) => x.text)).toEqual(['ask 6', 'ask 5', 'ask 4']);
+    expect(s.pageIntake({ limit: 3, offset: 6 }).items.map((x) => x.text)).toEqual(['ask 0']);
+    expect(s.pageIntake({ kind: 'filed' }).total).toBe(3);
+    expect(s.pageIntake({ direction: 'inbound' }).total).toBe(3);
+    expect(s.pageIntake({ q: 'team' }).total).toBe(3);
+    expect(s.pageIntake({ from: new Date(Date.now() + 60e3).toISOString() }).total).toBe(0);
+    expect(s.pageIntake({ limit: 5000 }).items.length).toBe(7); // capped at 200, fine here
+  });
+  test('date ranges: today, yesterday, rolling days, custom (inclusive), all', () => {
+    const now = new Date(2026, 10, 25, 15, 30);
+    const day = (d: number) => new Date(2026, 10, d).toISOString();
+    expect(rangeBounds({ id: 'Today' }, now)).toEqual({ from: day(25) });
+    expect(rangeBounds({ id: 'Yesterday' }, now)).toEqual({ from: day(24), to: day(25) });
+    expect(rangeBounds({ id: '7 days' }, now)).toEqual({ from: day(19) });
+    expect(rangeBounds({ id: 'Custom', from: '2026-11-01', to: '2026-11-03' }, now)).toEqual({ from: day(1), to: day(4) });
+    expect(rangeBounds({ id: 'All' }, now)).toEqual({});
+    expect(inRange(new Date(2026, 10, 24, 23).toISOString(), { id: 'Yesterday' }, now)).toBe(true);
+    expect(inRange(new Date(2026, 10, 25, 1).toISOString(), { id: 'Yesterday' }, now)).toBe(false);
+    expect(inRange(null, { id: 'All' }, now)).toBe(true);
   });
 });
 

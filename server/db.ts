@@ -395,6 +395,27 @@ export class Store {
     return (this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId, url, direction FROM intake ORDER BY id DESC LIMIT ?').all(limit) as any[])
       .map((r) => ({ ...r, direction: r.direction ?? null })) as IntakeItem[];
   }
+  /**
+   * One page of the intake log, newest first, with the total for the pager. kind: filed (became or joined a task),
+   * lead (sent to the lead), dropped, check (a confused thread); q matches text, source or sender.
+   */
+  pageIntake(f: { from?: string; to?: string; kind?: string; q?: string; direction?: string; offset?: number; limit?: number }): { items: IntakeItem[]; total: number } {
+    const where: string[] = [], args: (string | number)[] = [];
+    if (f.from) { where.push('at >= ?'); args.push(f.from); }
+    if (f.to) { where.push('at < ?'); args.push(f.to); }
+    if (f.kind === 'filed') where.push("(verdict LIKE 'filed%' OR verdict LIKE 'linked%')");
+    else if (f.kind === 'lead') where.push("verdict = 'to lead'");
+    else if (f.kind === 'dropped') where.push("verdict = 'dropped'");
+    else if (f.kind === 'check') where.push("verdict LIKE 'check%'");
+    if (f.direction === 'inbound' || f.direction === 'outbound') { where.push('direction = ?'); args.push(f.direction); }
+    if (f.q?.trim()) { where.push('(text LIKE ? OR src LIKE ? OR who LIKE ?)'); const q = '%' + f.q.trim() + '%'; args.push(q, q, q); }
+    const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
+    const total = (this.db.query('SELECT COUNT(*) AS n FROM intake' + w).get(...args) as { n: number }).n;
+    const limit = Math.min(200, Math.max(1, f.limit ?? 50)), offset = Math.max(0, f.offset ?? 0);
+    const items = (this.db.query('SELECT id, at, src, who, text, verdict, task_id as taskId, url, direction FROM intake' + w + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, limit, offset) as any[])
+      .map((r) => ({ ...r, direction: r.direction ?? null })) as IntakeItem[];
+    return { items, total };
+  }
   /** Messages read and turned into tasks per day, in the viewer's time zone (offset in minutes east of UTC). */
   intakeCountsByDay(days = 14, tzMin = 0): { day: string; read: number; filed: number }[] {
     const off = `${tzMin >= 0 ? '+' : '-'}${Math.abs(Math.trunc(tzMin))} minutes`;

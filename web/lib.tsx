@@ -40,7 +40,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
 const NAV = 'shiftboss:nav';
 /** Old links (#/needs) still work: they become /needs. */
 function fromOldHash() {
-  if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1) || '/');
+  if (typeof location !== 'undefined' && location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1) || '/');
 }
 fromOldHash();
 /** Go to a page inside ShiftBoss without reloading. */

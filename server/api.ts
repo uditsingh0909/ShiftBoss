@@ -536,6 +536,11 @@ export function makeApi(engine: Engine) {
         const b = await body<any>(req);
         return done(json(store.intakeCheckpoint(str(b.readUntil, 'readUntil', 40))));
       }
+      if (p === '/api/intake/page' && req.method === 'GET') {
+        const q = url.searchParams, iso = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : undefined);
+        return json(store.pageIntake({ from: iso(q.get('from')), to: iso(q.get('to')), kind: q.get('kind') ?? undefined, q: q.get('q') ?? undefined,
+          direction: q.get('direction') ?? undefined, offset: Number(q.get('offset')) || 0, limit: Number(q.get('limit')) || 50 }));
+      }
       if (p === '/api/intake' && write) {
         const b = await body<any>(req);
         store.addIntake({ src: str(b.src, 'src', 200), who: optStr(b.who, 100) ?? '', text: str(b.text, 'text', 2000), verdict: str(b.verdict, 'verdict', 100), taskId: optStr(b.taskId, 20) ?? null,

@@ -1,8 +1,9 @@
 import { IntakeControl } from '../intake-control';
 import { useEffect, useState } from 'react';
-import { STAGES, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
+import { STAGES, type IntakeItem, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
 import { act, ago, agoText, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, toast, usePage, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
+import { DateRange, FilterBar, Pager, rangeBounds, Search, type Range } from '../filters';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
@@ -305,30 +306,49 @@ export function TaskPage({ id }: { id: string }) {
 
 export function Intake() {
   const snap = useSnap()!;
-  const [filter, setFilter] = useState<'All' | 'Filed' | 'To lead' | 'Dropped'>('All');
+  const [filter, setFilter] = useState<'All' | 'Filed' | 'To lead' | 'Dropped' | 'Check thread'>('All');
+  const [range, setRange] = useState<Range>({ id: '7 days' });
+  const [dir, setDir] = useState<'Both' | 'Inbound' | 'Outbound'>('Both');
+  const [q, setQ] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(50);
+  const [list, setList] = useState<{ items: IntakeItem[]; total: number } | null>(null);
+  const filterKey = JSON.stringify([filter, range, dir, q.trim(), limit]);
+  useEffect(() => setOffset(0), [filterKey]);
+  // The server pages the whole log; refetch when a new message is logged, so the list stays live.
+  useEffect(() => {
+    const b = rangeBounds(range);
+    const kind = { All: '', Filed: 'filed', 'To lead': 'lead', Dropped: 'dropped', 'Check thread': 'check' }[filter];
+    const qs = new URLSearchParams({ offset: String(offset), limit: String(limit), ...(b.from ? { from: b.from } : {}), ...(b.to ? { to: b.to } : {}),
+      ...(kind ? { kind } : {}), ...(dir !== 'Both' ? { direction: dir.toLowerCase() } : {}), ...(q.trim() ? { q: q.trim() } : {}) });
+    const t = setTimeout(() => api<{ items: IntakeItem[]; total: number }>('GET', '/api/intake/page?' + qs).then(setList).catch(() => setList({ items: [], total: 0 })), q ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [filterKey, offset, snap.intake[0]?.id]);
   const [days, setDays] = useState<{ day: string; read: number; filed: number }[]>([]);
   useEffect(() => { api('GET', '/api/intake/days?tz=' + -new Date().getTimezoneOffset()).then(setDays).catch(() => setDays([])); }, [snap.intake[0]?.id]);
-  const isTask = (v: string) => /^(filed|linked)/.test(v);
-  const match = { All: () => true, Filed: (v: string) => isTask(v), 'To lead': (v: string) => v === 'to lead', Dropped: (v: string) => v === 'dropped' };
   // Today's counts come from the server (the snapshot holds only the latest 100 messages), in local days.
   const d0 = new Date();
   const todayKey = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   const today = days.find((d) => d.day === todayKey) ?? { read: 0, filed: 0 };
   const max = Math.max(1, ...days.map((d) => d.read));
   const intakeSession = snap.sessions.find((s) => /intake/i.test(s.name));
-  const intakePage = usePage(snap.intake.filter((i) => match[filter](i.verdict)), 50, filter);
   return (
     <div className="page">
       <Hero eyebrow={'Intake · ' + (intakeSession ? intakeSession.name + ' · ' + (intakeSession.model ?? '') : 'no intake session running')} live={!!intakeSession}
         title={`${today.read} messages read today.`} sub={`${today.filed} became tasks.`}>
-        <Seg label="Filter" value={filter} options={['All', 'Filed', 'To lead', 'Dropped'] as const} onChange={setFilter} />
         <a className="pill" href={href('tasks', 'inbox')}>Open inbox<Arrow /></a>
       </Hero>
+      <FilterBar>
+        <DateRange id="intake-range" value={range} onChange={setRange} />
+        <Seg label="What happened" value={filter} options={['All', 'Filed', 'To lead', 'Dropped', 'Check thread'] as const} onChange={setFilter} />
+        <Seg label="Direction" value={dir} options={['Both', 'Inbound', 'Outbound'] as const} onChange={setDir} />
+        <Search id="intake-q" value={q} onChange={setQ} placeholder="Search text, channel or sender" />
+      </FilterBar>
       <section className="grid12">
         <Card span={8} pad={12}>
-          {intakePage.shown.map((m) => (
+          {(list?.items ?? []).map((m) => (
             <div key={m.id} className="trow row" style={{ gap: '10px 18px', flexWrap: 'wrap' }}>
-              <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }}>{hhmm(m.at)}</span>
+              <span className="mono faint" style={{ width: 48, fontSize: 12, flex: 'none' }} title={new Date(m.at).toLocaleString()}>{range.id === 'Today' ? hhmm(m.at) : new Date(m.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
               <span className="mono dim ellipsis" style={{ flex: '0 1 180px', minWidth: 0, fontSize: 12 }}>{m.src}</span>
               <span className="col" style={{ flex: '1 1 260px', minWidth: 0, gap: 4 }}><span className="ellipsis">{m.text}</span><span className="faint" style={{ fontSize: 12 }}>{m.who}</span></span>
               <span className="row" style={{ gap: 10, marginLeft: 'auto', flex: '0 1 auto', minWidth: 0, maxWidth: '100%' }}>
@@ -338,8 +358,9 @@ export function Intake() {
               </span>
             </div>
           ))}
-          <div className="row" style={{ justifyContent: 'center' }}><More page={intakePage} /></div>
-          {!snap.intake.length && <Empty text="Nothing logged yet. The intake session reports each message it reads with: shiftboss intake --src … --text … --verdict …" />}
+          {list && list.total > 0 && <Pager id="intake-pager" total={list.total} offset={offset} limit={limit} onOffset={setOffset} onLimit={setLimit} />}
+          {!snap.intake.length ? <Empty text="Nothing logged yet. The intake session reports each message it reads with: shiftboss intake --src … --text … --verdict …" />
+            : list && !list.total && <Empty text="Nothing matches these filters." />}
         </Card>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} tone={snap.intakeState.paused ? 'amber' : undefined}>
