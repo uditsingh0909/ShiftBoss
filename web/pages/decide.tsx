@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Approvals } from '../approvals';
-import { STAGES, type AuditEntry, type Need, type PromiseItem } from '../../shared/types';
+import { STAGES, type AuditEntry, type Need, type PromiseItem, type Task } from '../../shared/types';
 import { act, ago, agoText, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
 
@@ -155,6 +155,29 @@ export function NeedsYou() {
 
 // ---------------------------------------------------------------- Promises
 
+/**
+ * Start the work behind a promise: pick a session, then queue the task (ShiftBoss sends the brief when the
+ * session has room, if automatic sending is on) or send the brief now. Shown while the task is not started.
+ */
+function StartWork({ t }: { t: Task }) {
+  const snap = useSnap()!;
+  const [session, setSession] = useState(t.session ?? '');
+  const auto = snap.settings.switches.autoDispatch;
+  const assign = async () => { if (session !== (t.session ?? '')) await api('PATCH', `/api/tasks/${t.id}`, { session: session || null, who: 'you' }); };
+  const queue = () => act(async () => { await assign(); await api('PATCH', `/api/tasks/${t.id}`, { stage: 1, held: false, who: 'you' }); },
+    auto ? `${t.id} queued · the brief goes to ${session} when it has room` : `${t.id} queued · press Send brief when ready (automatic sending is off)`);
+  const send = () => act(async () => { await assign(); await api('POST', `/api/tasks/${t.id}/dispatch`, {}); }, `Brief for ${t.id} sent to ${session}`);
+  return (
+    <div className="row well" style={{ gap: 8, padding: '8px 12px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <span className="faint" style={{ fontSize: 12 }}>{t.stage === 1 ? `Queued${t.held ? ', on hold' : ''}.` : 'Not started.'} Start the work:</span>
+      <Pick width={170} label={`Session for ${t.id}`} value={session} onChange={setSession}
+        options={[{ value: '', label: 'Pick a session' }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} placeholder="Session…" />
+      {t.stage === 0 && <button type="button" className="pill sm" disabled={!session} onClick={() => void queue()} title={auto ? 'ShiftBoss sends the brief when the session has room' : 'Waits in Queued until you send it'}>Queue</button>}
+      <button type="button" className="pill sm w" disabled={!session} onClick={() => void send()}>Send brief now</button>
+    </div>
+  );
+}
+
 const promiseColor = (s: PromiseItem['state']) => (s === 'due' ? C.red : s === 'ready' ? C.amber : s === 'open' ? C.fg : s === 'kept' ? C.green : C.faint);
 
 export function Promises() {
@@ -197,6 +220,7 @@ export function Promises() {
               </div>
               <blockquote style={{ margin: 0, fontSize: 18, lineHeight: 1.45 }}>“{p.said}”</blockquote>
               {p.keptWhen && <span className="dim" style={{ fontSize: 13 }}>Kept when: {p.keptWhen}</span>}
+              {(() => { const t = snap.tasks.find((x) => x.id === p.taskId); return t && t.stage <= 1 && p.state !== 'kept' ? <StartWork t={t} /> : null; })()}
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <DirectionChip d={p.direction} />
                 {p.link ? <SourceButton url={p.link.url} via={p.link.via} what={p.said} /> : <NoSourceLink />}
