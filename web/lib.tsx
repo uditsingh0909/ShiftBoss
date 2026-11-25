@@ -157,7 +157,8 @@ export function More({ page }: { page: { left: number; more: () => void; size: n
 // ---------- dropdowns ----------
 // The browser draws <select> and <datalist> popups itself (white border, blue highlight), so they
 // cannot match the UI. Pick is our own: a button (or a text box, with `free`) and a dark list.
-export type PickOption = { value: string; label?: string; hint?: string };
+/** `action`: a command row ("Create new session"), drawn with a plus icon and a line under it, not a choice. */
+export type PickOption = { value: string; label?: string; hint?: string; action?: boolean };
 
 export function Pick({ id, value, options, onChange, placeholder, free, width, label, pill, prefix }: {
   id?: string; value: string; options: PickOption[]; onChange: (v: string) => void;
@@ -220,8 +221,13 @@ export function Pick({ id, value, options, onChange, placeholder, free, width, l
       {open && pos && list.length > 0 && createPortal(
         <ul ref={listRef} id={listId} role="listbox" className="pick-list" style={{ position: 'fixed', left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight }}>
           {list.map((o, i) => (
-            <li key={o.value} role="option" aria-selected={o.value === value} className={i === hi ? 'hi' : ''}
+            <li key={o.value} role="option" aria-selected={o.value === value} className={(i === hi ? 'hi' : '') + (o.action ? ' pick-action' : '')}
               onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); choose(o.value); }}>
+              {o.action && (
+                <span className="pick-plus" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                </span>
+              )}
               <span className="ellipsis" style={{ flex: '1 1 auto', minWidth: 0 }}>{o.label ?? o.value}</span>
               {o.hint && <span className="faint ellipsis" style={{ fontSize: 12, flex: 'none', maxWidth: '45%' }}>{o.hint}</span>}
               <span aria-hidden="true" style={{ width: 14, flex: 'none', color: C.green }}>{o.value === value ? '✓' : ''}</span>

@@ -65,8 +65,8 @@ function NewTask({ onDone }: { onDone: () => void }) {
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="nt-ask" className="label">The ask, in their words</label><textarea id="nt-ask" className="field" rows={2} value={f.ask} onChange={(e) => setF({ ...f, ask: e.target.value })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><span className="label">Priority</span><Seg label="Priority" value={f.prio} options={['P1', 'P2', 'P3'] as const} onChange={(p) => setF({ ...f, prio: p })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 2' }}><label htmlFor="nt-s" className="label">Session</label>
-          <Pick id="nt-s" value={f.session} onChange={(v) => setF({ ...f, session: v })} options={[{ value: '', label: 'Inbox (triage later)' }, ...snap.sessions.map((s) => ({ value: s.name, hint: s.lane || undefined })),
-            { value: NEW_SESSION, label: 'New session for it…', hint: 'starts it now' }]} /></div>
+          <Pick id="nt-s" value={f.session} onChange={(v) => setF({ ...f, session: v })} options={[{ value: NEW_SESSION, label: 'Create new session', action: true },
+            { value: '', label: 'Inbox (triage later)' }, ...snap.sessions.map((s) => ({ value: s.name, hint: s.lane || undefined }))]} /></div>
         <div style={{ gridColumn: 'span 2' }}>{f.session !== NEW_SESSION && <button type="submit" className="pill w" disabled={!f.title.trim()}>Add<Arrow dark /></button>}</div>
         {f.session === NEW_SESSION && (
           <div style={{ gridColumn: '1 / -1' }}>

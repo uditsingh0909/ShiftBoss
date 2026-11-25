@@ -220,3 +220,7 @@ input[type="checkbox"] { accent-color: #F4F4F5; width: 16px; height: 16px; flex:
   .seg { flex-wrap: wrap; max-width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* A command row at the top of a Pick list (e.g. Create new session): plus icon, stronger label, a line under it. */
+.pick-list li.pick-action { font-weight: 500; color: var(--fg); border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 4px; padding-bottom: 10px; }
+.pick-plus { width: 22px; height: 22px; flex: none; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--fg); color: var(--bg); }

@@ -67,8 +67,8 @@ export function SessionPick({ task, value, onChange, width = 150, label, emptyLa
     <>
       <Pick id={id} pill={pill} prefix={prefix} width={width} label={label} value={value} placeholder={placeholder}
         onChange={(v) => { if (v === NEW_SESSION) setCreating(true); else { setCreating(false); onChange(v); } }}
-        options={[{ value: '', label: emptyLabel }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status })),
-          ...(canStart ? [{ value: NEW_SESSION, label: 'New session for this task…', hint: 'starts it now' }] : [])]} />
+        options={[...(canStart ? [{ value: NEW_SESSION, label: 'Create new session', action: true }] : []),
+          { value: '', label: emptyLabel }, ...snap.sessions.map((x) => ({ value: x.name, hint: x.status }))]} />
       {creating && <NewSessionForm task={task} onDone={() => setCreating(false)} compact />}
     </>
   );
