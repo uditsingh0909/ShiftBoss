@@ -122,6 +122,7 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
           <button type="button" className="side-toggle" onClick={toggle} aria-pressed={collapsed} aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
             <span className="st-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F4F5" strokeWidth="1.25" aria-hidden="true" style={{ flex: 'none' }}><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M8 9h8M8 12h5M8 15h7" /></svg></span>
             <span className="st-drawer">{I('M4 5h16v14H4zM9.5 5v14')}</span>
+            <span className="st-live" title={connected ? 'Live' : 'Reconnecting'} style={{ background: connected ? C.green : C.red }} aria-hidden="true" />
           </button>
           <button type="button" className="icon-btn side-close" aria-label="Close menu" onClick={close}>{I('M6 6l12 12M18 6L6 18')}</button>
         </div>

@@ -1760,3 +1760,26 @@ describe('lead chat', () => {
     expect(all.map((m) => [m.role, m.text, m.state])).toEqual([['you', 'hi', 'seen'], ['lead', 'Hello', 'reply']]);
   });
 });
+
+describe('lead chat store', () => {
+  test('clear lasts: turns the transcript still holds do not come back', () => {
+    const s = mem();
+    s.syncChat('lead', [{ key: 'r:1', at: 1000, role: 'lead', text: 'old' }]);
+    s.clearChat(2000);
+    s.syncChat('lead', [{ key: 'r:1', at: 1000, role: 'lead', text: 'old' }, { key: 'r:2', at: 3000, role: 'lead', text: 'new' }]);
+    expect(s.listChat().map((m) => m.text)).toEqual(['new']);
+  });
+  test('an unchanged reply writes nothing', () => {
+    const s = mem();
+    s.syncChat('lead', [{ key: 'r:1', at: 1000, role: 'lead', text: 'same' }]);
+    const before = s.writeCount();
+    s.syncChat('lead', [{ key: 'r:1', at: 1000, role: 'lead', text: 'same' }]);
+    expect(s.writeCount()).toBe(before);
+  });
+  test('a message the transcript shows before the send returns is matched, not doubled', () => {
+    const s = mem();
+    const id = s.addChatOut('lead', 'yes');
+    s.syncChat('lead', [{ key: 'q:1', at: Date.now(), role: 'you', text: 'yes' }]);
+    expect(s.listChat().map((m) => [m.id, m.state])).toEqual([[id, 'seen']]);
+  });
+});

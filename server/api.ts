@@ -634,9 +634,12 @@ export function makeApi(engine: Engine) {
         if (!lead) return fail('No lead session is running. Set one in Settings → Lead session.', 409);
         // ShiftBoss never answers a permission prompt: a message typed into a blocked pane could do exactly that.
         if (lead.status === 'blocked') return fail(`${lead.name} is waiting on a permission prompt: answer it in herdr, then send again`, 409);
-        const g = await engine.act('prompt', { session: lead.name, text: `${CHAT_MARK} ${text}` }, { actor: actorOf(req), by: byOf(req, b), summary: `chat with ${lead.name}`, detail: text.slice(0, 1000) });
-        if (g.status !== 'done') return done(gated(g, () => json({ ok: true })));
-        store.addChatOut(lead.name, text);
+        // The row goes in first: the lead's transcript can show the message before herdr returns.
+        const row = store.addChatOut(lead.name, text);
+        let g;
+        try { g = await engine.act('prompt', { session: lead.name, text: `${CHAT_MARK} ${text}` }, { actor: actorOf(req), by: byOf(req, b), summary: `chat with ${lead.name}`, detail: text.slice(0, 1000) }); }
+        catch (e) { store.dropChat(row); throw e; }
+        if (g.status !== 'done') { store.dropChat(row); return done(gated(g, () => json({ ok: true }))); }
         return done(json({ ok: true, lead: lead.name }, 201));
       }
       if (p === '/api/chat/clear' && write) { store.clearChat(); return done(json({ ok: true })); }

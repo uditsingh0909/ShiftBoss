@@ -80,7 +80,7 @@ export function applyLine(st: TranscriptState, raw: string) {
       } else if (c?.type === 'text' && c.text?.trim()) {
         if (st.chatOpen && !d.isSidechain) {
           const last = st.chat[st.chat.length - 1];
-          if (last?.role === 'lead') last.text = (last.text + '\n\n' + c.text.trim()).slice(-8000);
+          if (last?.role === 'lead') last.text = (last.text + '\n\n' + c.text.trim()).slice(0, 8000);
           else st.chat.push({ key: 'r:' + (d.uuid ?? at ?? Date.now()), at: at ?? Date.now(), role: 'lead', text: c.text.trim().slice(0, 8000) });
         }
         st.lines.push({ ts: at ?? Date.now(), at: new Date(at ?? Date.now()).toISOString(), kind: 'say', text: c.text.trim().replace(/\s+/g, ' ').slice(0, 300) });
@@ -94,7 +94,7 @@ export function applyLine(st: TranscriptState, raw: string) {
       if (t) st.lines.push({ ts: at ?? Date.now(), at: new Date(at ?? Date.now()).toISOString(), kind: 'out', text: t.slice(0, 200) });
     } else {
       const t = textOf(content).trim();
-      if (t && !d.isSidechain) {
+      if (t && !d.isSidechain && !t.startsWith('<')) {
         st.chatOpen = t.startsWith(CHAT_MARK);
         if (st.chatOpen) st.chat.push({ key: 'q:' + (d.uuid ?? at ?? Date.now()), at: at ?? Date.now(), role: 'you', text: t.slice(CHAT_MARK.length).trim() });
         if (st.chat.length > 200) st.chat.splice(0, st.chat.length - 200);

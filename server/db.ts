@@ -137,7 +137,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS slack_threads (dest TEXT NOT NULL, thread TEXT NOT NULL, channel TEXT NOT NULL, ts TEXT NOT NULL, title TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY (dest, thread));
       CREATE TABLE IF NOT EXISTS slack_held (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, route TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL,
-        session TEXT NOT NULL, state TEXT NOT NULL, key TEXT UNIQUE);`);
+        session TEXT NOT NULL, state TEXT NOT NULL, key TEXT UNIQUE);
+      CREATE TABLE IF NOT EXISTS chat_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
     const rcols = this.db.query('PRAGMA table_info(replacements)').all() as { name: string }[];
     if (!rcols.some((c) => c.name === 'dismissed_at')) this.db.exec('ALTER TABLE replacements ADD COLUMN dismissed_at TEXT');
     if (!rcols.some((c) => c.name === 'hold_until')) this.db.exec('ALTER TABLE replacements ADD COLUMN hold_until TEXT');
@@ -496,7 +497,9 @@ export class Store {
   }
   /** Bring in what the lead's transcript shows: your messages it picked up, and its replies (which grow while it types). */
   syncChat(session: string, turns: { key: string; at: number; role: 'you' | 'lead'; text: string }[]) {
+    const cleared = Number((this.db.query("SELECT value FROM chat_meta WHERE key = 'cleared_at'").get() as { value: string } | null)?.value ?? 0);
     for (const t of turns) {
+      if (t.at <= cleared) continue; // cleared: the transcript still holds it, the chat does not
       const key = session + ':' + t.key;
       if (t.role === 'you') {
         if (this.db.query('SELECT 1 FROM chat WHERE key = ?').get(key)) continue;
@@ -504,7 +507,8 @@ export class Store {
         if (out) this.db.query("UPDATE chat SET state = 'seen', key = ? WHERE id = ?").run(key, out.id);
         else this.db.query('INSERT OR IGNORE INTO chat (at, role, text, session, state, key) VALUES (?, ?, ?, ?, ?, ?)').run(new Date(t.at).toISOString(), 'you', t.text, session, 'seen', key);
       } else {
-        this.db.query("INSERT INTO chat (at, role, text, session, state, key) VALUES (?, 'lead', ?, ?, 'reply', ?) ON CONFLICT(key) DO UPDATE SET text = excluded.text")
+        // only a reply that grew is written, so an unchanged snapshot stays unchanged (frames are skipped on no writes)
+        this.db.query("INSERT INTO chat (at, role, text, session, state, key) VALUES (?, 'lead', ?, ?, 'reply', ?) ON CONFLICT(key) DO UPDATE SET text = excluded.text WHERE chat.text <> excluded.text")
           .run(new Date(t.at).toISOString(), t.text, session, key);
       }
     }
@@ -513,7 +517,11 @@ export class Store {
     const rows = this.db.query('SELECT id, at, role, text, session, state FROM chat ORDER BY at DESC, id DESC LIMIT ?').all(limit) as ChatMsg[];
     return rows.reverse();
   }
-  clearChat() { this.db.exec('DELETE FROM chat'); }
+  clearChat(nowMs = Date.now()) {
+    this.db.exec('DELETE FROM chat');
+    this.db.query("INSERT INTO chat_meta (key, value) VALUES ('cleared_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(nowMs));
+  }
+  dropChat(id: number) { this.db.query('DELETE FROM chat WHERE id = ?').run(id); }
 
   activeReplacementFor(oldName: string): Replacement | null {
     const r = this.db.query(`SELECT * FROM replacements WHERE old_name = ? AND state NOT IN ('done', 'failed', 'cancelled') ORDER BY id DESC LIMIT 1`).get(oldName);

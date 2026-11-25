@@ -22,13 +22,15 @@ const STATUS: Record<string, [string, string]> = {
   working: ['working', C.fg], idle: ['idle', C.green], done: ['idle', C.green], blocked: ['waiting on a prompt in herdr', C.red], unknown: ['unknown', C.faint], lost: ['not running', C.red],
 };
 
-/** A reply newer than the last time the panel was open. */
-function useUnread(chat: ChatMsg[]): boolean {
-  const last = [...chat].reverse().find((m) => m.role === 'lead');
-  let seen = 0; try { seen = Number(localStorage.getItem('sb-chat-seen') ?? 0); } catch { /* none */ }
-  return !!last && Date.parse(last.at) > seen;
+/** The newest reply as it stands (id and length), so a reply that keeps growing counts as new again. */
+const replySig = (chat: ChatMsg[]) => { const last = [...chat].reverse().find((m) => m.role === 'lead'); return last ? `${last.id}:${last.text.length}` : ''; };
+/** A reply, or more of one, since the panel was last open. */
+function hasUnread(chat: ChatMsg[]): boolean {
+  const sig = replySig(chat); if (!sig) return false;
+  let seen = ''; try { seen = localStorage.getItem('sb-chat-seen') ?? ''; } catch { /* none */ }
+  return sig !== seen;
 }
-const markSeen = () => { try { localStorage.setItem('sb-chat-seen', String(Date.now())); } catch { /* none */ } };
+const markSeen = (chat: ChatMsg[]) => { try { localStorage.setItem('sb-chat-seen', replySig(chat)); } catch { /* none */ } };
 
 // ---------- the panel ----------
 export function LeadChat() {
@@ -44,11 +46,12 @@ export function LeadChat() {
   const lead = snap ? resolveLead(snap.sessions, snap.settings.leadSession ?? '') : null;
   const sig = chat.length + ':' + (chat[chat.length - 1]?.text.length ?? 0);
 
-  useEffect(() => { if (open) { markSeen(); setTimeout(() => box.current?.focus(), 60); } }, [open]);
-  useEffect(() => { if (open) markSeen(); }, [open, sig]);
+  useEffect(() => { if (open) { atBottom.current = true; setTimeout(() => box.current?.focus(), 60); } }, [open]);
+  useEffect(() => { if (open) markSeen(chat); }, [open, sig]);
   useEffect(() => {
     if (!open) return;
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    // Esc closes the chat only while you are in it, so it never also closes the palette or the Floor's selection
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && document.activeElement?.closest('.lc')) setOpen(false); };
     addEventListener('keydown', key);
     return () => removeEventListener('keydown', key);
   }, [open]);
@@ -57,7 +60,7 @@ export function LeadChat() {
   useLayoutEffect(() => { const t = box.current; if (t) { t.style.height = '0'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; } }, [text, open]);
 
   if (!snap) return null;
-  const fresh = !open && useUnread(chat);
+  const fresh = !open && hasUnread(chat);
   const [word, tone] = lead ? STATUS[lead.status] ?? STATUS.unknown : ['no lead running', C.red];
   const lastYou = [...chat].reverse().find((m) => m.role === 'you');
   const answered = lastYou && chat.some((m) => m.role === 'lead' && m.id > lastYou.id);

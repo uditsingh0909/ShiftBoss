@@ -362,7 +362,11 @@ export class Engine {
         this.pushFeed(who, 'asked the intake for a check now');
         return { ok: true, session: s.name, busy: s.status === 'working' };
       }
-      case 'prompt': await this.herdr.prompt(pane(p.session).paneId, p.text); this.pushFeed(who, '→ ' + p.session); return 'sent';
+      case 'prompt': {
+        // Enter on a permission prompt could approve it: a prompt (held or not) is never typed there.
+        if (pane(p.session).status === 'blocked') throw new Error(`${p.session} is waiting on a permission prompt: answer it in herdr`);
+        await this.herdr.prompt(pane(p.session).paneId, p.text); this.pushFeed(who, '→ ' + p.session); return 'sent';
+      }
       case 'interrupt': {
         if (pane(p.session).status === 'blocked') throw new Error(`${p.session} is waiting on a permission prompt: answer it in herdr`);
         await this.herdr.interrupt(pane(p.session).paneId); this.pushFeed(who, 'interrupted ' + p.session); return 'interrupted';

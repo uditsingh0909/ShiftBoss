@@ -386,3 +386,6 @@ input[type="checkbox"] { accent-color: #F4F4F5; width: 16px; height: 16px; flex:
 .collapsed .side-toggle:hover .st-logo { display: none; }
 .collapsed .side-toggle:hover .st-drawer { display: inline-flex; }
 @media (max-width: 900px) { .side-toggle { display: none; } .collapsed .side-brand { display: flex; } }
+.side-toggle { position: relative; }
+.side-toggle .st-live { display: none; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 99px; border: 1.5px solid #070707; }
+.collapsed .side-toggle .st-live { display: block; }
