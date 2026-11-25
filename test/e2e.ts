@@ -164,6 +164,15 @@ for (const width of [1920, 390]) {
       catch { failures.push(`lists: no date range on ${path}`); }
     }
   } catch (e) { failures.push('lists: ' + (e as Error).message.split('\n')[0]); }
+  // Slack bot setup: offered on Get started and in Settings; unconnected it walks through the manifest and token.
+  try {
+    await page.goto(BASE + '/welcome');
+    await page.getByText('Get alerts in Slack', { exact: false }).first().waitFor({ timeout: 6000 });
+    await page.goto(BASE + '/settings/slack');
+    await page.getByText('Slack (optional)', { exact: false }).first().waitFor({ timeout: 6000 });
+    const connected = await page.getByRole('button', { name: 'Disconnect' }).count();
+    if (!connected && !(await page.getByRole('button', { name: 'Copy manifest' }).count())) failures.push('slack: no Copy manifest button before connecting');
+  } catch (e) { failures.push('slack: ' + (e as Error).message.split('\n')[0]); }
   await page.close();
 }
 await browser.close();
