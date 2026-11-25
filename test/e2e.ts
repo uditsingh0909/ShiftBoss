@@ -44,8 +44,9 @@ const chrome = findChrome();
 if (!chrome) { console.log('No Chrome, Edge or Chromium found. Set CHROME_PATH to one, or run: bunx playwright install chromium'); process.exit(2); }
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }); // WebGL for the Floor
 const failures: string[] = [];
-for (const width of [1920, 390]) {
-  const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 1080 } });
+// 1920 desktop, 1080 a vertical monitor (or a half-screen window), 390 a phone
+for (const width of [1920, 1080, 390]) {
+  const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : width === 1080 ? 1920 : 1080 } });
   // Guided tours would cover the screenshots; mark every page's tour as seen.
   await page.addInitScript(() => localStorage.setItem('shiftboss-tour-seen', JSON.stringify(['home', 'tasks', 'task', 'needs', 'promises', 'intake', 'session', 'settings', 'welcome'])));
   const errs: string[] = [];
@@ -59,7 +60,7 @@ for (const width of [1920, 390]) {
     } catch { failures.push(`${width}px ${name}: did not show "${expect}"`); }
     await page.waitForTimeout(1500); // let entry animations finish before measuring
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-    if (overflow && width === 390) failures.push(`${width}px ${name}: page scrolls sideways`);
+    if (overflow && width < 1920) failures.push(`${width}px ${name}: page scrolls sideways`);
     for (const e of errs) failures.push(`${width}px ${name}: ${e}`);
     await page.screenshot({ path: join(OUT, `${name}-${width}.png`), fullPage: false });
     // Dropdowns: the open list must be on top of everything (cards are their own layers).
@@ -177,4 +178,4 @@ for (const width of [1920, 390]) {
 }
 await browser.close();
 if (failures.length) { console.log(failures.join('\n')); process.exit(1); }
-console.log(`ok: ${routes.length} screens x 2 widths, screenshots in ${OUT}`);
+console.log(`ok: ${routes.length} screens x 3 widths, screenshots in ${OUT}`);

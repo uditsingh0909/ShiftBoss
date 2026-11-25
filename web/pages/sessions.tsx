@@ -476,7 +476,7 @@ export function CommandCenter() {
 
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
           <Card span={4} delay={80}>
-            <div className="row" style={{ justifyContent: 'space-between' }}><span className="eyebrow">Context pressure</span><span className="faint" style={{ fontSize: 12 }}>replace at {th.replace}%</span></div>
+            <div className="row" style={{ justifyContent: 'space-between' }}><span className="eyebrow">Context pressure</span><span className="faint" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>replace at {th.replace}%</span></div>
             {[...snap.sessions].sort((a, b) => b.contextPct - a.contextPct).slice(0, 5).map((s) => (
               <a key={s.name} href={href('session', s.name)} className="col" style={{ gap: 8 }}>
                 <span className="row" style={{ justifyContent: 'space-between' }}><span className="mono ellipsis" style={{ fontSize: 13 }}>{s.name}</span><span className="mono" style={{ fontSize: 13, color: ctxColor(s.contextPct, th.warn, th.replace) }}>{Math.round(s.contextPct)}%</span></span>
@@ -711,9 +711,9 @@ export function Health() {
       <section className="grid12">
         {cards.map((h, i) => (
           <Card key={h.session} span={6} delay={i * 50} tone={VC[h.verdict] === C.red ? 'red' : undefined} pad={26}>
-            <div className="row" style={{ gap: 12 }}><Dot color={VC[h.verdict]} /><a className="mono" style={{ fontSize: 18 }} href={href('session', h.session)}>{h.session}</a><span className="eyebrow" style={{ borderColor: VC[h.verdict], color: VC[h.verdict] }}>{h.verdict}</span></div>
+            <div className="row" style={{ gap: 12 }}><Dot color={VC[h.verdict]} /><a className="mono ellipsis" style={{ fontSize: 18, flex: 1, minWidth: 0 }} title={h.session} href={href('session', h.session)}>{h.session}</a><span className="eyebrow" style={{ borderColor: VC[h.verdict], color: VC[h.verdict] }}>{h.verdict}</span></div>
             <h2 style={{ fontSize: 22, lineHeight: 1.3 }}>{h.title}</h2>
-            {h.signals.map((sg) => <div key={sg.k} className="row well" style={{ gap: 12, padding: '10px 14px', fontSize: 13 }}><span className="mono" style={{ width: 70, fontSize: 11, color: toneColor(sg.tone) }}>{sg.k}</span><span className="dim" style={{ flex: 1, wordBreak: 'break-word' }}>{sg.v}</span></div>)}
+            {h.signals.map((sg) => <div key={sg.k} className="row well" style={{ gap: 12, padding: '10px 14px', fontSize: 13 }}><span className="mono" style={{ width: 84, flex: 'none', whiteSpace: 'nowrap', fontSize: 11, color: toneColor(sg.tone) }}>{sg.k}</span><span className="dim" style={{ flex: 1, wordBreak: 'break-word' }}>{sg.v}</span></div>)}
             {h.loop.length > 0 && <pre className="mono" style={{ margin: 0, padding: '12px 14px', borderRadius: 12, border: '1px dashed rgba(245,165,36,0.35)', fontSize: 12, color: C.dim, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{h.loop.join('\n')}</pre>}
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <span className="faint" style={{ fontSize: 12, marginRight: 'auto' }}>Suggested: {h.suggest}</span>

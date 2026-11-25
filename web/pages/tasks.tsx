@@ -60,7 +60,7 @@ function NewTask({ onDone }: { onDone: () => void }) {
   const submit = () => act(async () => { await api('POST', '/api/tasks', { ...f, session: f.session || null, who: 'you' }); onDone(); }, 'Added to the inbox');
   return (
     <section className="shell rise" aria-label="New task">
-      <form className="core" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 16, alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); if (f.title.trim()) void submit(); }}>
+      <form className="core grid12" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 16, alignItems: 'end' }} onSubmit={(e) => { e.preventDefault(); if (f.title.trim()) void submit(); }}>
         <div className="col" style={{ gap: 8, gridColumn: 'span 6' }}><label htmlFor="nt-title" className="label">What needs doing</label><input id="nt-title" className="field" required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="e.g. Fix the billing export" /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="nt-req" className="label">Asked by</label><input id="nt-req" className="field" value={f.requester} onChange={(e) => setF({ ...f, requester: e.target.value })} /></div>
         <div className="col" style={{ gap: 8, gridColumn: 'span 3' }}><label htmlFor="nt-src" className="label">Where</label><input id="nt-src" className="field" value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} placeholder="#channel or meeting" /></div>

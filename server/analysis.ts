@@ -39,7 +39,7 @@ export function healthOf(s: Session, tools: ToolCall[], tasks: Task[], set: Sett
       hits.slice(-4).map((h) => clockTime(h.at) + '  ' + h.key.split(':').slice(1).join(':').slice(0, 120)));
   }
   if (s.status !== 'working' && working.length && silentMin >= t.stuckMin) {
-    return card('stuck', `No output for ${Math.round(silentMin)} minutes with ${working.length} task${working.length === 1 ? '' : 's'} in progress.`,
+    return card('stuck', `${Number.isFinite(silentMin) ? `No output for ${Math.round(silentMin)} minutes` : 'No output seen yet'} with ${working.length} task${working.length === 1 ? '' : 's'} in progress.`,
       [{ k: 'silent', v: 'last activity ' + (s.lastActivity ? clockTime(s.lastActivity) : 'unknown'), tone: 'red' }, { k: 'in progress', v: working.map((q) => q.id).join(', '), tone: 'amber' }],
       'ask it how ' + working[0].id + ' is going');
   }
