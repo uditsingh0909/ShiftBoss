@@ -136,6 +136,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS slack_held (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, route TEXT NOT NULL, at TEXT NOT NULL);`);
     const rcols = this.db.query('PRAGMA table_info(replacements)').all() as { name: string }[];
     if (!rcols.some((c) => c.name === 'dismissed_at')) this.db.exec('ALTER TABLE replacements ADD COLUMN dismissed_at TEXT');
+    if (!rcols.some((c) => c.name === 'hold_until')) this.db.exec('ALTER TABLE replacements ADD COLUMN hold_until TEXT');
     if (!rcols.some((c) => c.name === 'closed_at')) {
       this.db.exec('ALTER TABLE replacements ADD COLUMN closed_at TEXT');
       // Replacements finished before auto-close existed stay the owner's to close: only recent ones (2 h) are closed for them.
@@ -440,8 +441,13 @@ export class Store {
   private rowRepl = (r: any): Replacement => ({
     id: r.id, oldName: r.old_name, newName: r.new_name, cwd: r.cwd, model: r.model, handoffPath: r.handoff_path, sessionId: r.session_id,
     transcriptPath: r.transcript_path, state: r.state, startedAt: r.started_at, updatedAt: r.updated_at, requestedAt: r.requested_at,
-    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'), closedAt: r.closed_at ?? null, dismissedAt: r.dismissed_at ?? null,
+    promptedAt: r.prompted_at, error: r.error, missing: JSON.parse(r.missing || '[]'), closedAt: r.closed_at ?? null, dismissedAt: r.dismissed_at ?? null, holdUntil: r.hold_until ?? null,
   });
+  /** Keep the old session open until this time (null: the normal rule again). */
+  holdReplacement(id: number, until: string | null) {
+    if (!this.getReplacement(id)) throw new NotFound('No replacement ' + id);
+    this.db.query('UPDATE replacements SET hold_until = ? WHERE id = ?').run(until, id);
+  }
   /** Hide a finished replacement from the list. One still under way must be cancelled instead. */
   dismissReplacement(id: number) {
     const r = this.getReplacement(id);

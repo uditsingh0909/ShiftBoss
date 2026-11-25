@@ -7,6 +7,12 @@ import type { OutputLine } from '../shared/types';
 const INITIAL_TAIL = 4 * 1024 * 1024; // first read: last 4 MB only
 
 export interface ToolCall { at: number; name: string; key: string; files: string[] }
+/** A session made a scheduled job (CronCreate) newer than its last CronDelete: closing it would drop the job. */
+export function holdsScheduledJob(tools: ToolCall[], nowMs = Date.now()): boolean {
+  let made = 0, deleted = 0;
+  for (const t of tools) { if (t.name === 'CronCreate') made = Math.max(made, t.at); else if (t.name === 'CronDelete') deleted = Math.max(deleted, t.at); }
+  return made > deleted && nowMs - made < 7 * 864e5;
+}
 
 export interface TranscriptState {
   path: string;

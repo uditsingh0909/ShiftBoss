@@ -79,6 +79,7 @@ Everything you can do in ShiftBoss, from the command line:
   shiftboss session screen <name>                 what its terminal shows now
   shiftboss session lane <name> "<lane>" [--slots N]
   shiftboss session cancel-replace <id>
+  shiftboss session hold-replace <id> <ISO time|off>   keep the old session open (no auto-close) until then
   shiftboss session dismiss-replace <id>          remove a finished replacement from the list
   shiftboss monitor pause|resume|stop|check|resolve <id> [--note T]   (check = see if a fix worked; resolve = dismiss, the note is told to every later check)
   shiftboss monitor note <id> "<text>"            a note every later check is told, e.g. what is intended
@@ -390,6 +391,11 @@ could not reach: ${r.failed.join(', ')}` : ''}`);
       if (sub === 'interrupt') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/interrupt`, {}); return console.log('interrupted ' + a1); }
       if (sub === 'screen') { const r = await call('GET', `/api/sessions/${encodeURIComponent(a1)}/screen`); return console.log(r.text); }
       if (sub === 'lane') { await call('POST', `/api/sessions/${encodeURIComponent(a1)}/meta`, { lane: a2 ?? '', ...(flags.slots ? { slots: Number(flags.slots) } : {}) }); return console.log(`${a1}: lane saved`); }
+      if (sub === 'hold-replace') {
+        if (!a1) throw new Error('usage: shiftboss session hold-replace <id> <ISO time|off>');
+        const r = await call('POST', `/api/replacements/${a1}/hold`, { until: !a2 || a2 === 'off' ? null : a2 });
+        return console.log(r.holdUntil ? `${r.oldName} stays open until ${r.holdUntil}` : `${r.oldName} closes on the normal rule`);
+      }
       if (sub === 'dismiss-replace') { await call('POST', `/api/replacements/${a1}/dismiss`, {}); return console.log('removed from the list'); }
       if (sub === 'cancel-replace') { await call('POST', `/api/replacements/${a1}/cancel`, {}); return console.log('replacement cancelled'); }
       if (sub === 'outside') {

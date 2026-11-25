@@ -11,7 +11,7 @@ import { buildReport } from '../server/report';
 import { contextPercent, parseFooter } from '../server/statusline';
 import { mergeSettings } from '../server/settings';
 import { checkRequest, safeUrl } from '../server/guard';
-import { applyLine, splitLines, Transcripts, type TranscriptState } from '../server/transcripts';
+import { applyLine, holdsScheduledJob, splitLines, Transcripts, type TranscriptState } from '../server/transcripts';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { listOutside, readOutside, suggestName } from '../server/outside';
@@ -1426,6 +1426,28 @@ describe('monitors', () => {
     s.updateReplacement(r.id, { state: 'done' });
     s.dismissReplacement(r.id);
     expect(s.listReplacements().some((x) => x.id === r.id)).toBe(false);
+  });
+
+  test('a hold, or a scheduled job it made, keeps a replaced session open', async () => {
+    const store = mem();
+    store.saveSettings({ ...store.settings(), mode: 'auto', closeOldAfterMin: 30 });
+    const closed: string[] = [];
+    const e = new Engine(loadConfig(), store, { close: async (pane: string) => { closed.push(pane); } } as any);
+    e.herdrOk = true;
+    const r = store.addReplacement({ oldName: 'web', newName: 'web-v2', cwd: '/x', model: null, handoffPath: '/x/h.md', sessionId: null, transcriptPath: null });
+    const T = Date.now();
+    store.updateReplacement(r.id, { state: 'done', promptedAt: new Date(T).toISOString() });
+    store.holdReplacement(r.id, new Date(T + 60 * 60e3).toISOString());
+    e.sessions = [session({ name: 'web', paneId: 'p-old', status: 'idle', sessionId: null }), session({ name: 'web-v2', paneId: 'p-new', status: 'idle' })];
+    await e.closeReplaced(T + 40 * 60e3);
+    expect(closed).toEqual([]); // held until T+60
+    await e.closeReplaced(T + 61 * 60e3);
+    expect(closed).toEqual(['p-old']);
+    // Scheduled jobs: made and not deleted (within 7 days) holds; deleted later does not.
+    const now = Date.now();
+    expect(holdsScheduledJob([{ at: now - 60e3, name: 'CronCreate', key: '', files: [] }], now)).toBe(true);
+    expect(holdsScheduledJob([{ at: now - 60e3, name: 'CronCreate', key: '', files: [] }, { at: now - 30e3, name: 'CronDelete', key: '', files: [] }], now)).toBe(false);
+    expect(holdsScheduledJob([{ at: now - 8 * 864e5, name: 'CronCreate', key: '', files: [] }], now)).toBe(false);
   });
 
   test('telling the lead is routine: it runs in Safe auto, waits in Ask first', () => {

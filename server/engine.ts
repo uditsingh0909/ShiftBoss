@@ -10,7 +10,7 @@ import { Store } from './db';
 import { Herdr, nameOf, type HerdrAgent } from './herdr';
 import { contextPercent, parseFooter, readTap, type StatusInfo } from './statusline';
 import { contains, fetchPr, gh, targetStage, taskIdsIn } from './github';
-import { heatOf, Transcripts } from './transcripts';
+import { heatOf, holdsScheduledJob, Transcripts } from './transcripts';
 import { HANDOFF_TIMEOUT_MS, handoffCheck, handoffPathFor, handoffRequest, isStartupQuestion, modelArg, nextReplacementName, replacementPrompt, type SpawnSpec } from './fleet';
 import { setupInfo } from './setup';
 import { actionKey, decide, type ActionKind, type Actor } from './gate';
@@ -763,6 +763,9 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
         if (!succ || succ.status === 'lost') { this.noteClose(r, `${r.newName} is not running`); continue; }
         if (old.status === 'blocked') { this.noteClose(r, 'it waits on a permission prompt; it closes once you answer it in herdr'); continue; }
         if (old.status === 'working') continue; // busy: next tick
+        if (r.holdUntil && Date.parse(r.holdUntil) > nowMs) { this.noteClose(r, `kept open until ${new Date(r.holdUntil).toTimeString().slice(0, 5)}`); continue; }
+        const tools = old.sessionId ? this.transcripts.read(old.sessionId)?.tools ?? [] : [];
+        if (holdsScheduledJob(tools, nowMs)) { this.noteClose(r, 'it has a scheduled job (CronCreate) that closing would drop; close it yourself when the job has run, or use Keep open until'); continue; }
         const params = { replacementId: r.id };
         if (this.store.wasRejected(actionKey('close-old', params))) continue; // you said no
         await this.act('close-old', params, { actor: 'auto', by: 'shiftboss', summary: `Close ${r.oldName}: ${r.newName} took over ${min}+ min ago`, detail: 'Its transcript stays, so it can be resumed.' });

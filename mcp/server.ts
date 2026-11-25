@@ -452,9 +452,10 @@ server.registerTool('slack_bot', {
 
 server.registerTool('replacement_cancel', {
   title: 'Cancel a replacement',
-  description: 'Stops a session replacement that has not finished. With dismiss: true, removes a finished one (done, failed or cancelled) from the Replacements list instead.',
-  inputSchema: { id: z.number().int(), dismiss: z.boolean().optional() },
-}, wrap(async ({ id, dismiss }) => {
+  description: 'Stops a session replacement that has not finished. With dismiss: true, removes a finished one (done, failed or cancelled) from the Replacements list instead. With hold_until, keeps the old session open (no auto-close) until then, e.g. while it still holds a scheduled job.',
+  inputSchema: { id: z.number().int(), dismiss: z.boolean().optional(), hold_until: z.string().max(40).nullable().optional().describe('Keep the old session open (no auto-close) until this ISO time; null lifts the hold') },
+}, wrap(async ({ id, dismiss, hold_until }) => {
+  if (hold_until !== undefined) { const r = await call('POST', `/api/replacements/${id}/hold`, { until: hold_until }); return r.holdUntil ? `${r.oldName} stays open until ${r.holdUntil}` : `${r.oldName} closes on the normal rule`; }
   if (dismiss) { await call('POST', `/api/replacements/${id}/dismiss`, {}); return `replacement ${id} removed from the list`; }
   await call('POST', `/api/replacements/${id}/cancel`, {}); return `replacement ${id} cancelled`;
 }));

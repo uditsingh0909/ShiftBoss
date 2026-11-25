@@ -344,6 +344,17 @@ export function makeApi(engine: Engine) {
           return results.some((x) => x.id) ? json({ results }, 202) : json({ error: results.map((x) => x.error).join('; '), results }, 400);
         }));
       }
+      r = m(/^\/api\/replacements\/(\d+)\/hold$/);
+      if (r && write) {
+        const b = await body<any>(req);
+        const until = b.until === null || b.until === '' || b.until === undefined ? null : new Date(String(b.until));
+        if (until && Number.isNaN(until.getTime())) throw new Error('until must be a date and time');
+        store.holdReplacement(Number(r[1]), until ? until.toISOString() : null);
+        const rep = store.getReplacement(Number(r[1]))!;
+        engine.pushFeed(req.headers.get('x-shiftboss-by') || (actorOf(req) === 'owner' ? 'you' : 'a session'),
+          until ? `keeps ${rep.oldName} open until ${until.toTimeString().slice(0, 5)}` : `lets ${rep.oldName} close on the normal rule`);
+        return done(json(rep));
+      }
       r = m(/^\/api\/replacements\/(\d+)\/dismiss$/);
       if (r && write) { store.dismissReplacement(Number(r[1])); return done(json({ ok: true })); }
       // ----- the optional Slack bot (server/slack.ts); the token never leaves this machine's database -----

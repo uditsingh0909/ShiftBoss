@@ -301,6 +301,8 @@ export interface Replacement {
   closedAt: string | null;
   /** Hidden from the Replacements list by the owner. */
   dismissedAt: string | null;
+  /** Do not auto-close the old session before this time (e.g. it still holds a scheduled job). */
+  holdUntil: string | null;
 }
 
 /** An action ShiftBoss held back: waiting for approval, or recorded in Dry run. */

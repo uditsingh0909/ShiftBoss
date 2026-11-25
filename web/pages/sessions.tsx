@@ -281,6 +281,7 @@ function replNote(r: Replacement, closeMin = 30): { text: string; tone: string }
     case 'moved': return { text: r.error ?? `Tasks moved. Waiting for ${r.newName} to be ready for its first prompt.`, tone: C.amber };
     case 'done': {
       if (r.closedAt) return { text: `${r.newName} took over. ${r.oldName} is closed.`, tone: C.green };
+      if (r.holdUntil && Date.parse(r.holdUntil) > Date.now()) return { text: `${r.newName} took over. ${r.oldName} is kept open until ${hhmm(r.holdUntil)}, then closes when idle.`, tone: C.amber };
       if (!closeMin || !r.promptedAt) return { text: `${r.newName} took over. ${r.oldName} can be closed when you are ready (Settings: Automation).`, tone: C.green };
       const at = Date.parse(r.promptedAt) + closeMin * 60e3;
       return { text: `${r.newName} took over. ${r.oldName} closes ${at > Date.now() ? 'at ' + new Date(at).toTimeString().slice(0, 5) : 'once it is idle'} (not while it works or waits on a prompt).`, tone: C.green };
@@ -288,6 +289,30 @@ function replNote(r: Replacement, closeMin = 30): { text: string; tone: string }
     case 'failed': return { text: r.error ?? 'Failed.', tone: C.red };
     case 'cancelled': return { text: 'Cancelled.', tone: C.faint };
   }
+}
+
+/** Keep a replaced session open until a time (it may still hold a scheduled job), or lift the hold. */
+function KeepOpen({ r }: { r: Replacement }) {
+  const [open, setOpen] = useState(false);
+  const d = new Date(Date.now() + 60 * 60e3);
+  const [t, setT] = useState(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+  const held = !!r.holdUntil && Date.parse(r.holdUntil) > Date.now();
+  const save = () => {
+    const [h, m] = t.split(':').map(Number);
+    const at = new Date(); at.setHours(h, m, 0, 0);
+    if (at.getTime() < Date.now()) at.setDate(at.getDate() + 1); // a time already past today means tomorrow
+    return act(async () => { await api('POST', `/api/replacements/${r.id}/hold`, { until: at.toISOString() }); setOpen(false); }, `${r.oldName} stays open until ${t}`);
+  };
+  if (held && !open) return <button type="button" className="pill sm" onClick={() => void act(() => api('POST', `/api/replacements/${r.id}/hold`, { until: null }), `${r.oldName} closes on the normal rule`)}>Let it close</button>;
+  if (!open) return <button type="button" className="pill sm" onClick={() => setOpen(true)}>Keep open…</button>;
+  return (
+    <span className="row" style={{ gap: 6, alignItems: 'center' }}>
+      <label htmlFor={'hold-' + r.id} className="faint" style={{ fontSize: 12 }}>until</label>
+      <input id={'hold-' + r.id} type="time" className="field" style={{ width: 110, height: 34, padding: '0 10px' }} value={t} onChange={(e) => setT(e.target.value)} />
+      <button type="button" className="pill sm w" onClick={() => void save()}>Keep</button>
+      <button type="button" className="pill sm" onClick={() => setOpen(false)}>Cancel</button>
+    </span>
+  );
 }
 
 /** One replacement's progress: the four steps, what it waits on, and cancel while that is still possible. */
@@ -317,6 +342,7 @@ function ReplacementProgress({ r, compact }: { r: Replacement; compact?: boolean
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, color: note.tone, flex: '1 1 240px', overflowWrap: 'anywhere' }}>{note.text}</span>
         {cancellable(r.state) && <button type="button" className="pill sm" onClick={() => act(() => api('POST', `/api/replacements/${r.id}/cancel`), r.state === 'failed' ? 'Dismissed' : 'Cancelled')}>{r.state === 'failed' ? 'Dismiss' : 'Cancel'}</button>}
+        {r.state === 'done' && !r.closedAt && <KeepOpen r={r} />}
         {(r.state === 'done' || r.state === 'cancelled') && <button type="button" className="pill sm" onClick={() => act(() => api('POST', `/api/replacements/${r.id}/dismiss`), 'Removed from the list')}>Dismiss</button>}
       </div>
       {!compact && <span className="mono faint" style={{ fontSize: 11, wordBreak: 'break-all' }}>handoff · {r.handoffPath}</span>}
