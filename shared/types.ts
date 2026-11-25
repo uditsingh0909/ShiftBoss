@@ -378,6 +378,11 @@ export interface MonitorNote { id: number; at: string; by: string; text: string 
 /** Something in Needs attention the owner dismissed, with an optional note. Hidden until it changes. */
 export interface Dismissal { key: string; at: string; what: string; note: string; by: string }
 
+/** The chat with the lead from the side panel. Your messages and the lead's replies to them, nothing else. */
+export interface ChatMsg { id: number; at: string; role: 'you' | 'lead'; text: string; session: string; state: 'sent' | 'seen' | 'reply' }
+/** Marks a prompt as a chat message, so its reply can be told apart from cron check-ins and peer messages. */
+export const CHAT_MARK = '[ShiftBoss chat]';
+
 export interface Snapshot {
   now: string;
   herdrOk: boolean;
@@ -410,6 +415,8 @@ export interface Snapshot {
   dismissed: Dismissal[];
   /** The ShiftBoss Slack bot, if set up. */
   slack: SlackStatus;
+  /** The lead chat: the last messages, newest last. */
+  chat: ChatMsg[];
 }
 
 /** A time of day the way people read it here: 12-hour, in the local time zone ("5:42 PM"). One place, so every screen agrees. */

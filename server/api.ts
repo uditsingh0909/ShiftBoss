@@ -1,6 +1,6 @@
 // HTTP API. Every write needs the X-ShiftBoss header, so a web page on another origin
 // cannot trigger one (the custom header forces a CORS preflight that we never allow).
-import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, taskSessionName, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent, clockTime } from '../shared/types';
+import { MONITOR_DAYS, MONITOR_HOURS, MONITOR_SESSION, resolveLead, taskSessionName, type Need, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent, clockTime, CHAT_MARK } from '../shared/types';
 import { monitorSessionPrompt } from './monitors';
 import type { Engine } from './engine';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -624,6 +624,22 @@ export function makeApi(engine: Engine) {
       if (p === '/api/owner-instructions' && req.method === 'GET') return json({ owner: engine.cfg.ownerName, instructions: store.settings().instructions ?? '' });
       if (p === '/api/intake/days') { const tz = Number(url.searchParams.get('tz') ?? 0); return json(store.intakeCountsByDay(14, Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? tz : 0)); }
       if (p === '/api/decisions' && write) { const b = await body<any>(req); store.addDecision(str(b.text, 'text', 500)); return done(json({ ok: true }, 201)); }
+
+      // ----- lead chat -----
+      if (p === '/api/chat' && write) {
+        const b = await body<any>(req);
+        const text = str(b.text, 'text', 4000).trim();
+        if (!text) return fail('Write a message first', 400);
+        const lead = resolveLead(engine.sessions, store.settings().leadSession ?? '');
+        if (!lead) return fail('No lead session is running. Set one in Settings → Lead session.', 409);
+        // ShiftBoss never answers a permission prompt: a message typed into a blocked pane could do exactly that.
+        if (lead.status === 'blocked') return fail(`${lead.name} is waiting on a permission prompt: answer it in herdr, then send again`, 409);
+        const g = await engine.act('prompt', { session: lead.name, text: `${CHAT_MARK} ${text}` }, { actor: actorOf(req), by: byOf(req, b), summary: `chat with ${lead.name}`, detail: text.slice(0, 1000) });
+        if (g.status !== 'done') return done(gated(g, () => json({ ok: true })));
+        store.addChatOut(lead.name, text);
+        return done(json({ ok: true, lead: lead.name }, 201));
+      }
+      if (p === '/api/chat/clear' && write) { store.clearChat(); return done(json({ ok: true })); }
 
       // ----- sessions -----
       r = m(/^\/api\/sessions\/([^/]+)\/(prompt|focus|interrupt|screen|meta)$/);

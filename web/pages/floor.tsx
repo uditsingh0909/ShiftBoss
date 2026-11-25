@@ -1,5 +1,6 @@
 // The Floor: a full-screen 3D office for a second monitor. Every session sits at a desk; the panels on top show
 // what needs you and what is happening, and follow what you click (a session, a team area or the lounge).
+import { ChatButton, LeadChat } from '../chat';
 import { MODE_LABEL } from '../../server/gate';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clockTime, fmtCache, type Snapshot } from '../../shared/types';
@@ -54,7 +55,7 @@ export function FloorPage() {
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setScope(null); scene.current?.goHome(); }
-      if (e.key === '/' && !(document.activeElement instanceof HTMLInputElement)) { e.preventDefault(); document.getElementById('fl-q')?.focus(); }
+      if (e.key === '/' && !(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) { e.preventDefault(); document.getElementById('fl-q')?.focus(); }
     };
     addEventListener('keydown', on); return () => removeEventListener('keydown', on);
   }, []);
@@ -90,6 +91,7 @@ export function FloorPage() {
       </nav>
       <div className="fl-legend fl-card" aria-label="Colours">{(['working', 'needs', 'stuck', 'finished', 'idle'] as const).map((k) => <span key={k}><i className="dot" style={{ background: DESK_COLOR[k] }} />{DESK_WORD[k]}</span>)}</div>
       </div>
+      <LeadChat />
     </div>
   );
 }
@@ -114,6 +116,7 @@ function TopBar({ snap, model, onFind }: { snap: Snapshot; model: ReturnType<typ
       <span style={{ flex: 1 }} />
       <span className="eyebrow">{MODE_LABEL[snap.settings.mode ?? 'auto']}</span>
       {snap.limits && <span className="fl-meter">5h<i><em style={{ width: `${Math.min(100, snap.limits.fiveHourPct)}%` }} /></i><span className="mono">{Math.round(snap.limits.fiveHourPct)}%</span></span>}
+      <ChatButton variant="floor" />
       <button type="button" className="fl-ibtn" aria-label={`Notifications, ${unread} waiting`} aria-expanded={bell} onClick={() => setBell(!bell)}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20a2 2 0 0 0 4 0" /></svg>
         {unread > 0 && <span className="fl-badge">{unread}</span>}

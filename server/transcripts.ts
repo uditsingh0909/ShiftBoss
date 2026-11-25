@@ -28,7 +28,13 @@ export interface TranscriptState {
   lines: (OutputLine & { ts: number })[];
   lastActivity: number | null;
   prUrls: string[];
+  /** Chat turns: a prompt marked as a chat message, and the assistant text that answers it (until the next prompt). */
+  chat: { key: string; at: number; role: 'you' | 'lead'; text: string }[];
+  chatOpen?: boolean;
 }
+
+/** The chat marker; a copy of shared CHAT_MARK so this file stays free of UI types. */
+const CHAT_MARK = '[ShiftBoss chat]';
 
 function summarize(name: string, input: any): { text: string; key: string; files: string[] } {
   const files: string[] = [];
@@ -72,6 +78,11 @@ export function applyLine(st: TranscriptState, raw: string) {
         if (at) st.tools.push({ at, name: c.name, key: s.key, files: s.files });
         st.lines.push({ ts: at ?? Date.now(), at: new Date(at ?? Date.now()).toISOString(), kind: 'tool', text: s.text });
       } else if (c?.type === 'text' && c.text?.trim()) {
+        if (st.chatOpen && !d.isSidechain) {
+          const last = st.chat[st.chat.length - 1];
+          if (last?.role === 'lead') last.text = (last.text + '\n\n' + c.text.trim()).slice(-8000);
+          else st.chat.push({ key: 'r:' + (d.uuid ?? at ?? Date.now()), at: at ?? Date.now(), role: 'lead', text: c.text.trim().slice(0, 8000) });
+        }
         st.lines.push({ ts: at ?? Date.now(), at: new Date(at ?? Date.now()).toISOString(), kind: 'say', text: c.text.trim().replace(/\s+/g, ' ').slice(0, 300) });
       }
     }
@@ -83,6 +94,11 @@ export function applyLine(st: TranscriptState, raw: string) {
       if (t) st.lines.push({ ts: at ?? Date.now(), at: new Date(at ?? Date.now()).toISOString(), kind: 'out', text: t.slice(0, 200) });
     } else {
       const t = textOf(content).trim();
+      if (t && !d.isSidechain) {
+        st.chatOpen = t.startsWith(CHAT_MARK);
+        if (st.chatOpen) st.chat.push({ key: 'q:' + (d.uuid ?? at ?? Date.now()), at: at ?? Date.now(), role: 'you', text: t.slice(CHAT_MARK.length).trim() });
+        if (st.chat.length > 200) st.chat.splice(0, st.chat.length - 200);
+      }
       if (t && !t.startsWith('<')) st.lines.push({ ts: at ?? Date.now(), at: new Date(at ?? Date.now()).toISOString(), kind: 'you', text: t.replace(/\s+/g, ' ').slice(0, 300) });
     }
   }
@@ -142,7 +158,7 @@ export class Transcripts {
     const size = statSync(path).size;
     if (!st) {
       const offset = Math.max(0, size - INITIAL_TAIL);
-      st = { path, offset, partial: Buffer.alloc(0), skipFirst: offset > 0, model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] };
+      st = { path, offset, partial: Buffer.alloc(0), skipFirst: offset > 0, model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [], chat: [] };
       this.states.set(sessionId, st);
     }
     if (size < st.offset) { st.offset = 0; st.partial = Buffer.alloc(0); st.skipFirst = false; } // file rotated

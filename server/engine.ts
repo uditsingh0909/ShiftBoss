@@ -1000,6 +1000,16 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
     } finally { this.sendingMonitor = false; }
   }
 
+  /** The lead chat: what the lead's transcript shows is brought into the store, then the last messages. */
+  private chat(settings: ReturnType<Store['settings']>) {
+    try {
+      const lead = resolveLead(this.sessions, settings.leadSession ?? '');
+      const st = lead?.sessionId ? this.transcripts.read(lead.sessionId) : null;
+      if (lead && st?.chat.length) this.store.syncChat(lead.name, st.chat);
+      return this.store.listChat(80);
+    } catch { return this.store.listChat(80); }
+  }
+
   snapshot(): Snapshot {
     const settings = this.store.settings();
     const tasks = this.store.listTasks();
@@ -1030,6 +1040,7 @@ ${pr.branch}`).filter((id) => this.store.getTask(id));
       dismissed: this.store.listDismissed(),
       slack: this.slack.status(),
       monitors: this.store.listMonitors(864e5),
+      chat: this.chat(settings),
     };
   }
 }

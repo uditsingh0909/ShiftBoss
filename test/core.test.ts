@@ -176,7 +176,7 @@ describe('status line footer', () => {
 });
 
 describe('transcripts', () => {
-  const blank = (): TranscriptState => ({ path: '', offset: 0, partial: Buffer.alloc(0), model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [] });
+  const blank = (): TranscriptState => ({ path: '', offset: 0, partial: Buffer.alloc(0), model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [], chat: [] });
   test('a character cut across two reads is decoded whole', () => {
     const all = Buffer.from('héllo wörld ✓ done\nnext ✓\npart', 'utf8');
     const cut = all.indexOf(Buffer.from('✓', 'utf8')) + 1; // inside the 3-byte check mark
@@ -1732,5 +1732,31 @@ describe('picking a worn-out session to replace', () => {
   test('the lead goes at its own context line', () => {
     expect(pickWornOut([s('lead', 1e8, 'idle', 45)], { ...base, lead: 'lead' })?.why).toBe('context 45% (line 40%)');
     expect(pickWornOut([s('lead', 1e8, 'idle', 45)], base)).toBeNull();
+  });
+});
+
+describe('lead chat', () => {
+  const { applyLine } = require('../server/transcripts');
+  const st = () => ({ path: '', offset: 0, partial: Buffer.alloc(0), model: null, contextTokens: 0, usage: [], tools: [], lines: [], lastActivity: null, prUrls: [], chat: [] as any[] });
+  const user = (uuid: string, text: string) => JSON.stringify({ type: 'user', uuid, timestamp: '2026-11-25T10:00:00Z', message: { role: 'user', content: text } });
+  const said = (uuid: string, text: string) => JSON.stringify({ type: 'assistant', uuid, timestamp: '2026-11-25T10:00:05Z', message: { role: 'assistant', content: [{ type: 'text', text }] } });
+  test('only a marked prompt and the text that answers it are chat', () => {
+    const s = st();
+    applyLine(s, user('u0', 'cron check-in'));
+    applyLine(s, said('a0', 'nothing new'));
+    applyLine(s, user('u1', '[ShiftBoss chat] what is blocked?'));
+    applyLine(s, said('a1', 'Two things.'));
+    applyLine(s, said('a2', 'The RAM slot and a review.'));
+    applyLine(s, user('u2', 'peer message'));
+    applyLine(s, said('a3', 'noted'));
+    expect(s.chat.map((c: any) => [c.role, c.text])).toEqual([['you', 'what is blocked?'], ['lead', 'Two things.\n\nThe RAM slot and a review.']]);
+  });
+  test('the store matches a sent message once the lead sees it, and a reply grows in place', () => {
+    const s = mem();
+    s.addChatOut('lead', 'hi');
+    s.syncChat('lead', [{ key: 'q:1', at: Date.now(), role: 'you', text: 'hi' }, { key: 'r:1', at: Date.now(), role: 'lead', text: 'Hel' }]);
+    s.syncChat('lead', [{ key: 'q:1', at: Date.now(), role: 'you', text: 'hi' }, { key: 'r:1', at: Date.now(), role: 'lead', text: 'Hello' }]);
+    const all = s.listChat();
+    expect(all.map((m) => [m.role, m.text, m.state])).toEqual([['you', 'hi', 'seen'], ['lead', 'Hello', 'reply']]);
   });
 });

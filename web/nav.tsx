@@ -1,3 +1,4 @@
+import { ChatButton, LeadChat } from './chat';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Snapshot } from '../shared/types';
 import { C, Dot, href, useSnap } from './lib';
@@ -108,6 +109,7 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
           <span className={'dot' + (connected ? ' blink' : '')} style={{ background: connected ? C.green : C.red }} />
         </a>
         <span style={{ flex: 1 }} />
+        <ChatButton variant="icon" />
         <button type="button" className="icon-btn" aria-label="Search or run a command" onClick={onSearch}><SearchIcon /></button>
       </header>
       {open && <div className="side-scrim" onClick={close} aria-hidden="true" />}
@@ -141,6 +143,7 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
           ))}
         </nav>
         <div className="side-foot col">
+          <ChatButton variant="side" />
           <ModeSwitch collapsed={collapsed} onDone={close} />
           <button type="button" className="side-item side-collapse row" onClick={toggle} aria-pressed={collapsed} aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
             <span className="side-ico">{I(collapsed ? 'M10 6l6 6-6 6' : 'M14 6l-6 6 6 6')}</span>
@@ -149,6 +152,7 @@ export function AppFrame({ top, connected, onSearch, children }: { top: string; 
         </div>
       </aside>
       <div className="app-main"><ModeBanner />{children}</div>
+      <LeadChat />
     </div>
   );
 }
