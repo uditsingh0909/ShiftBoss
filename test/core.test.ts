@@ -756,6 +756,15 @@ describe('slack bot', () => {
     expect(logs.filter((l) => l.includes('revoked')).length).toBe(1);
   });
 
+  test('alerts held in quiet hours still go out as a digest after a restart', async () => {
+    const { s, n, calls, snap } = await setup();
+    s.holdSlack('Needs you: held before the restart', '/needs');
+    n.tick(snap()); // first tick after start: not quiet, something held
+    await flush(n);
+    expect(posts(calls).find((x) => x.text.startsWith('*While you were away: 1 thing*'))!.text).toContain('held before the restart');
+    expect(s.heldSlack()).toEqual([]);
+  });
+
   test('quiet hours cross midnight', () => {
     const q = { on: true, from: '22:00', to: '08:00' };
     expect(inQuiet(q, new Date(2026, 0, 1, 23, 0))).toBe(true);

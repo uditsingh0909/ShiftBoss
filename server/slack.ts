@@ -105,7 +105,6 @@ export class SlackNotifier {
   private draining: Promise<void> | null = null;
   private lastSend = 0;
   private dmChannel: { user: string; id: string } | null = null;
-  private wasQuiet = false;
   private ident: { team: string; bot: string } | null = null;
   error: string | null = null;
   private sentDay = '';
@@ -165,9 +164,10 @@ export class SlackNotifier {
     const prev = this.prev;
     this.prev = cur;
     const s = this.settings();
-    if (!prev || !this.token() || (!s.dm.on && !s.channel.on)) return;
+    if (!this.token() || (!s.dm.on && !s.channel.on)) return;
     const quiet = inQuiet(s.quiet, this.now());
-    for (const [k, e] of cur) {
+    // The first snapshot after a start only sets the baseline: what was already there never posts.
+    if (prev) for (const [k, e] of cur) {
       if (prev.has(k)) continue;
       const thread = threadOf(e);
       if (s.dm.on && s.kinds.dm[e.kind]) {
@@ -177,14 +177,14 @@ export class SlackNotifier {
       if (s.channel.on && s.kinds.channel[e.kind]) this.queue.push({ dest: 'channel', text: slackText(e, this.base), thread, title: e.title });
     }
     // Gone since last time: tell the thread it cleared (answered, fixed, unstuck).
-    for (const [k, e] of prev) {
+    if (prev) for (const [k, e] of prev) {
       if (cur.has(k) || !CLEARS.has(e.kind)) continue;
       const thread = threadOf(e);
       if (!thread) continue;
       for (const dest of ['dm', 'channel'] as const) if (this.store.slackThread(dest, thread)) this.queue.push({ dest, text: 'Cleared: ' + esc(e.title), thread, title: '' });
     }
-    // Quiet hours just ended: one digest of what was held.
-    if (this.wasQuiet && !quiet) {
+    // Quiet hours are over (now, or before a restart): one digest of what was held.
+    if (!quiet) {
       const held = this.store.heldSlack();
       if (held.length) {
         const lines = held.slice(0, 15).map((h) => `• <${this.base}${h.route}|${esc(h.title)}>`);
@@ -192,7 +192,6 @@ export class SlackNotifier {
         this.store.clearHeldSlack(held[held.length - 1].id);
       }
     }
-    this.wasQuiet = quiet;
     // A burst (a restart of herdr, a big import) becomes one message per place.
     for (const dest of ['dm', 'channel'] as const) {
       const mine = this.queue.filter((q) => q.dest === dest);
@@ -201,12 +200,16 @@ export class SlackNotifier {
         this.queue.push({ dest, thread: null, title: '', text: `*${mine.length} things happened at once in ShiftBoss*\n` + mine.slice(0, 10).map((q) => '• ' + esc(q.title)).join('\n') + `\n<${this.base}/|Open ShiftBoss>` });
       }
     }
+    // Offline for a while: keep the newest 50, so the queue cannot grow without end.
+    if (this.queue.length > 50) this.queue = this.queue.slice(-50);
     void this.drain();
   }
 
   /** Post the queue one message at a time, about one a second (Slack's limit per channel). */
   drain(): Promise<void> {
-    return (this.draining ??= this.send().finally(() => { this.draining = null; }));
+    // A send already running may have checked the queue before this tick added to it: go again after it.
+    if (this.draining) return this.draining.then(() => (this.queue.length ? this.drain() : undefined));
+    return (this.draining = this.send().finally(() => { this.draining = null; }));
   }
   private async send() {
     {
@@ -232,7 +235,13 @@ export class SlackNotifier {
         } catch (e) {
           const err = e as Error;
           const code = err instanceof SlackError ? err.code : 'network';
-          if (code === 'ratelimited') { this.lastSend = Date.now() + 30_000; continue; }
+          // Slack asked us to slow down, or the network is down: wait 30 s and try the same message again.
+          if (code === 'ratelimited' || code === 'network') {
+            if (code === 'network' && err.message !== this.error) this.log('Slack: cannot reach Slack, retrying (' + err.message.slice(0, 80) + ')');
+            if (code === 'network') this.error = 'Cannot reach Slack; retrying.';
+            this.lastSend = Date.now() + 30_000;
+            continue;
+          }
           if (err.message !== this.error) this.log('Slack: ' + err.message);
           this.error = err.message;
           if (['invalid_auth', 'token_revoked', 'account_inactive', 'not_authed'].includes(code)) { this.queue = []; break; }
