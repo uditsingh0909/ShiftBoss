@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MONITOR_DAYS, MONITOR_HOURS, type Monitor, type MonitorCheck, type MonitorState, type MonitorVerdict } from '../../shared/types';
 import { act, api, Arrow, C, Card, Dot, Empty, Hero, href, Pick, safeHref, Seg, toast, useSnap } from '../lib';
+import { DateRange, FilterBar, inRange, Pager, Search, usePaged, type Range } from '../filters';
 
 type Full = Monitor & { checks: MonitorCheck[] };
 type List = { monitors: Full[]; session: { name: string; status: string; cwd: string } | null; sessionName: string; leadCwd: string | null; startPrompt: string };
@@ -237,7 +238,17 @@ export function Monitors() {
   useEffect(() => { void load(); }, [snap.now]);
   const all = data?.monitors ?? [];
   const order: Record<MonitorState, number> = { alerting: 0, active: 1, paused: 2, finished: 3 };
-  const list = all.filter((m) => show === 'All' || (show === 'Finished') === (m.state === 'finished')).sort((a, b) => order[a.state] - order[b.state] || b.id - a.id);
+  const [range, setRange] = useState<Range>({ id: 'All' });
+  const [state, setState] = useState<'Any' | 'Alerting' | 'Active' | 'Paused'>('Any');
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  // The date is when the monitor started; a check inside the range counts too, so a long watch still shows.
+  const list = all.filter((m) => (show === 'All' || (show === 'Finished') === (m.state === 'finished'))
+    && (state === 'Any' || m.state === state.toLowerCase())
+    && (inRange(m.startedAt, range) || inRange(m.lastCheckAt, range))
+    && (!needle || [m.title, m.prompt, m.lastSummary ?? '', m.taskId ?? '', ...m.notes.map((n) => n.text)].some((x) => x.toLowerCase().includes(needle))))
+    .sort((a, b) => order[a.state] - order[b.state] || b.id - a.id);
+  const paged = usePaged(list, JSON.stringify([show, state, range, needle]), 25);
   const watching = all.filter((m) => m.state !== 'finished').length;
   const alerting = all.filter((m) => m.state === 'alerting').length;
   return (
@@ -248,13 +259,19 @@ export function Monitors() {
         <button type="button" className="pill w" onClick={() => setAdding(!adding)} aria-expanded={adding}>New monitor<Arrow dark /></button>
       </Hero>
       {data && <Card pad={20}><MonitorSession data={data} /></Card>}
+      <FilterBar>
+        <DateRange id="monitors-range" value={range} onChange={setRange} />
+        {show !== 'Finished' && <Seg label="State" value={state} options={['Any', 'Alerting', 'Active', 'Paused'] as const} onChange={setState} />}
+        <Search id="monitors-q" value={q} onChange={setQ} placeholder="Search title, check, findings, notes" />
+      </FilterBar>
       {adding && (
         <section className="shell rise" aria-label="New monitor">
           <div className="core col" style={{ gap: 18 }}><MonitorForm initial={EMPTY} onDone={() => { setAdding(false); void load(); }} /></div>
         </section>
       )}
       <section className="col" style={{ gap: 16 }} aria-label="Monitors">
-        {list.map((m) => <MonitorCard key={m.id} m={m} onChanged={() => void load()} />)}
+        {paged.shown.map((m) => <MonitorCard key={m.id} m={m} onChanged={() => void load()} />)}
+        {list.length > 25 && <Pager id="monitors-pager" {...paged.pager} />}
         {data && !list.length && <Empty text={show === 'Finished' ? 'Nothing has finished yet.' : 'Nothing is being watched. After you ship something, add a monitor and the monitor session checks on it for a few days.'} />}
         {!data && <Empty text="Loading monitors…" />}
       </section>

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Approvals } from '../approvals';
 import { STAGES, type AuditEntry, type Need, type PromiseItem, type Task } from '../../shared/types';
-import { act, ago, agoText, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, Seg, toast, usePage, useSnap } from '../lib';
+import { act, ago, agoText, api, Bar, C, Card, Dot, Empty, Hero, hhmm, href, Pick, Seg, toast, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
+import { DateRange, FilterBar, inRange, Pager, Search, usePaged, type Range } from '../filters';
 
 const undoNeed = (id: number) => act(() => api('POST', `/api/needs/${id}/undo`, {}), 'Taken back · it is open again');
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
@@ -190,8 +191,14 @@ export function Promises() {
   const match: Record<typeof filter, (p: PromiseItem) => boolean> = {
     Open: (p) => p.state !== 'kept', Overdue: (p) => p.state === 'due', 'Ready to send': (p) => p.state === 'ready', Kept: (p) => p.state === 'kept',
   };
-  const list = all.filter(match[filter]);
-  const page = usePage(list, 20, filter);
+  const [range, setRange] = useState<Range>({ id: 'All' });
+  const [person, setPerson] = useState('');
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const list = all.filter((p) => match[filter](p) && inRange(p.createdAt, range) && (!person || p.to === person)
+    && (!needle || [p.said, p.to, p.where, p.keptWhen, p.taskId ?? ''].some((x) => x?.toLowerCase().includes(needle))));
+  const paged = usePaged(list, JSON.stringify([filter, range, person, needle]), 20);
+  const everyone = [...new Set(all.map((p) => p.to))].sort();
   const taskOpts = snap.tasks.map((t) => ({ value: t.id, hint: t.title }));
   const kept = all.filter((p) => p.state === 'kept');
   const dated = kept.filter((p) => p.dueAt && p.keptAt);
@@ -207,9 +214,14 @@ export function Promises() {
       <Hero eyebrow="Promises" title={`${people} ${people === 1 ? 'person is' : 'people are'} waiting on you.`} sub={`${due.length} overdue.`}>
         <Seg label="Filter" value={filter} options={['Open', 'Overdue', 'Ready to send', 'Kept'] as const} onChange={setFilter} />
       </Hero>
+      <FilterBar>
+        <DateRange id="promises-range" value={range} onChange={setRange} />
+        <Pick width={160} label="Person" value={person} onChange={setPerson} options={[{ value: '', label: 'Everyone' }, ...everyone.map((x) => ({ value: x }))]} />
+        <Search id="promises-q" value={q} onChange={setQ} placeholder="Search what was promised, where, task" />
+      </FilterBar>
       <section className="grid12">
         <div className="col" style={{ gridColumn: 'span 8', gap: 14 }}>
-          {page.shown.map((p, i) => (
+          {paged.shown.map((p, i) => (
             <Card key={p.id} span={8} delay={Math.min(i, 8) * 40} tone={p.state === 'due' ? 'red' : undefined}>
               <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
                 <Dot color={promiseColor(p.state)} />
@@ -247,7 +259,7 @@ export function Promises() {
               </div>
             </Card>
           ))}
-          <More page={page} />
+          {list.length > 0 && <Pager id="promises-pager" {...paged.pager} />}
           {!list.length && <Card span={8}><Empty text="Nothing in this list." /></Card>}
         </div>
         <div className="col" style={{ gridColumn: 'span 4', gap: 16 }}>
@@ -290,8 +302,14 @@ export function Audit() {
     return () => { live = false; };
   }, [snap.now, tick]);
   const today = rows.filter((r) => isToday(r.at));
-  const list = rows.filter((r) => (filter === 'All' ? true : filter === 'Corrected' ? r.corrected : r.where === filter));
-  const page = usePage(list, 50, filter);
+  const [range, setRange] = useState<Range>({ id: '7 days' });
+  const [by, setBy] = useState('');
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const list = rows.filter((r) => (filter === 'All' ? true : filter === 'Corrected' ? r.corrected : r.where === filter) && inRange(r.at, range)
+    && (!by || r.by === by) && (!needle || [r.text, r.channel, r.by, r.note].some((x) => x?.toLowerCase().includes(needle))));
+  const paged = usePaged(list, JSON.stringify([filter, range, by, needle]), 50);
+  const senders = [...new Set(rows.map((r) => r.by).filter(Boolean))].sort();
   const grid = { display: 'grid', gridTemplateColumns: '60px 70px minmax(0,1fr) minmax(0,3fr) minmax(0,1fr) 140px', gap: 16, alignItems: 'center' } as const;
   const correct = async (id: number) => {
     const t = note.trim(); if (!t) return;
@@ -303,15 +321,20 @@ export function Audit() {
       <Hero eyebrow="Sent as you" title={`${today.length} thing${today.length === 1 ? '' : 's'} went out in your name today.`} sub={`${today.filter((r) => r.corrected).length} needed a correction.`}>
         <Seg label="Filter" value={filter} options={['All', 'Slack', 'Jira', 'Corrected'] as const} onChange={setFilter} />
       </Hero>
+      <FilterBar>
+        <DateRange id="audit-range" value={range} onChange={setRange} />
+        <Pick width={170} label="Sent by" value={by} onChange={setBy} options={[{ value: '', label: 'Any session' }, ...senders.map((x) => ({ value: x }))]} />
+        <Search id="audit-q" value={q} onChange={setQ} placeholder="Search text, channel, note" />
+      </FilterBar>
       <section className="shell rise"><div className="core" style={{ padding: 12, overflowX: 'auto' }}>
         <div className="label" style={{ ...grid, padding: '14px 16px 10px', minWidth: 900 }}><span>Time</span><span>Where</span><span>Channel</span><span>Text</span><span>By</span><span>Approval</span></div>
-        {page.shown.map((r) => {
+        {paged.shown.map((r) => {
           const expanded = openId === r.id;
           return (
             <div key={r.id} style={{ minWidth: 900 }}>
               <button type="button" className="trow" aria-expanded={expanded} onClick={() => { setOpenId(expanded ? null : r.id); setNote(''); }}
                 style={{ ...grid, width: '100%', border: 'none', background: expanded ? 'rgba(255,255,255,.03)' : 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: 13 }}>
-                <span className="mono faint" style={{ fontSize: 12 }}>{hhmm(r.at)}</span>
+                <span className="mono faint" style={{ fontSize: 12 }} title={new Date(r.at).toLocaleString()}>{range.id === 'Today' || range.id === 'Yesterday' ? hhmm(r.at) : new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
                 <span className="dim">{r.where}</span>
                 <span className="mono dim ellipsis" style={{ fontSize: 12 }}>{r.channel || '—'}</span>
                 <span className="ellipsis">{r.text}</span>
@@ -334,7 +357,7 @@ export function Audit() {
             </div>
           );
         })}
-        <div className="row" style={{ justifyContent: 'center' }}><More page={page} /></div>
+        {list.length > 0 && <Pager id="audit-pager" {...paged.pager} />}
         {!list.length && <Empty text="Nothing recorded here." />}
       </div></section>
     </div>

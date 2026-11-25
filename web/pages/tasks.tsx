@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { STAGES, type IntakeItem, type PromiseItem, type SlackMsg, type Stage, type Task, type TaskEvent } from '../../shared/types';
 import { act, ago, agoText, api, Arrow, Bar, C, Card, Dot, Empty, Hero, hhmm, href, More, Pick, safeHref, Seg, toast, usePage, useSnap } from '../lib';
 import { AddLink, DirectionChip, NoSourceLink, SourceButton } from '../source';
-import { DateRange, FilterBar, Pager, rangeBounds, Search, type Range } from '../filters';
+import { DateRange, FilterBar, inRange, Pager, rangeBounds, Search, usePaged, type Range } from '../filters';
 
 const prioColor = (p: string) => (p === 'P1' ? C.red : p === 'P2' ? C.fg : C.faint);
 const stageColor = (i: number) => (i === 0 ? C.amber : i === 1 ? C.faint : i >= 5 ? C.green : C.fg);
@@ -82,8 +82,19 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
   const [ready, setReady] = useState<string[]>([]);
   useEffect(() => { api<string[]>('GET', '/api/ready').then(setReady).catch(() => setReady([])); }, [snap.now]);
   const match = { All: () => true, Inbox: (t: Task) => t.stage === 0, P1: (t: Task) => t.prio === 'P1', Unassigned: (t: Task) => !t.session, 'Mine to ship': (t: Task) => t.stage >= 3 && t.stage <= 5 };
-  const list = snap.tasks.filter(match[filter]);
-  const page = usePage(list, 50, filter);
+  const [range, setRange] = useState<Range>({ id: 'All' });
+  const [by, setBy] = useState<'Updated' | 'Created'>('Updated');
+  const [who, setWho] = useState('');
+  const [sess, setSess] = useState('');
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const list = snap.tasks.filter((t) => match[filter](t) && inRange(by === 'Updated' ? t.updatedAt : t.createdAt, range)
+    && (!who || t.requester === who) && (!sess || (sess === '-' ? !t.session : t.session === sess))
+    && (!needle || [t.id, t.title, t.ask, t.requester, t.source].some((x) => x?.toLowerCase().includes(needle))));
+  const paged = usePaged(list, JSON.stringify([filter, range, by, who, sess, needle]), 50);
+  const requesters = [...new Set(snap.tasks.map((t) => t.requester).filter(Boolean))].sort();
+  const owners = [...new Set(snap.tasks.map((t) => t.session).filter((x): x is string => !!x))].sort();
+  const narrowed = list.length !== snap.tasks.length;
   const move = (id: string, stage: number) => act(() => api('PATCH', `/api/tasks/${id}`, { stage, who: 'you' }), `${id} → ${STAGES[stage]}`);
   const inFlight = snap.tasks.filter((t) => t.stage >= 2 && t.stage <= 4).length;
 
@@ -122,6 +133,14 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
         <Seg label="Filter" value={filter} options={['All', 'Inbox', 'P1', 'Unassigned', 'Mine to ship'] as const} onChange={setFilter} />
         <button type="button" className="pill w tour-newtask" onClick={() => setAdding(!adding)}>New task<Arrow dark /></button>
       </Hero>
+      <FilterBar>
+        <DateRange id="tasks-range" value={range} onChange={setRange} />
+        {range.id !== 'All' && <Seg label="Date of" value={by} options={['Updated', 'Created'] as const} onChange={setBy} />}
+        <Pick width={150} label="Session" value={sess} onChange={setSess} options={[{ value: '', label: 'Any session' }, { value: '-', label: 'Unassigned' }, ...owners.map((x) => ({ value: x }))]} />
+        <Pick width={150} label="Requester" value={who} onChange={setWho} options={[{ value: '', label: 'Anyone' }, ...requesters.map((x) => ({ value: x }))]} />
+        <Search id="tasks-q" value={q} onChange={setQ} placeholder="Search id, title, ask, source" />
+        {narrowed && <span className="faint" style={{ fontSize: 12 }}>{list.length} of {snap.tasks.length}</span>}
+      </FilterBar>
       {adding && <NewTask onDone={() => setAdding(false)} />}
       {ready.length > 0 && !snap.settings.switches.autoDispatch && (
         <div className="shell rise alert-amber"><div className="core row" style={{ gap: 14, padding: '14px 20px', flexWrap: 'wrap' }}>
@@ -149,7 +168,7 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
         </section>
       ) : (
         <section className="shell rise"><div className="core col" style={{ padding: 12, gap: 0 }}>
-          {page.shown.map((t) => (
+          {paged.shown.map((t) => (
             <div key={t.id} className="trow tlist">
               <a href={href('task', t.id)} className="mono faint" style={{ fontSize: 12 }}>{t.id}</a>
               <a href={href('task', t.id)} className="col" style={{ gap: 4, minWidth: 0 }}><span className="ellipsis">{t.title}</span><span className="ellipsis faint" style={{ fontSize: 12 }}>{[t.requester, t.source].filter(Boolean).join(' · ') || '—'}</span></a>
@@ -160,8 +179,8 @@ export function Tasks({ openNew, inbox }: { openNew: boolean; inbox?: boolean })
               <QuickActions t={t} ready={ready.includes(t.id)} />
             </div>
           ))}
-          <More page={page} />
-          {!list.length && <Empty text="No tasks yet. Add one, or let the intake session file them with: shiftboss task add" />}
+          {list.length > 0 && <Pager id="tasks-pager" {...paged.pager} />}
+          {!list.length && <Empty text={snap.tasks.length ? 'No task matches these filters.' : 'No tasks yet. Add one, or let the intake session file them with: shiftboss task add'} />}
         </div></section>
       )}
     </div>
