@@ -258,7 +258,8 @@ export function taskSessionName(t: { id: string; title: string }, taken: Iterabl
 }
 
 export function resolveLead<T extends { name: string }>(sessions: T[], base: string): T | null {
-  const b = base.trim().toLowerCase();
+  // A setting saved as a versioned name (lead-v2) still means the lead line: lead, lead-v2, lead-v3, ...
+  const b = base.trim().toLowerCase().replace(/-v\d+$/, '');
   if (!b) return null;
   let best: T | null = null, bestV = -1;
   for (const s of sessions) {

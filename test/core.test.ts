@@ -276,6 +276,9 @@ describe('lead session', () => {
   });
   test('other names never match', () => {
     expect(resolveLead([s('lead-old'), s('my-lead'), s('lead-v2x')], 'lead')).toBeNull();
+    // A setting saved as a versioned name still follows the line to its newest session.
+    expect(resolveLead([s('lead-v3'), s('api')], 'lead-v2')?.name).toBe('lead-v3');
+    expect(resolveLead([s('lead')], 'lead-v2')?.name).toBe('lead');
     expect(resolveLead([s('lead')], '')).toBeNull();
   });
 });
